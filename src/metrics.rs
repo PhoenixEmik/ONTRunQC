@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
 use crate::{
+    layout::{FlowcellLayout, PhysicalLayout},
     record::Record,
     report::{Report, Run, Tool},
 };
@@ -13,6 +14,7 @@ const LENGTH_BOUNDS: [u64; 9] = [
     1, 1_000, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 1_000_000,
 ];
 const QUALITY_BOUNDS: [f64; 9] = [0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0];
+const SPEED_BOUNDS: [f64; 9] = [0.0, 100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0];
 // Limit spare capacity instead of geometrically doubling two large vectors.
 const RESERVE_ELEMENTS: usize = 65_536;
 
@@ -104,6 +106,97 @@ pub struct EndReasonMetrics {
     pub total_yield_bp: u64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct Diagnostics {
+    pub physical_layout: Option<PhysicalLayout>,
+    pub channel_activity: Vec<ChannelActivity>,
+    pub channel_mux: Vec<ChannelMuxMetrics>,
+    pub sequencing_speed: Option<SequencingSpeed>,
+    pub termination_reasons: Vec<TerminationDiagnostics>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChannelActivity {
+    pub start_seconds: u64,
+    pub basecalled_producing_channels: u64,
+}
+
+#[derive(Default, Debug, Serialize)]
+pub struct ChannelMuxMetrics {
+    pub channel: u32,
+    pub mux: u32,
+    pub total_records: u64,
+    pub basecalled_reads: u64,
+    pub zero_length_records: u64,
+    pub total_yield_bp: u64,
+    pub passed_reads: u64,
+    pub passed_yield_bp: u64,
+}
+
+#[derive(Default, Debug, Serialize)]
+pub struct SpeedSummary {
+    pub eligible_reads: u64,
+    pub mean_bp_per_second: Option<f64>,
+}
+
+impl SpeedSummary {
+    fn add(&mut self, speed: f64) {
+        self.eligible_reads += 1;
+        update_mean(
+            self.mean_bp_per_second.get_or_insert(0.0),
+            speed,
+            self.eligible_reads,
+        );
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct SequencingSpeed {
+    #[serde(flatten)]
+    pub summary: SpeedSummary,
+    pub histogram: Vec<SpeedBin>,
+    pub time_bins: Vec<SpeedTimeBin>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SpeedBin {
+    pub lower_inclusive_bp_per_second: f64,
+    pub upper_exclusive_bp_per_second: Option<f64>,
+    pub read_count: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SpeedTimeBin {
+    pub start_seconds: u64,
+    #[serde(flatten)]
+    pub summary: SpeedSummary,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TerminationDiagnostics {
+    pub end_reason: String,
+    pub passed_reads: u64,
+    pub zero_length_records: u64,
+    pub summary_record_percent: Option<f64>,
+    pub zero_length_fraction: Option<f64>,
+    pub basecalled_read_fraction: Option<f64>,
+    pub passed_fraction_of_basecalled: Option<f64>,
+    pub total_yield_percent: Option<f64>,
+}
+
+#[derive(Default)]
+struct TimeAccumulator {
+    metrics: TimeBin,
+    channels: BTreeSet<u32>,
+    speed: SpeedSummary,
+}
+
+#[derive(Default)]
+struct ReasonAccumulator {
+    metrics: EndReasonMetrics,
+    passed_reads: u64,
+}
+
 #[derive(Default)]
 pub struct Aggregator {
     overall: OverallMetrics,
@@ -115,12 +208,32 @@ pub struct Aggregator {
     length_yields: [u64; LENGTH_BOUNDS.len()],
     channels: BTreeMap<u32, ChannelMetrics>,
     muxes: BTreeMap<u32, MuxMetrics>,
-    time_bins: BTreeMap<u64, TimeBin>,
-    end_reasons: BTreeMap<String, EndReasonMetrics>,
+    time_bins: BTreeMap<u64, TimeAccumulator>,
+    end_reasons: BTreeMap<String, ReasonAccumulator>,
+    channel_mux: BTreeMap<(u32, u32), ChannelMuxMetrics>,
+    layout: Option<FlowcellLayout>,
+    speed_available: bool,
+    speed: SpeedSummary,
+    speed_counts: [u64; SPEED_BOUNDS.len()],
 }
 
 impl Aggregator {
+    pub fn new(layout: Option<FlowcellLayout>, speed_available: bool) -> Self {
+        Self {
+            layout,
+            speed_available,
+            ..Self::default()
+        }
+    }
+
     pub fn add(&mut self, record: &Record<'_>) -> Result<()> {
+        if let Some(layout) = self.layout {
+            ensure!(
+                layout.coordinate(record.channel).is_some(),
+                "channel {} is incompatible with --flowcell-layout promethion-3000 (expected 1–3000); select a matching layout or omit the option",
+                record.channel
+            );
+        }
         // Validate cumulative counters first; every subgroup is bounded by these totals.
         self.overall.total_records = self
             .overall
@@ -158,23 +271,36 @@ impl Aggregator {
         let time = self
             .time_bins
             .entry(start_seconds)
-            .or_insert_with(|| TimeBin {
-                start_seconds,
-                end_seconds,
-                ..TimeBin::default()
+            .or_insert_with(|| TimeAccumulator {
+                metrics: TimeBin {
+                    start_seconds,
+                    end_seconds,
+                    ..TimeBin::default()
+                },
+                ..TimeAccumulator::default()
+            });
+        let channel_mux = self
+            .channel_mux
+            .entry((record.channel, record.mux))
+            .or_insert_with(|| ChannelMuxMetrics {
+                channel: record.channel,
+                mux: record.mux,
+                ..ChannelMuxMetrics::default()
             });
         // Borrowed lookup avoids a fresh String for every record.
         if !self.end_reasons.contains_key(record.end_reason) {
             self.end_reasons
-                .insert(record.end_reason.to_owned(), EndReasonMetrics::default());
+                .insert(record.end_reason.to_owned(), ReasonAccumulator::default());
         }
         let reason = self.end_reasons.get_mut(record.end_reason).unwrap();
         channel.total_records += 1;
         mux.total_records += 1;
-        time.total_records += 1;
-        reason.total_records += 1;
+        time.metrics.total_records += 1;
+        reason.metrics.total_records += 1;
+        channel_mux.total_records += 1;
         if record.length == 0 {
             self.overall.zero_length_records += 1;
+            channel_mux.zero_length_records += 1;
             return Ok(());
         }
 
@@ -192,16 +318,32 @@ impl Aggregator {
         update_mean(channel_mean, record.qscore, channel.basecalled_reads);
         mux.basecalled_reads += 1;
         mux.total_yield_bp += record.length;
-        time.basecalled_reads += 1;
-        time.yield_bp += record.length;
-        reason.basecalled_reads += 1;
-        reason.total_yield_bp += record.length;
+        time.metrics.basecalled_reads += 1;
+        time.metrics.yield_bp += record.length;
+        time.channels.insert(record.channel);
+        reason.metrics.basecalled_reads += 1;
+        reason.metrics.total_yield_bp += record.length;
+        channel_mux.basecalled_reads += 1;
+        channel_mux.total_yield_bp += record.length;
+        if let Some(speed) = record
+            .template_duration
+            .map(|duration| record.length as f64 / duration)
+            .filter(|speed| speed.is_finite())
+        {
+            self.speed.add(speed);
+            time.speed.add(speed);
+            let bin = SPEED_BOUNDS.partition_point(|bound| *bound <= speed) - 1;
+            self.speed_counts[bin] += 1;
+        }
         if record.passed {
             self.overall.passed_reads += 1;
             self.overall.passed_yield_bp += record.length;
             channel.passed_reads += 1;
             channel.passed_yield_bp += record.length;
             mux.passed_yield_bp += record.length;
+            channel_mux.passed_reads += 1;
+            channel_mux.passed_yield_bp += record.length;
+            reason.passed_reads += 1;
         } else {
             self.overall.failed_reads += 1;
             self.overall.failed_yield_bp += record.length;
@@ -252,17 +394,85 @@ impl Aggregator {
             .collect();
         let mut cumulative = 0_u64;
         for time in self.time_bins.values_mut() {
-            cumulative += time.yield_bp;
-            time.cumulative_yield_bp = cumulative;
+            cumulative += time.metrics.yield_bp;
+            time.metrics.cumulative_yield_bp = cumulative;
         }
+        let channel_activity = self
+            .time_bins
+            .values()
+            .map(|time| ChannelActivity {
+                start_seconds: time.metrics.start_seconds,
+                basecalled_producing_channels: time.channels.len() as u64,
+            })
+            .collect();
+        let sequencing_speed = self.speed_available.then(|| SequencingSpeed {
+            summary: self.speed,
+            histogram: SPEED_BOUNDS
+                .iter()
+                .enumerate()
+                .map(|(i, &lower)| SpeedBin {
+                    lower_inclusive_bp_per_second: lower,
+                    upper_exclusive_bp_per_second: SPEED_BOUNDS.get(i + 1).copied(),
+                    read_count: self.speed_counts[i],
+                })
+                .collect(),
+            time_bins: self
+                .time_bins
+                .values()
+                .map(|time| SpeedTimeBin {
+                    start_seconds: time.metrics.start_seconds,
+                    summary: SpeedSummary {
+                        eligible_reads: time.speed.eligible_reads,
+                        mean_bp_per_second: time.speed.mean_bp_per_second,
+                    },
+                })
+                .collect(),
+        });
+        let mut termination_reasons: Vec<_> = self
+            .end_reasons
+            .iter()
+            .map(|(name, reason)| {
+                let m = &reason.metrics;
+                let zero = m.total_records - m.basecalled_reads;
+                TerminationDiagnostics {
+                    end_reason: name.clone(),
+                    passed_reads: reason.passed_reads,
+                    zero_length_records: zero,
+                    summary_record_percent: fraction(m.total_records, self.overall.total_records)
+                        .map(|v| v * 100.0),
+                    zero_length_fraction: fraction(zero, m.total_records),
+                    basecalled_read_fraction: fraction(m.basecalled_reads, m.total_records),
+                    passed_fraction_of_basecalled: fraction(
+                        reason.passed_reads,
+                        m.basecalled_reads,
+                    ),
+                    total_yield_percent: fraction(m.total_yield_bp, self.overall.total_yield_bp)
+                        .map(|v| v * 100.0),
+                }
+            })
+            .collect();
+        termination_reasons.sort_by(|a, b| {
+            self.end_reasons[&b.end_reason]
+                .metrics
+                .total_records
+                .cmp(&self.end_reasons[&a.end_reason].metrics.total_records)
+                .then_with(|| a.end_reason.cmp(&b.end_reason))
+        });
         let end_reasons = self
             .end_reasons
             .into_iter()
-            .map(|(name, mut reason)| {
-                reason.end_reason = name;
-                reason
+            .map(|(name, reason)| EndReasonMetrics {
+                end_reason: name,
+                ..reason.metrics
             })
             .collect();
+        let diagnostics = Diagnostics {
+            physical_layout: self.layout.map(FlowcellLayout::description),
+            channel_activity,
+            channel_mux: self.channel_mux.into_values().collect(),
+            sequencing_speed,
+            termination_reasons,
+        };
         Report {
             schema_version: 1,
             tool: Tool::current(),
@@ -272,10 +482,19 @@ impl Aggregator {
             read_length_distribution: distribution,
             channels: self.channels.into_values().collect(),
             muxes: self.muxes.into_values().collect(),
-            time_bins: self.time_bins.into_values().collect(),
+            time_bins: self
+                .time_bins
+                .into_values()
+                .map(|time| time.metrics)
+                .collect(),
             end_reasons,
+            diagnostics,
         }
     }
+}
+
+fn fraction(numerator: u64, denominator: u64) -> Option<f64> {
+    (denominator != 0).then(|| numerator as f64 / denominator as f64)
 }
 
 fn push_compact<T>(values: &mut Vec<T>, value: T) -> Result<()> {

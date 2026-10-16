@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-PoreGauge is a single-package Rust 2024 CLI for post-sequencing QC of PromethION summaries. `src/main.rs` connects the pipeline; `cli.rs` defines arguments; `input.rs` validates streaming TSV records; `record.rs` holds borrowed fields; `metrics.rs` owns QC calculations. `report.rs` serializes JSON and stages both outputs; `html.rs` renders offline HTML using embedded `report.css` and `report.js`.
+PoreGauge is a single-package Rust 2024 CLI for post-sequencing QC of PromethION summaries. `src/main.rs` connects the pipeline; `cli.rs` defines arguments; `input.rs` validates streaming TSV records; `record.rs` holds borrowed fields; `metrics.rs` owns QC calculations; `layout.rs` implements the explicit, reference-based PromethION coordinate map. `report.rs` serializes JSON and stages both outputs; `html.rs` renders offline HTML using embedded `report.css` and `report.js`.
 
 Unit tests live beside implementations; CLI integration tests are in `tests/integration.rs`, with fictional inputs in `tests/fixtures/`. Consult `docs/metrics.md` for definitions/schema and `docs/benchmark.md` for measurement procedures.
 
@@ -38,4 +38,4 @@ Use focused, imperative commits, e.g. `Add standalone HTML reports`. PRs should 
 
 ## Research Data & Performance
 
-Commit only synthetic fixtures. Keep research identifiers, real reads, credentials, and identifying reports out of Git. Build output, `qc_results/`, and `benchmark-results/` are ignored. Current scope is one run, uncompressed TSV, and JSON/HTML reporting. Keep HTML development focused; do not add input formats, large benchmarks, or speculative optimization.
+Commit only synthetic fixtures. Keep research identifiers, real reads, credentials, and identifying reports out of Git. Build output, `qc_results/`, and `benchmark-results/` are ignored. Current scope is one run, uncompressed TSV, and JSON/HTML reporting. Keep Deep QC focused; do not add input formats, large benchmarks, or speculative optimization. Physical maps require explicit layout selection. Channel activity and speed are summary-derived proxies, not pore health or occupancy. Optional template durations affect speed eligibility only.

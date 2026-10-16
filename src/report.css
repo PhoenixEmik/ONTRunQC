@@ -285,6 +285,25 @@ figcaption {
     stroke-width:2.5;
     stroke-linejoin:round;
 }
+.heatmap {
+    display:block;
+    width:100%;
+    min-width:1000px;
+    height:auto;
+}
+.heatmap-cell {
+    stroke:#aab4c8;
+    stroke-width:.35;
+}
+.heatmap-cell:hover {
+    stroke:var(--ink);
+    stroke-width:1.5;
+}
+h3 {
+    font-size:16px;
+    font-weight:600;
+    margin:20px 0 8px;
+}
 .channel-point {
     fill:var(--accent);
     fill-opacity:.55;
@@ -574,7 +593,7 @@ footer {
     .scroll-hint {
         display: none;
     }
-    .plot {
+    .plot,.heatmap {
         min-width:0;
     }
     .plot-scroll {
@@ -619,7 +638,7 @@ footer {
     thead th {
         position:static;
     }
-    #channel-table tr[hidden] {
+    #channel-table tr[hidden],#channel-mux-table tr[hidden] {
         display:table-row!important;
     }
     details:not([open]) {

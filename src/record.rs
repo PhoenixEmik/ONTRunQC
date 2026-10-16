@@ -6,6 +6,7 @@ pub struct Record<'a> {
     pub channel: u32,
     pub mux: u32,
     pub start_time: f64,
+    pub template_duration: Option<f64>,
     pub passed: bool,
     pub length: u64,
     pub qscore: f64,

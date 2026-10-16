@@ -1,0 +1,11 @@
+template_duration	run_id	channel	mux	start_time	duration	passes_filtering	sequence_length_template	mean_qscore_template	end_reason
+2	deep-synthetic-run	3000	7	2700	3	TRUE	600	15	unfamiliar_reason
+0.25	deep-synthetic-run	1	1	0	1	TRUE	100	10	normal
+0	deep-synthetic-run	1	9	900	2	TRUE	400	40	other
+0.5	deep-synthetic-run	1	2	100	1	FALSE	200	20	normal
+1	deep-synthetic-run	10	9	899.999	2	TRUE	300	30	other
+1	deep-synthetic-run	250	2	1800	1	FALSE	0	0	zero
+	deep-synthetic-run	251	7	2700	3	FALSE	500	5	normal
+NaN	deep-synthetic-run	11	1	900	1	TRUE	0	0	zero
+0.5	deep-synthetic-run	1	1	0	1	TRUE	50	10	normal
+invalid	deep-synthetic-run	10	9	3600	1	TRUE	0	0	zero

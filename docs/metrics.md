@@ -3,7 +3,7 @@
 All metrics are calculated centrally in `src/metrics.rs`. Input rows must pass
 validation before aggregation. Counts and yields are unsigned 64-bit integers;
 overflow is an error, never wrapping arithmetic. Statistics use IEEE-754 `f64`;
-floating input must be finite and nonnegative. There are no NaN/Infinity values
+required floating input must be finite and nonnegative. There are no NaN/Infinity values
 in a valid report. Unavailable statistics are JSON `null`.
 
 ## Overall sequencing metrics
@@ -79,7 +79,7 @@ counts sum to `basecalled_reads`; histogram yields sum to `total_yield_bp`.
 Channel means use the same arithmetic definition and zero-length exclusion as
 the run mean. A channel without basecalled reads has `mean_qscore: null`.
 Unknown termination strings are preserved verbatim and grouped by exact string.
-Channels and muxes are identifiers, with no physical coordinate assumptions.
+Channels and muxes are identifiers. Physical coordinates exist only with an explicitly selected supported layout.
 
 ## Yield over time
 
@@ -102,7 +102,7 @@ throughput, pore occupancy, or completion-time yield.
 
 Top-level fields are `schema_version` (1), `tool` (`name: "PoreGauge"`, package
 `version`), `run` (`run_id`), `metrics`, `quality`, `read_length_distribution`,
-`channels`, `muxes`, `time_bins`, and `end_reasons`.
+`channels`, `muxes`, `time_bins`, `end_reasons`, and (since v0.3.0) `diagnostics`.
 
 Channel and mux arrays use ascending numeric order, time bins ascending start
 seconds, termination reasons ascending Rust string order, and histogram bins
@@ -115,7 +115,7 @@ are `null`, grouped arrays are empty, and fixed histograms contain zero counts.
 A run containing only zero-length records retains its run ID and grouped record
 counts but has unavailable length/quality statistics.
 
-## HTML presentation (v0.2.0)
+## HTML presentation
 
 `report.html` presents this same final report model without adding individual
 reads or changing JSON schema 1. Pass rate is `100 * passed_reads /
@@ -131,3 +131,104 @@ yield and ascending channel ID for ties. It carries no physical coordinate
 information. Histograms retain the original categorical interval boundaries;
 no per-read distribution is inferred. All table counts and bp yields are exact
 integers; unknown floating statistics display **Not available**.
+
+
+## Additive Deep QC diagnostics (v0.3.0)
+
+Schema version remains **1**: no previous fields, definitions, or array ordering
+are removed or changed. Consumers should ignore unfamiliar fields. The additive
+`diagnostics` object contains the following independently ordered groups. It has
+no individual-read data and does not imply automatic run-level QC judgments.
+
+### Explicit physical layout
+
+`physical_layout` is `null` unless `--flowcell-layout promethion-3000` is selected.
+The selected object has `name`, `rows: 25`, `columns: 120`, and
+`channel_coordinates` (`channel`, `row`, `column`) for all 3000 channels in channel
+order. Yields are not duplicated: coordinates join to the existing `channels`
+array. Absent channel observations are unavailable, not observed zero yield.
+
+The [EPI2ME Basic QC Tutorial](https://epi2me.nanoporetech.com/notebooks/Basic_QC_Tutorial.html)
+implements `np.hstack([np.arange(x, x + 250).reshape(25, 10) for x in
+range(1, 2752, 250)])`. With `i = channel - 1`, our zero-based coordinates are:
+
+```text
+row    = (i % 250) / 10         (integer division)
+column = (i / 250) * 10 + i % 10
+```
+
+The first block occupies columns 0–9; the twelfth occupies 110–119. Channel 10 is
+(0, 9), 11 is (1, 0), 250 is (24, 9), and 251 is (0, 10). All 3000 coordinates
+are unique and in range. Explicitly selected layouts reject incompatible channel
+IDs, including zero-length records, with the input line number. No layout is
+inferred from maximum channel ID. Compatibility with other flowcell revisions,
+models, or numbering conventions and instrument-facing orientation is not
+established. Unobserved channels must not be described as dead or inactive pores.
+
+SVG maps use linear independent total/passed-yield scales in explicit bp/kb/Mb/Gb
+units. Each cell has a channel label and exact bp tooltip. Hatching identifies
+unobserved summary channels; a pale solid cell identifies observed zero yield.
+
+### Observed channel activity
+
+`channel_activity` entries have `start_seconds` and
+`basecalled_producing_channels`, ordered by start time and aligned with existing
+`time_bins`. The count is distinct channel IDs with at least one positive-length
+read starting in that bin; multiple reads count once. Zero-length-only bins have
+0; missing bins imply 0. Counts are maintained with one set per occupied bin,
+not one stored channel per read. Memory scales with distinct (bin, channel)
+observations. These are observed basecalled-producing channels, not MinKNOW active
+pores, occupancy, availability, or continuous read-duration overlap. Chart points
+are at bin midpoints; missing intervals are not joined by lines.
+
+### Channel × mux
+
+`channel_mux` entries are ordered by ascending `(channel, mux)` and contain those
+identifiers plus `total_records`, `basecalled_reads`, `zero_length_records`,
+`total_yield_bp`, `passed_reads`, and `passed_yield_bp`. Only observed pairs occur;
+no four-mux assumption is made. Zero-length records contribute only record/zero
+counts. Group yields and passed yields sum to the respective run totals; group
+records sum to all records. Counts/yield do not establish pore occupancy. HTML
+provides a collapsible table sharing channel search, sorting, and pagination.
+
+### Sequencing speed proxy
+
+`sequencing_speed` is `null` when the optional `template_duration` header is absent.
+When present it contains `eligible_reads`, `mean_bp_per_second`, `histogram`, and
+`time_bins`. A read is eligible only if length is positive, its template duration
+is finite and positive, and length / template duration is finite. Blank,
+malformed (including non-UTF-8), negative, zero, or nonfinite optional durations
+exclude speed observations only. Invalid required fields still fail the record.
+`duration` is never used as a fallback. Zero eligible reads yield a null mean,
+zero histogram counts, and an explanatory unavailable HTML state.
+
+Means use online arithmetic accumulation per eligible read, without length or
+duration weighting. No per-read speed vector or quantile is retained. Histogram
+fields are `lower_inclusive_bp_per_second`, `upper_exclusive_bp_per_second`, and
+`read_count`; bounds are 0, 100, 200, 300, 400, 500, 600, 800, 1000, with a null
+final upper bound. Histogram counts sum to `eligible_reads`.
+
+Speed `time_bins` contain `start_seconds`, `eligible_reads`, and
+`mean_bp_per_second`, aligned with occupied run bins; bins without eligible
+speeds have a null mean. Chart points use bin midpoints and do not connect across
+missing or unavailable bins. This is a basecalled-length/template-duration proxy,
+not a direct motor-speed or raw-signal measurement; no speed threshold is applied.
+
+### Termination diagnostics
+
+`termination_reasons` preserves reason strings and adds `passed_reads`,
+`zero_length_records`, and these centrally calculated ratios:
+
+| Field | Numerator / denominator |
+| --- | --- |
+| `summary_record_percent` | 100 × reason records / run records |
+| `zero_length_fraction` | reason zero-length records / reason records |
+| `basecalled_read_fraction` | reason basecalled reads / reason records |
+| `passed_fraction_of_basecalled` | reason passed basecalled reads / reason basecalled reads |
+| `total_yield_percent` | 100 × reason yield / run yield |
+
+Fractions range from 0–1 and percentages from 0–100. Zero denominators produce
+null, never an invented zero. HTML formats fractions as percentages. This new
+array and the HTML table sort by descending record count, then ascending reason
+name. The original `end_reasons` array retains ascending name order. Reasons are
+not assigned a good/bad classification and do not determine filtering status.

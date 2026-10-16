@@ -25,9 +25,14 @@ impl TestDirectory {
     }
 
     fn run(&self, input: &Path) -> Output {
+        self.run_with_args(input, &[])
+    }
+
+    fn run_with_args(&self, input: &Path, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_poregauge"))
             .arg("analyze")
             .arg(input)
+            .args(args)
             .arg("--output")
             .arg(self.0.join("output"))
             .output()
@@ -35,9 +40,13 @@ impl TestDirectory {
     }
 
     fn analyze(&self, data: &str) -> Value {
+        self.analyze_with_args(data, &[])
+    }
+
+    fn analyze_with_args(&self, data: &str, args: &[&str]) -> Value {
         let input = self.0.join("input.tsv");
         fs::write(&input, data).unwrap();
-        let output = self.run(&input);
+        let output = self.run_with_args(&input, args);
         assert!(
             output.status.success(),
             "{}",
@@ -605,13 +614,22 @@ fn html_handles_thousands_of_channels_without_a_channel_bar_chart() {
     }
     directory.analyze(&data);
     let html = directory.html();
-    assert_eq!(html.matches("<tr data-channel=").count(), 4096);
+    for id in ["channel-table", "channel-mux-table"] {
+        let table = html
+            .split(&format!("id=\"{id}\""))
+            .nth(1)
+            .unwrap()
+            .split("</table>")
+            .next()
+            .unwrap();
+        assert_eq!(table.matches("<tr data-channel=").count(), 4096);
+    }
     assert_eq!(html.matches("class=\"channel-point\"").count(), 4096);
     assert!(html.contains("data-channel=\"4096\""));
     assert!(html.contains("id=\"channel-pagination\""));
     assert!(html.contains("id=\"channel-search\""));
     assert!(
-        html.len() < 4_000_000,
+        html.len() < 8_000_000,
         "unexpectedly large aggregated report"
     );
 }
@@ -684,4 +702,419 @@ fn missing_input_and_invalid_output_are_actionable() {
     let output = directory.run(&fixture("synthetic.tsv"));
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("cannot create output directory"));
+}
+
+#[test]
+fn deep_diagnostics_have_exact_aggregates_and_conserve_yield() {
+    let directory = TestDirectory::new();
+    let report = directory.analyze(&fs::read_to_string(fixture("deep_qc.tsv")).unwrap());
+    let d = &report["diagnostics"];
+    assert_eq!(report["metrics"]["total_records"], 10);
+    assert_eq!(report["metrics"]["basecalled_reads"], 7);
+    assert_eq!(report["metrics"]["zero_length_records"], 3);
+    assert_eq!(report["metrics"]["total_yield_bp"], 2150);
+    assert_eq!(report["metrics"]["passed_yield_bp"], 1450);
+    assert_eq!(d["physical_layout"], Value::Null);
+    assert_eq!(
+        d["channel_activity"],
+        json!([
+            {"start_seconds":0,"basecalled_producing_channels":2},
+            {"start_seconds":900,"basecalled_producing_channels":1},
+            {"start_seconds":1800,"basecalled_producing_channels":0},
+            {"start_seconds":2700,"basecalled_producing_channels":2},
+            {"start_seconds":3600,"basecalled_producing_channels":0}
+        ])
+    );
+    let groups = d["channel_mux"].as_array().unwrap();
+    assert_eq!(groups.len(), 8);
+    assert_eq!(
+        groups[0],
+        json!({"channel":1,"mux":1,"total_records":2,"basecalled_reads":2,"zero_length_records":0,"total_yield_bp":150,"passed_reads":2,"passed_yield_bp":150})
+    );
+    let unusual = groups
+        .iter()
+        .find(|m| m["channel"] == 10 && m["mux"] == 9)
+        .unwrap();
+    assert_eq!(unusual["total_records"], 2);
+    assert_eq!(unusual["basecalled_reads"], 1);
+    assert_eq!(unusual["zero_length_records"], 1);
+    assert_eq!(unusual["total_yield_bp"], 300);
+    for (array, yield_field) in [
+        (&report["channels"], "total_yield_bp"),
+        (&d["channel_mux"], "total_yield_bp"),
+        (&report["time_bins"], "yield_bp"),
+    ] {
+        assert_eq!(
+            array
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m[yield_field].as_u64().unwrap())
+                .sum::<u64>(),
+            2150
+        );
+    }
+    assert_eq!(
+        groups
+            .iter()
+            .map(|m| m["passed_yield_bp"].as_u64().unwrap())
+            .sum::<u64>(),
+        1450
+    );
+    assert_eq!(
+        groups
+            .iter()
+            .map(|m| m["total_records"].as_u64().unwrap())
+            .sum::<u64>(),
+        10
+    );
+    assert!(
+        groups
+            .iter()
+            .all(|m| m["basecalled_reads"].as_u64().unwrap()
+                + m["zero_length_records"].as_u64().unwrap()
+                == m["total_records"].as_u64().unwrap())
+    );
+    let speed = &d["sequencing_speed"];
+    assert_eq!(speed["eligible_reads"], 5);
+    assert_eq!(speed["mean_bp_per_second"], 300.0);
+    assert_eq!(
+        speed["histogram"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["read_count"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![0, 1, 0, 2, 2, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        speed["time_bins"],
+        json!([
+            {"start_seconds":0,"eligible_reads":4,"mean_bp_per_second":300.0},
+            {"start_seconds":900,"eligible_reads":0,"mean_bp_per_second":null},
+            {"start_seconds":1800,"eligible_reads":0,"mean_bp_per_second":null},
+            {"start_seconds":2700,"eligible_reads":1,"mean_bp_per_second":300.0},
+            {"start_seconds":3600,"eligible_reads":0,"mean_bp_per_second":null}
+        ])
+    );
+    let html = directory.html();
+    assert!(html.contains("data-metric=\"speed_eligible_reads\" data-value=\"5\""));
+    assert!(html.contains("data-metric=\"mean_speed_bp_per_second\" data-value=\"300\""));
+    assert!(html.contains("Channels producing basecalled reads over time"));
+    assert!(html.contains("id=\"channel-mux-table\""));
+    assert!(html.contains("Passed yield by mux"));
+    assert!(html.contains("[100, 200) bp/s"));
+    // Speed has missing observations in intermediate bins: no connecting line.
+    let speed_plot = html
+        .split("id=\"speed-time-caption\"")
+        .nth(1)
+        .unwrap()
+        .split("</figure>")
+        .next()
+        .unwrap();
+    let path = speed_plot
+        .split("class=\"cumulative-line\" d=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    assert_eq!(path.matches('M').count(), 2);
+    assert!(!path.contains('L'));
+}
+
+#[test]
+fn explicit_layout_heatmaps_conserve_yields_and_preserve_unobserved_states() {
+    let directory = TestDirectory::new();
+    let data = fs::read_to_string(fixture("deep_qc.tsv")).unwrap();
+    let args = ["--flowcell-layout", "promethion-3000"];
+    let report = directory.analyze_with_args(&data, &args);
+    let layout = &report["diagnostics"]["physical_layout"];
+    assert_eq!(layout["name"], "promethion-3000");
+    assert_eq!(layout["rows"], 25);
+    assert_eq!(layout["columns"], 120);
+    assert_eq!(
+        layout["channel_coordinates"].as_array().unwrap().len(),
+        3000
+    );
+    assert_eq!(
+        layout["channel_coordinates"][250],
+        json!({"channel":251,"row":0,"column":10})
+    );
+    let first_html = directory.html();
+    let mut ids = std::collections::BTreeSet::new();
+    for part in first_html.split(" id=\"").skip(1) {
+        let id = part.split('"').next().unwrap();
+        assert!(ids.insert(id), "duplicate HTML/SVG ID: {id}");
+    }
+    for part in first_html.split("aria-labelledby=\"").skip(1) {
+        for id in part.split('"').next().unwrap().split_whitespace() {
+            assert!(ids.contains(id), "missing accessible label: {id}");
+        }
+    }
+    for (id, total) in [
+        ("spatial-total-yield", 2150),
+        ("spatial-passed-yield", 1450),
+    ] {
+        let map = first_html
+            .split(&format!("id=\"{id}-caption\""))
+            .nth(1)
+            .unwrap()
+            .split("</figure>")
+            .next()
+            .unwrap();
+        assert_eq!(map.matches("class=\"heatmap-cell\"").count(), 3000);
+        let sum: u64 = map
+            .split("data-yield-bp=\"")
+            .skip(1)
+            .filter_map(|part| part.split('"').next().unwrap().parse::<u64>().ok())
+            .sum();
+        assert_eq!(sum, total);
+        assert!(map.contains("data-channel=\"250\" data-yield-bp=\"0\""));
+        assert!(map.contains("data-channel=\"2\" data-yield-bp=\"\""));
+        assert!(map.contains("Observed · zero yield"));
+        assert!(map.contains("Not observed · unavailable yield"));
+    }
+    for forbidden in [
+        "http://",
+        "https://",
+        "src=",
+        "@import",
+        "fetch(",
+        "XMLHttpRequest",
+        "<link",
+    ] {
+        assert!(
+            !first_html.contains(forbidden),
+            "external resource: {forbidden}"
+        );
+    }
+    let first_json = fs::read(directory.0.join("output/report.json")).unwrap();
+    directory.analyze_with_args(&data, &args);
+    assert_eq!(first_html, directory.html());
+    assert_eq!(
+        first_json,
+        fs::read(directory.0.join("output/report.json")).unwrap()
+    );
+    assert!(first_html.len() < 4_000_000);
+}
+
+#[test]
+fn layout_is_opt_in_and_rejects_every_incompatible_record() {
+    let directory = TestDirectory::new();
+    let data = format!("{HEADER}{}", ROW.replace("\t1\t1\t0\t", "\t3001\t1\t0\t"));
+    let input = directory.0.join("invalid-layout.tsv");
+    for zero_length in [false, true] {
+        let data = if zero_length {
+            data.replace("\t10\t", "\t0\t")
+        } else {
+            data.clone()
+        };
+        fs::write(&input, &data).unwrap();
+        let output = directory.run_with_args(&input, &["--flowcell-layout", "promethion-3000"]);
+        assert!(!output.status.success());
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(error.contains("line 2"));
+        assert!(error.contains("channel 3001"));
+        assert!(error.contains("expected 1–3000"));
+        assert!(!directory.0.join("output").exists());
+        let report = directory.analyze(&data);
+        assert_eq!(report["diagnostics"]["physical_layout"], Value::Null);
+        assert!(!directory.html().contains("class=\"heatmap-cell\""));
+        fs::remove_dir_all(directory.0.join("output")).unwrap();
+    }
+    let unknown = directory.run_with_args(&input, &["--flowcell-layout", "unknown"]);
+    assert!(!unknown.status.success());
+    assert!(String::from_utf8_lossy(&unknown.stderr).contains("promethion-3000"));
+}
+
+#[test]
+fn optional_duration_is_safe_and_does_not_fall_back_to_duration() {
+    let directory = TestDirectory::new();
+    let absent = directory.analyze(&format!("{HEADER}{ROW}"));
+    assert_eq!(absent["diagnostics"]["sequencing_speed"], Value::Null);
+    assert!(
+        directory
+            .html()
+            .contains("the input has no <code>template_duration</code> column")
+    );
+    let header = format!("template_duration\t{HEADER}");
+    for value in ["", "0", "-1", "NaN", "inf", "-inf", "invalid", "1e-320"] {
+        let report = directory.analyze(&format!("{header}{value}\t{ROW}"));
+        let speed = &report["diagnostics"]["sequencing_speed"];
+        assert_eq!(report["metrics"]["basecalled_reads"], 1);
+        assert_eq!(speed["eligible_reads"], 0, "{value}");
+        assert_eq!(speed["mean_bp_per_second"], Value::Null);
+        assert!(
+            speed["histogram"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|b| b["read_count"] == 0)
+        );
+        assert!(
+            directory
+                .html()
+                .contains("No eligible sequencing speed observations")
+        );
+    }
+    let valid = directory.analyze(&format!("{header}0.5\t{ROW}"));
+    assert_eq!(
+        valid["diagnostics"]["sequencing_speed"]["mean_bp_per_second"],
+        20.0
+    );
+    // A valid positive template duration cannot make a zero-length row eligible.
+    let zero = directory.analyze(&format!("{header}1\t{}", ROW.replace("\t10\t", "\t0\t")));
+    assert_eq!(zero["diagnostics"]["sequencing_speed"]["eligible_reads"], 0);
+}
+
+#[test]
+fn speed_extremes_and_fixed_histogram_boundaries_remain_finite() {
+    let directory = TestDirectory::new();
+    let header = format!("template_duration\t{HEADER}");
+    let mut data = header.clone();
+    for speed in [
+        50.0, 100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0,
+    ] {
+        data.push_str(&format!("{}\t{ROW}", 10.0 / speed));
+    }
+    let report = directory.analyze(&data);
+    let histogram = report["diagnostics"]["sequencing_speed"]["histogram"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        histogram
+            .iter()
+            .map(|b| b["read_count"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![1; 9]
+    );
+    for duration in ["1e-307", "1e308"] {
+        let report = directory.analyze(&format!("{header}{duration}\t{ROW}"));
+        let speed = report["diagnostics"]["sequencing_speed"]["mean_bp_per_second"]
+            .as_f64()
+            .unwrap();
+        assert!(speed.is_finite() && speed > 0.0);
+        let html = directory.html();
+        for invalid in ["NaN", "Infinity", "=\"inf", " inf"] {
+            assert!(!html.contains(invalid), "{invalid} at {duration}");
+        }
+    }
+}
+
+#[test]
+fn termination_diagnostics_have_explicit_denominators_and_deterministic_order() {
+    let directory = TestDirectory::new();
+    let report = directory.analyze(&fs::read_to_string(fixture("deep_qc.tsv")).unwrap());
+    let reasons = report["diagnostics"]["termination_reasons"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        reasons
+            .iter()
+            .map(|r| r["end_reason"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["normal", "zero", "other", "unfamiliar_reason"]
+    );
+    let normal = &reasons[0];
+    assert_eq!(normal["summary_record_percent"], 40.0);
+    assert_eq!(normal["zero_length_fraction"], 0.0);
+    assert_eq!(normal["basecalled_read_fraction"], 1.0);
+    assert_eq!(normal["passed_fraction_of_basecalled"], 0.5);
+    assert_eq!(normal["passed_reads"], 2);
+    assert!(
+        (normal["total_yield_percent"].as_f64().unwrap() - 100.0 * 850.0 / 2150.0).abs() < 1e-12
+    );
+    assert_eq!(reasons[1]["zero_length_fraction"], 1.0);
+    assert_eq!(reasons[1]["passed_fraction_of_basecalled"], Value::Null);
+    assert_eq!(reasons[1]["total_yield_percent"], 0.0);
+    let html = directory.html();
+    let table = html.split("class=\"reason-table\"").nth(1).unwrap();
+    assert!(table.find(">normal</span>").unwrap() < table.find(">zero</span>").unwrap());
+    assert!(table.contains("Passed / basecalled (%)"));
+    let zero = directory.analyze(&format!("{HEADER}{}", ROW.replace("\t10\t", "\t0\t")));
+    assert_eq!(
+        zero["diagnostics"]["termination_reasons"][0]["total_yield_percent"],
+        Value::Null
+    );
+    // Existing alphabetical order of the original end_reasons array is retained.
+    let tied = directory.analyze(&fs::read_to_string(fixture("synthetic.tsv")).unwrap());
+    assert_eq!(
+        tied["diagnostics"]["termination_reasons"][0]["end_reason"],
+        "future_reason"
+    );
+}
+
+#[test]
+fn empty_deep_reports_and_metadata_are_safe() {
+    let directory = TestDirectory::new();
+    let header = format!("template_duration\t{HEADER}");
+    let report = directory.analyze_with_args(&header, &["--flowcell-layout", "promethion-3000"]);
+    assert_eq!(report["diagnostics"]["channel_activity"], json!([]));
+    assert_eq!(report["diagnostics"]["channel_mux"], json!([]));
+    assert_eq!(report["diagnostics"]["termination_reasons"], json!([]));
+    assert_eq!(
+        report["diagnostics"]["sequencing_speed"]["eligible_reads"],
+        0
+    );
+    assert!(directory.html().contains("No observed channel/mux pairs."));
+    assert_eq!(
+        directory.html().matches("class=\"heatmap-cell\"").count(),
+        6000
+    );
+    let reason = "</script><img src=x onerror=alert(1)>";
+    let data = format!("{header}1\t{}", ROW.replace("unknown", reason));
+    let report = directory.analyze_with_args(&data, &["--flowcell-layout", "promethion-3000"]);
+    assert_eq!(
+        report["diagnostics"]["termination_reasons"][0]["end_reason"],
+        reason
+    );
+    let html = directory.html();
+    assert!(!html.contains(reason));
+    assert!(!html.contains("<img"));
+    assert!(html.contains("&lt;/script&gt;&lt;img"));
+    assert_eq!(html.matches("<script>").count(), 1);
+}
+
+#[test]
+fn activity_counts_distinct_channels_in_unsorted_bins_and_preserves_gaps() {
+    let directory = TestDirectory::new();
+    let row = |channel, time, length| {
+        format!("synthetic-run\t{channel}\t9\t{time}\t1\tTRUE\t{length}\t12\tunknown\n")
+    };
+    let data = format!(
+        "{HEADER}{}{}{}{}{}{}",
+        row(1, 3600, 10),
+        row(1, 0, 10),
+        row(1, 100, 10),
+        row(2, 3600, 10),
+        row(1, 3700, 10),
+        row(3, 900, 0)
+    );
+    let report = directory.analyze(&data);
+    assert_eq!(
+        report["diagnostics"]["channel_activity"],
+        json!([
+            {"start_seconds":0,"basecalled_producing_channels":1},
+            {"start_seconds":900,"basecalled_producing_channels":0},
+            {"start_seconds":3600,"basecalled_producing_channels":2}
+        ])
+    );
+    let html = directory.html();
+    let chart = html
+        .split("id=\"channel-activity-caption\"")
+        .nth(1)
+        .unwrap()
+        .split("</figure>")
+        .next()
+        .unwrap();
+    let path = chart
+        .split("class=\"cumulative-line\" d=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    assert_eq!(path.matches('M').count(), 2);
+    assert_eq!(path.matches('L').count(), 1);
 }

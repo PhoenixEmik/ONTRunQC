@@ -1,6 +1,7 @@
 mod cli;
 mod html;
 mod input;
+mod layout;
 mod metrics;
 mod record;
 mod report;
@@ -26,12 +27,16 @@ fn main() -> std::process::ExitCode {
 
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
-        Command::Analyze { input, output } => {
+        Command::Analyze {
+            input,
+            output,
+            flowcell_layout,
+        } => {
             let file = File::open(&input)
                 .with_context(|| format!("cannot open input {}", input.display()))?;
             let mut reader = SummaryReader::new(file)
                 .with_context(|| format!("invalid input {}", input.display()))?;
-            let mut metrics = Aggregator::default();
+            let mut metrics = Aggregator::new(flowcell_layout, reader.has_template_duration());
             while let Some(record) = reader.next_record()? {
                 metrics
                     .add(&record)

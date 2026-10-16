@@ -25,7 +25,7 @@ pub fn render(report: &Report) -> String {
 <a href="#overview">01 <span>Run overview</span></a><a href="#yield">02 <span>Sequencing yield</span></a>
 <a href="#length">03 <span>Read length</span></a><a href="#quality">04 <span>Read quality</span></a>
 <a href="#channels">05 <span>Channels</span></a><a href="#mux">06 <span>Mux performance</span></a>
-<a href="#termination">07 <span>Termination reasons</span></a>
+<a href="#termination">07 <span>Termination reasons</span></a><a href="#speed">08 <span>Sequencing speed</span></a>
 <div class="nav-note">One run.<br>Summary-derived QC.<br>Available offline.</div></nav><main>"##);
     overview(&mut out, report);
     sequencing_yield(&mut out, report);
@@ -34,6 +34,7 @@ pub fn render(report: &Report) -> String {
     channels(&mut out, report);
     muxes(&mut out, report);
     termination(&mut out, report);
+    sequencing_speed(&mut out, report);
     write!(out, "<footer>PoreGauge {} · JSON schema {} · Post-sequencing QC from sequencing summaries. No automatic QC judgment.</footer></main></div><script>",
         escape(report.tool.version), report.schema_version).unwrap();
     out.push_str(SCRIPT);
@@ -169,22 +170,29 @@ fn sequencing_yield(out: &mut String, report: &Report) {
         "Basecalled reads per interval",
         TimePlot::Reads,
     );
-    out.push_str("</div><details><summary>View exact interval values</summary><div class=\"table-scroll\"><table><caption>Occupied time bins; omitted intervals contain no records.</caption><thead><tr><th class=\"label\" scope=\"col\">Start–end (s)</th><th scope=\"col\">Records</th><th scope=\"col\">Basecalled reads</th><th scope=\"col\">Yield (bp)</th><th scope=\"col\">Cumulative (bp)</th></tr></thead><tbody>");
-    for bin in &report.time_bins {
+    out.push_str("</div>");
+    diagnostic_time_plot(out, report, false);
+    out.push_str("<p class=\"annotation\">Observed basecalled-producing channels are counted once per 15-minute read-start interval. This is not MinKNOW active pore count, pore occupancy, or pore availability. Missing intervals contain no records; line segments do not bridge missing intervals.</p><details><summary>View exact interval values</summary><div class=\"table-scroll\"><table><caption>Occupied time bins; omitted intervals contain no records.</caption><thead><tr><th class=\"label\" scope=\"col\">Start–end (s)</th><th scope=\"col\">Records</th><th scope=\"col\">Basecalled reads</th><th scope=\"col\">Yield (bp)</th><th scope=\"col\">Cumulative (bp)</th><th scope=\"col\">Producing channels</th></tr></thead><tbody>");
+    for (bin, activity) in report
+        .time_bins
+        .iter()
+        .zip(&report.diagnostics.channel_activity)
+    {
         write!(
             out,
-            "<tr><th class=\"label\" scope=\"row\">{}–{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr><th class=\"label\" scope=\"row\">{}–{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             count(bin.start_seconds),
             count(bin.end_seconds),
             count(bin.total_records),
             count(bin.basecalled_reads),
             count(bin.yield_bp),
-            count(bin.cumulative_yield_bp)
+            count(bin.cumulative_yield_bp),
+            count(activity.basecalled_producing_channels)
         )
         .unwrap();
     }
     if report.time_bins.is_empty() {
-        empty_row(out, 5, "No time-bin observations.");
+        empty_row(out, 6, "No time-bin observations.");
     }
     out.push_str("</tbody></table></div></details></section>");
 }
@@ -431,8 +439,9 @@ fn channels(out: &mut String, report: &Report) {
         "channels",
         "05",
         "Channel performance",
-        "Channel identifiers carry no assumed physical position. Channels with only zero-length records have no mean Q-score.",
+        "Ranked views use channel identifiers only; physical maps require explicit layout selection. Channels with only zero-length records have no mean Q-score.",
     );
+    physical_heatmaps(out, report);
     figure(
         out,
         "channel-yield",
@@ -483,7 +492,9 @@ fn channels(out: &mut String, report: &Report) {
     if report.channels.is_empty() {
         empty_row(out, 7, "No observed channels.");
     }
-    out.push_str(r##"</tbody></table></div><div class="pagination" id="channel-pagination" hidden><span id="channel-status" role="status" aria-live="polite"></span><div><button id="channel-previous" type="button">Previous</button><button id="channel-next" type="button">Next</button></div></div><noscript><p class="annotation">JavaScript is disabled. All channels remain available in the scrollable table.</p></noscript></section>"##);
+    out.push_str(r##"</tbody></table></div><div class="pagination" id="channel-pagination" hidden><span id="channel-status" role="status" aria-live="polite"></span><div><button id="channel-previous" type="button">Previous</button><button id="channel-next" type="button">Next</button></div></div><noscript><p class="annotation">JavaScript is disabled. All channels remain available in the scrollable table.</p></noscript>"##);
+    channel_mux_table(out, report);
+    out.push_str("</section>");
 }
 
 fn muxes(out: &mut String, report: &Report) {
@@ -529,7 +540,20 @@ fn muxes(out: &mut String, report: &Report) {
         scale,
         &yields,
     );
-    out.push_str("</div><div class=\"table-scroll\"><table><caption>Exact mux totals</caption><thead><tr><th scope=\"col\">Mux</th><th scope=\"col\">Records</th><th scope=\"col\">Basecalled reads</th><th scope=\"col\">Yield (bp)</th><th scope=\"col\">Passed yield (bp)</th></tr></thead><tbody>");
+    let passed: Vec<_> = report
+        .muxes
+        .iter()
+        .map(|m| (format!("Mux {}", m.mux), m.passed_yield_bp, "passed"))
+        .collect();
+    bars(
+        out,
+        "mux-passed-yield",
+        "Passed yield by mux",
+        &format!("Yield ({unit})"),
+        scale,
+        &passed,
+    );
+    out.push_str("</div><p class=\"annotation\">Mux identifiers are used as observed, without assuming four values. Read counts and yields do not measure pore occupancy. The channel × mux breakdown is available in the channel section.</p><div class=\"table-scroll\"><table><caption>Exact mux totals</caption><thead><tr><th scope=\"col\">Mux</th><th scope=\"col\">Records</th><th scope=\"col\">Basecalled reads</th><th scope=\"col\">Yield (bp)</th><th scope=\"col\">Passed yield (bp)</th></tr></thead><tbody>");
     for m in &report.muxes {
         write!(
             out,
@@ -556,7 +580,7 @@ fn termination(out: &mut String, report: &Report) {
         "Read termination reasons",
         "Unknown categories are preserved verbatim. A termination reason does not determine pass or fail status.",
     );
-    out.push_str("<div class=\"table-scroll\"><table class=\"reason-table\"><caption>Termination categories; bars compare summary record counts</caption><thead><tr><th class=\"label\" scope=\"col\">End reason</th><th scope=\"col\">Summary records</th><th scope=\"col\">Basecalled reads</th><th scope=\"col\">Yield (bp)</th></tr></thead><tbody>");
+    out.push_str("<div class=\"table-scroll\"><table class=\"reason-table\"><caption>Termination categories; bars compare summary record counts</caption><thead><tr><th class=\"label\" scope=\"col\">End reason</th><th scope=\"col\">Summary records</th><th scope=\"col\">Basecalled reads</th><th scope=\"col\">Yield (bp)</th><th scope=\"col\">All records (%)</th><th scope=\"col\">Zero-length (%)</th><th scope=\"col\">Basecalled (%)</th><th scope=\"col\">Passed / basecalled (%)</th><th scope=\"col\">All yield (%)</th></tr></thead><tbody>");
     let max = report
         .end_reasons
         .iter()
@@ -564,14 +588,295 @@ fn termination(out: &mut String, report: &Report) {
         .max()
         .unwrap_or(1)
         .max(1);
-    for reason in &report.end_reasons {
-        write!(out, "<tr><th class=\"label\" scope=\"row\"><span class=\"reason-name\">{}</span></th><td class=\"bar-cell\"><span class=\"record-count\">{}</span><svg class=\"inline-bar\" viewBox=\"0 0 100 4\" preserveAspectRatio=\"none\" aria-hidden=\"true\"><rect class=\"bar-track\" width=\"100\" height=\"4\"/><rect class=\"bar-fill\" width=\"{:.2}\" height=\"4\"/></svg></td><td>{}</td><td>{}</td></tr>",
+    let reasons: std::collections::BTreeMap<_, _> = report
+        .end_reasons
+        .iter()
+        .map(|r| (r.end_reason.as_str(), r))
+        .collect();
+    for diagnostic in &report.diagnostics.termination_reasons {
+        let reason = reasons[diagnostic.end_reason.as_str()];
+        write!(out, "<tr><th class=\"label\" scope=\"row\"><span class=\"reason-name\">{}</span></th><td class=\"bar-cell\"><span class=\"record-count\">{}</span><svg class=\"inline-bar\" viewBox=\"0 0 100 4\" preserveAspectRatio=\"none\" aria-hidden=\"true\"><rect class=\"bar-track\" width=\"100\" height=\"4\"/><rect class=\"bar-fill\" width=\"{:.2}\" height=\"4\"/></svg></td><td>{}</td><td>{}</td>",
             escape(&reason.end_reason), count(reason.total_records), 100.0 * reason.total_records as f64 / max as f64, count(reason.basecalled_reads), count(reason.total_yield_bp)).unwrap();
+        for value in [
+            diagnostic.summary_record_percent,
+            diagnostic.zero_length_fraction.map(|v| v * 100.0),
+            diagnostic.basecalled_read_fraction.map(|v| v * 100.0),
+            diagnostic.passed_fraction_of_basecalled.map(|v| v * 100.0),
+            diagnostic.total_yield_percent,
+        ] {
+            write!(out, "<td>{}</td>", optional(value, 1.0, "%")).unwrap();
+        }
+        out.push_str("</tr>");
     }
     if report.end_reasons.is_empty() {
-        empty_row(out, 4, "No termination observations.");
+        empty_row(out, 9, "No termination observations.");
     }
-    out.push_str("</tbody></table></div></section>");
+    out.push_str("</tbody></table></div><p class=\"annotation\">Sorted by record count, then reason name. Zero-length and basecalled percentages use records within each reason; passed percentage uses basecalled reads within that reason. All-record and all-yield percentages use run totals. Unavailable denominators are shown explicitly.</p></section>");
+}
+
+fn physical_heatmaps(out: &mut String, report: &Report) {
+    let Some(layout) = &report.diagnostics.physical_layout else {
+        out.push_str("<p class=\"annotation\">Physical channel maps are disabled. Select <code>--flowcell-layout promethion-3000</code> only for compatible channel numbering.</p>");
+        return;
+    };
+    out.push_str("<h3>PromethION spatial yield · 3000-channel layout</h3><p class=\"annotation\">Explicitly selected EPI2ME Basic QC Tutorial map: twelve 25 × 10 blocks, forming 25 rows × 120 columns. Row and column indices are zero-based; orientation follows the reference, not a verified instrument-facing orientation. Unobserved channels are not evidence of dead or inactive pores. Exact observed values are also available in the channel table.</p>");
+    let channels: std::collections::BTreeMap<_, _> =
+        report.channels.iter().map(|c| (c.channel, c)).collect();
+    for passed in [false, true] {
+        let (id, title, hue) = if passed {
+            (
+                "spatial-passed-yield",
+                "Passed yield per physical channel",
+                164,
+            )
+        } else {
+            (
+                "spatial-total-yield",
+                "Total basecalled yield per physical channel",
+                228,
+            )
+        };
+        let maximum = report
+            .channels
+            .iter()
+            .map(|c| {
+                if passed {
+                    c.passed_yield_bp
+                } else {
+                    c.total_yield_bp
+                }
+            })
+            .max()
+            .unwrap_or(0);
+        let (scale, unit) = bp_scale(maximum);
+        figure(out, id, title);
+        out.push_str(
+            "<p class=\"scroll-hint\">Scroll map horizontally to view all 120 columns.</p>",
+        );
+        let high_lightness = if maximum == 0 { 96 } else { 42 };
+        write!(out, "<div class=\"plot-scroll\" tabindex=\"0\" role=\"group\" aria-label=\"Scrollable physical channel heatmap\"><svg class=\"heatmap\" viewBox=\"0 0 1280 360\" role=\"group\" aria-labelledby=\"{id}-caption\"><defs><pattern id=\"{id}-unobserved\" width=\"4\" height=\"4\" patternUnits=\"userSpaceOnUse\"><rect width=\"4\" height=\"4\" fill=\"#f1f3f6\"/><path d=\"M0 0L4 4\" stroke=\"#cbd2df\" stroke-width=\"1\"/></pattern><linearGradient id=\"{id}-scale\"><stop stop-color=\"hsl({hue} 45% 96%)\"/><stop offset=\"1\" stop-color=\"hsl({hue} 45% {high_lightness}%)\"/></linearGradient></defs>").unwrap();
+        for coordinate in &layout.channel_coordinates {
+            let observed = channels.get(&coordinate.channel);
+            let value = observed.map(|c| {
+                if passed {
+                    c.passed_yield_bp
+                } else {
+                    c.total_yield_bp
+                }
+            });
+            let fill = value.map_or_else(
+                || format!("url(#{id}-unobserved)"),
+                |v| {
+                    let fraction = if maximum == 0 {
+                        0.0
+                    } else {
+                        v as f64 / maximum as f64
+                    };
+                    format!("hsl({hue} 45% {:.2}%)", 96.0 - fraction * 54.0)
+                },
+            );
+            let description = match (observed, value) {
+                (Some(c), Some(v)) => format!(
+                    "Channel {} · row {}, column {}: {} bp {}; {} summary records; {} basecalled reads",
+                    coordinate.channel,
+                    coordinate.row,
+                    coordinate.column,
+                    count(v),
+                    if passed {
+                        "passed yield"
+                    } else {
+                        "total yield"
+                    },
+                    count(c.total_records),
+                    count(c.basecalled_reads)
+                ),
+                _ => format!(
+                    "Channel {} · row {}, column {}: not observed in summary; yield unavailable",
+                    coordinate.channel, coordinate.row, coordinate.column
+                ),
+            };
+            write!(out, "<rect class=\"heatmap-cell\" data-channel=\"{}\" data-yield-bp=\"{}\" x=\"{}\" y=\"{}\" width=\"9\" height=\"9\" fill=\"{fill}\" role=\"img\" aria-labelledby=\"{id}-c{}\"><title id=\"{id}-c{}\">{}</title></rect>", coordinate.channel, value.map(|v| v.to_string()).unwrap_or_default(), 48 + coordinate.column * 10, 28 + coordinate.row * 10, coordinate.channel, coordinate.channel, escape(&description)).unwrap();
+        }
+        for row in [0, 5, 10, 15, 20, 24] {
+            write!(
+                out,
+                "<text class=\"tick\" x=\"38\" y=\"{}\" text-anchor=\"end\">{row}</text>",
+                36 + row * 10
+            )
+            .unwrap();
+        }
+        for column in [0, 20, 40, 60, 80, 100, 119] {
+            write!(
+                out,
+                "<text class=\"tick\" x=\"{}\" y=\"296\" text-anchor=\"middle\">{column}</text>",
+                52 + column * 10
+            )
+            .unwrap();
+        }
+        write!(out, "<text class=\"axis-label\" x=\"48\" y=\"17\">Row</text><text class=\"axis-label\" x=\"1248\" y=\"317\" text-anchor=\"end\">Column</text><rect x=\"48\" y=\"317\" width=\"240\" height=\"10\" fill=\"url(#{id}-scale)\"/><text class=\"tick\" x=\"48\" y=\"349\">0 {unit}</text><text class=\"tick\" x=\"288\" y=\"349\" text-anchor=\"end\">{} {unit}</text><rect x=\"360\" y=\"317\" width=\"14\" height=\"14\" fill=\"url(#{id}-unobserved)\"/><text class=\"tick\" x=\"382\" y=\"329\">Not observed · unavailable yield</text><rect x=\"760\" y=\"317\" width=\"14\" height=\"14\" fill=\"hsl({hue} 45% 96%)\" stroke=\"#aab4c8\"/><text class=\"tick\" x=\"782\" y=\"329\">Observed · zero yield</text></svg></div></figure>", decimal(maximum as f64 / scale)).unwrap();
+    }
+}
+
+fn channel_mux_table(out: &mut String, report: &Report) {
+    out.push_str(r##"<details><summary>View channel × mux yield breakdown</summary><p class="annotation">Observed channel/mux pairs only. Bars compare total yield across pairs. Counts and yield are summary-derived, not pore occupancy.</p>
+<div id="channel-mux-controls" class="table-controls" hidden><label>Find channel <input id="channel-mux-search" type="search" placeholder="Channel ID" autocomplete="off"></label><label>Sort by <select id="channel-mux-sort"><option value="channel">Channel ID ↑</option><option value="mux">Mux ID ↑</option><option value="yield">Yield ↓</option><option value="reads">Basecalled reads ↓</option></select></label><label>Rows <select id="channel-mux-page-size"><option>25</option><option>50</option><option>100</option></select></label></div>
+<div class="table-scroll"><table id="channel-mux-table"><caption>Channel × mux · exact counts and bp; default order is channel then mux</caption><thead><tr><th scope="col">Channel</th><th scope="col">Mux</th><th scope="col">Records</th><th scope="col">Basecalled reads</th><th scope="col">Zero-length records</th><th scope="col">Yield (bp)</th><th scope="col">Passed reads</th><th scope="col">Passed yield (bp)</th></tr></thead><tbody>"##);
+    let maximum = report
+        .diagnostics
+        .channel_mux
+        .iter()
+        .map(|m| m.total_yield_bp)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    for m in &report.diagnostics.channel_mux {
+        write!(out, "<tr data-channel=\"{}\" data-mux=\"{}\" data-yield=\"{}\" data-reads=\"{}\"><th scope=\"row\">{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"bar-cell\"><span class=\"record-count\">{}</span><svg class=\"inline-bar\" viewBox=\"0 0 100 4\" preserveAspectRatio=\"none\" aria-hidden=\"true\"><rect class=\"bar-track\" width=\"100\" height=\"4\"/><rect class=\"bar-fill\" width=\"{:.2}\" height=\"4\"/></svg></td><td>{}</td><td>{}</td></tr>", m.channel, m.mux, m.total_yield_bp, m.basecalled_reads, m.channel, m.mux, count(m.total_records), count(m.basecalled_reads), count(m.zero_length_records), count(m.total_yield_bp), 100.0 * m.total_yield_bp as f64 / maximum as f64, count(m.passed_reads), count(m.passed_yield_bp)).unwrap();
+    }
+    if report.diagnostics.channel_mux.is_empty() {
+        empty_row(out, 8, "No observed channel/mux pairs.");
+    }
+    out.push_str(r##"</tbody></table></div><div class="pagination" id="channel-mux-pagination" hidden><span id="channel-mux-status" role="status" aria-live="polite"></span><div><button id="channel-mux-previous" type="button">Previous</button><button id="channel-mux-next" type="button">Next</button></div></div></details>"##);
+}
+
+fn sequencing_speed(out: &mut String, report: &Report) {
+    section(
+        out,
+        "speed",
+        "08",
+        "Sequencing speed proxy",
+        "Basecalled length / template_duration, in bp/s. This is not a direct motor-speed or raw-signal measurement.",
+    );
+    let Some(speed) = &report.diagnostics.sequencing_speed else {
+        out.push_str("<p class=\"notice\">Sequencing speed is not available: the input has no <code>template_duration</code> column. <code>duration</code> is not substituted.</p></section>");
+        return;
+    };
+    write!(out, "<div class=\"stat-line\"><span>Eligible reads <strong data-metric=\"speed_eligible_reads\" data-value=\"{}\">{}</strong></span><span>Mean per-read speed <strong data-metric=\"mean_speed_bp_per_second\" data-value=\"{}\">{}</strong></span></div><p class=\"annotation\">Only positive-length reads with a finite positive template duration and a finite ratio are eligible. Blank or invalid optional durations are excluded from speed only; no duration fallback or speed threshold is applied. Mean is arithmetic per eligible read. Intervals are lower-inclusive and upper-exclusive; the final interval is open-ended.</p>", speed.summary.eligible_reads, count(speed.summary.eligible_reads), speed.summary.mean_bp_per_second.map(|v| v.to_string()).unwrap_or_default(), optional(speed.summary.mean_bp_per_second, 1.0, "bp/s")).unwrap();
+    if speed.summary.eligible_reads == 0 {
+        out.push_str("<p class=\"notice\">No eligible sequencing speed observations. Speed is not available.</p></section>");
+        return;
+    }
+    out.push_str("<div class=\"chart-grid\">");
+    let rows: Vec<_> = speed
+        .histogram
+        .iter()
+        .map(|b| {
+            (
+                format!(
+                    "{} bp/s",
+                    quality_interval(
+                        b.lower_inclusive_bp_per_second,
+                        b.upper_exclusive_bp_per_second
+                    )
+                ),
+                b.read_count,
+                "primary",
+            )
+        })
+        .collect();
+    bars(
+        out,
+        "speed-distribution",
+        "Read speed proxy distribution",
+        "Eligible reads (reads)",
+        1.0,
+        &rows,
+    );
+    diagnostic_time_plot(out, report, true);
+    out.push_str("</div><p class=\"annotation\">Mean speed is attributed to read start time in 15-minute bins. Unavailable or missing intervals are not joined by lines.</p></section>");
+}
+
+// The two observed diagnostics share time coordinates and gap handling.
+fn diagnostic_time_plot(out: &mut String, report: &Report, speed: bool) {
+    let (id, title, axis) = if speed {
+        (
+            "speed-time",
+            "Mean read speed proxy over time",
+            "Mean read speed (bp/s)",
+        )
+    } else {
+        (
+            "channel-activity",
+            "Channels producing basecalled reads over time",
+            "Basecalled-producing channels (channels)",
+        )
+    };
+    let points: Vec<_> = if speed {
+        report
+            .diagnostics
+            .sequencing_speed
+            .as_ref()
+            .map(|s| {
+                s.time_bins
+                    .iter()
+                    .map(|b| (b.start_seconds, b.summary.mean_bp_per_second))
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        report
+            .diagnostics
+            .channel_activity
+            .iter()
+            .map(|b| {
+                (
+                    b.start_seconds,
+                    Some(b.basecalled_producing_channels as f64),
+                )
+            })
+            .collect()
+    };
+    figure(out, id, title);
+    let maximum = points
+        .iter()
+        .filter_map(|(_, value)| *value)
+        .fold(0.0, f64::max);
+    if maximum == 0.0 {
+        empty_chart(
+            out,
+            "No eligible basecalled observations in these intervals.",
+        );
+        return;
+    }
+    // Finite extreme ratios remain valid data; avoid overflow in rounded axes.
+    let (ymax, ticks) = if !(1e-200..1e300).contains(&maximum) {
+        (maximum, 4)
+    } else {
+        plot_scale(maximum, !speed)
+    };
+    let end = report.time_bins.last().map_or(900, |b| b.end_seconds) as f64;
+    svg_start(out, id, title, 294);
+    axes(out, ymax, ticks, axis);
+    for i in 0..=4 {
+        x_tick(
+            out,
+            LEFT + (RIGHT - LEFT) * i as f64 / 4.0,
+            &decimal(end / 3600.0 * i as f64 / 4.0),
+        );
+    }
+    out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Time from run start (h)</text>");
+    let mut path = String::new();
+    let mut previous = None;
+    for (start, value) in points {
+        let Some(value) = value else {
+            previous = None;
+            continue;
+        };
+        let x = LEFT + (start as f64 + 450.0) / end * (RIGHT - LEFT);
+        let y = BOTTOM - value / ymax * (BOTTOM - TOP);
+        let command = if previous.is_some_and(|last| start - last == 900) {
+            'L'
+        } else {
+            'M'
+        };
+        write!(path, " {command} {x:.2} {y:.2}").unwrap();
+        write!(out, "<circle class=\"primary\" cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"3\"><title>[{}, {}) seconds: {} {}</title></circle>", start, start + 900, decimal(value), if speed { "bp/s mean read speed" } else { "basecalled-producing channels" }).unwrap();
+        previous = Some(start);
+    }
+    write!(
+        out,
+        "<path class=\"cumulative-line\" d=\"{path}\"/></svg></div></figure>"
+    )
+    .unwrap();
 }
 
 fn figure(out: &mut String, id: &str, title: &str) {
@@ -602,7 +907,7 @@ fn empty_row(out: &mut String, columns: u8, message: &str) {
 fn axes(out: &mut String, ymax: f64, ticks: usize, label: &str) {
     for i in 0..=ticks {
         let y = BOTTOM - (BOTTOM - TOP) * i as f64 / ticks as f64;
-        write!(out, "<line class=\"grid-line\" x1=\"{LEFT}\" x2=\"{RIGHT}\" y1=\"{y:.2}\" y2=\"{y:.2}\"/><text class=\"tick\" x=\"68\" y=\"{:.2}\" text-anchor=\"end\">{}</text>", y + 4.0, compact(ymax * i as f64 / ticks as f64)).unwrap();
+        write!(out, "<line class=\"grid-line\" x1=\"{LEFT}\" x2=\"{RIGHT}\" y1=\"{y:.2}\" y2=\"{y:.2}\"/><text class=\"tick\" x=\"68\" y=\"{:.2}\" text-anchor=\"end\">{}</text>", y + 4.0, compact(ymax * (i as f64 / ticks as f64))).unwrap();
     }
     write!(
         out,

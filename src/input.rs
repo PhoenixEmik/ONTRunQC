@@ -21,7 +21,10 @@ const REQUIRED: [&str; 9] = [
     "end_reason",
 ];
 
-struct Columns([usize; REQUIRED.len()]);
+struct Columns {
+    required: [usize; REQUIRED.len()],
+    template_duration: Option<usize>,
+}
 
 impl Columns {
     fn new(headers: &StringRecord) -> Result<Self> {
@@ -41,12 +44,15 @@ impl Columns {
                 .position(|header| header == *name)
                 .with_context(|| format!("line 1: missing required column {name:?}"))?;
         }
-        Ok(Self(positions))
+        Ok(Self {
+            required: positions,
+            template_duration: headers.iter().position(|h| h == "template_duration"),
+        })
     }
 
     fn parse<'a>(&self, row: &'a ByteRecord, line: u64) -> Result<Record<'a>> {
         let field = |index: usize| -> Result<&'a str> {
-            std::str::from_utf8(&row[self.0[index]])
+            std::str::from_utf8(&row[self.required[index]])
                 .with_context(|| format!("column {:?}: expected UTF-8", REQUIRED[index]))
         };
         let run_id = field(0)?;
@@ -79,6 +85,15 @@ impl Columns {
             channel,
             mux,
             start_time,
+            // Optional diagnostics never replace validation of required fields.
+            // Blank, malformed, nonpositive, or nonfinite durations are ineligible.
+            template_duration: self.template_duration.and_then(|i| {
+                std::str::from_utf8(&row[i])
+                    .ok()?
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|v| v.is_finite() && *v > 0.0)
+            }),
             passed,
             length,
             qscore,
@@ -179,6 +194,10 @@ impl<R: Read> SummaryReader<R> {
 
     pub fn run_id(&self) -> Option<&str> {
         self.run_id.as_deref()
+    }
+
+    pub fn has_template_duration(&self) -> bool {
+        self.columns.template_duration.is_some()
     }
 
     pub fn next_record(&mut self) -> Result<Option<Record<'_>>> {
