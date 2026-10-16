@@ -45,6 +45,10 @@ impl TestDirectory {
         );
         serde_json::from_slice(&fs::read(self.0.join("output/report.json")).unwrap()).unwrap()
     }
+
+    fn html(&self) -> String {
+        fs::read_to_string(self.0.join("output/report.html")).unwrap()
+    }
 }
 
 impl Drop for TestDirectory {
@@ -71,6 +75,7 @@ fn assert_invalid(data: &str, expected: &str) {
         "expected {expected:?}, got {error:?}"
     );
     assert!(!directory.0.join("output/report.json").exists());
+    assert!(!directory.0.join("output/report.html").exists());
 }
 
 #[test]
@@ -368,8 +373,305 @@ fn failed_analysis_preserves_existing_report() {
     fs::create_dir(directory.0.join("output")).unwrap();
     let path = directory.0.join("output/report.json");
     fs::write(&path, b"previous report").unwrap();
+    let html_path = directory.0.join("output/report.html");
+    fs::write(&html_path, b"previous HTML").unwrap();
     assert!(!directory.run(&input).status.success());
     assert_eq!(fs::read(path).unwrap(), b"previous report");
+    assert_eq!(fs::read(html_path).unwrap(), b"previous HTML");
+}
+
+#[test]
+fn html_contains_all_sections_and_matches_json_statistics() {
+    let directory = TestDirectory::new();
+    let report = directory.analyze(&fs::read_to_string(fixture("synthetic.tsv")).unwrap());
+    let html = directory.html();
+    assert!(html.starts_with("<!doctype html>"));
+    for id in [
+        "overview",
+        "yield",
+        "length",
+        "quality",
+        "channels",
+        "mux",
+        "termination",
+    ] {
+        assert!(html.contains(&format!("<section id=\"{id}\"")));
+        assert!(html.contains(&format!("href=\"#{id}\"")));
+    }
+    for key in [
+        "total_records",
+        "basecalled_reads",
+        "total_yield_bp",
+        "passed_yield_bp",
+        "n50_bp",
+        "mean_read_length_bp",
+        "median_read_length_bp",
+    ] {
+        let value = &report["metrics"][key];
+        // HTML data attributes preserve the unscaled values, independently of units.
+        let expected = value
+            .as_u64()
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| value.as_f64().unwrap().to_string());
+        assert!(html.contains(&format!("data-metric=\"{key}\" data-value=\"{expected}\"")));
+    }
+    for key in ["mean_qscore", "median_qscore"] {
+        let expected = report["quality"][key].as_f64().unwrap().to_string();
+        assert!(html.contains(&format!("data-metric=\"{key}\" data-value=\"{expected}\"")));
+    }
+    assert!(html.contains("data-metric=\"pass_rate_percent\" data-value=\"50\""));
+    assert!(html.contains("0.0000001 Gb"));
+    assert!(html.contains("0.03 kb"));
+    assert!(html.contains("0.025 kb"));
+    assert!(html.contains("[1, 1,000)"));
+    assert!(html.contains("future_reason"));
+    assert!(html.contains("data-channel=\"3\" data-yield=\"0\" data-reads=\"0\" data-qscore=\"\""));
+    assert!(!html.contains("read-1"));
+    assert!(!html.contains("synthetic.fastq"));
+}
+
+#[test]
+fn html_has_no_external_resource_dependencies() {
+    let directory = TestDirectory::new();
+    directory.analyze(&format!("{HEADER}{ROW}"));
+    let html = directory.html();
+    for forbidden in [
+        "http://",
+        "https://",
+        "src=",
+        "@import",
+        "url(",
+        "fetch(",
+        "XMLHttpRequest",
+        "WebSocket",
+        "<link",
+    ] {
+        assert!(!html.contains(forbidden), "found dependency: {forbidden}");
+    }
+    for href in html.split("href=\"").skip(1) {
+        assert!(href.starts_with('#'));
+    }
+    assert!(html.contains("<style>"));
+    assert!(html.contains("<svg"));
+    assert_eq!(html.matches("<script>").count(), 1);
+    assert!(html.contains("<noscript>"));
+}
+
+#[test]
+fn table_alignment_distinguishes_labels_from_numeric_identifiers() {
+    let directory = TestDirectory::new();
+    directory.analyze(&fs::read_to_string(fixture("synthetic.tsv")).unwrap());
+    let html = directory.html();
+    for label in [
+        "Start–end (s)",
+        "Length interval (bp)",
+        "Q-score interval",
+        "End reason",
+    ] {
+        assert!(html.contains(&format!("<th class=\"label\" scope=\"col\">{label}</th>")));
+    }
+    for numeric_header in [
+        "Channel",
+        "Mux",
+        "Records",
+        "Basecalled reads",
+        "Yield (bp)",
+    ] {
+        assert!(html.contains(&format!("<th scope=\"col\">{numeric_header}</th>")));
+        assert!(!html.contains(&format!(
+            "<th class=\"label\" scope=\"col\">{numeric_header}</th>"
+        )));
+    }
+    let channels = html
+        .split("id=\"channel-table\"")
+        .nth(1)
+        .unwrap()
+        .split("</table>")
+        .next()
+        .unwrap();
+    assert!(!channels.contains("class=\"label\""));
+    assert!(channels.contains("<th scope=\"row\">1</th>"));
+    assert!(channels.contains("<td>Not available</td>"));
+}
+
+#[test]
+fn termination_bars_and_accessible_counts_share_the_correct_table_cell() {
+    let directory = TestDirectory::new();
+    let reason = "unknown_reason_with_a_very_long_unbroken_name_".repeat(8);
+    directory.analyze(&format!("{HEADER}{}", ROW.replace("unknown", &reason)));
+    let html = directory.html();
+    let table = html
+        .split("<table class=\"reason-table\">")
+        .nth(1)
+        .unwrap()
+        .split("</table>")
+        .next()
+        .unwrap();
+    assert!(table.contains(&format!(
+        "<th class=\"label\" scope=\"row\"><span class=\"reason-name\">{reason}</span></th>"
+    )));
+    let cell = table
+        .split("<td class=\"bar-cell\">")
+        .nth(1)
+        .unwrap()
+        .split("</td>")
+        .next()
+        .unwrap();
+    assert!(cell.starts_with("<span class=\"record-count\">1</span>"));
+    assert!(cell.contains("preserveAspectRatio=\"none\" aria-hidden=\"true\""));
+    assert!(cell.contains("<rect class=\"bar-track\" width=\"100\" height=\"4\"/>"));
+    assert!(cell.contains("<rect class=\"bar-fill\" width=\"100.00\" height=\"4\"/>"));
+    assert!(cell.ends_with("</svg>"));
+    assert!(table.contains("</svg></td><td>1</td><td>10</td>"));
+}
+
+#[test]
+fn metadata_cannot_inject_html_or_scripts() {
+    let directory = TestDirectory::new();
+    let run = "run\"><img src=x onerror=alert(1)>&'";
+    let reason = "</script><script>alert('x')</script><svg onload=alert(1)>";
+    let data = format!(
+        "{HEADER}{}",
+        ROW.replace("synthetic-run", run).replace("unknown", reason)
+    );
+    let report = directory.analyze(&data);
+    let html = directory.html();
+    assert_eq!(report["run"]["run_id"], run);
+    assert_eq!(report["end_reasons"][0]["end_reason"], reason);
+    assert!(html.contains("run&quot;&gt;&lt;img src=x onerror=alert(1)&gt;&amp;&#39;"));
+    assert!(html.contains(
+        "&lt;/script&gt;&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;&lt;svg onload=alert(1)&gt;"
+    ));
+    assert!(!html.contains("<img"));
+    assert!(!html.contains("<svg onload"));
+    assert_eq!(html.matches("<script>").count(), 1);
+    assert_eq!(html.matches("</script>").count(), 1);
+}
+
+#[test]
+fn empty_and_zero_length_only_html_show_unavailable_statistics() {
+    for data in [
+        HEADER.to_owned(),
+        format!("{HEADER}{}", ROW.replace("\t10\t12.5\t", "\t0\t0\t")),
+    ] {
+        let directory = TestDirectory::new();
+        directory.analyze(&data);
+        let html = directory.html();
+        for key in [
+            "n50_bp",
+            "mean_read_length_bp",
+            "mean_qscore",
+            "median_qscore",
+            "median_read_length_bp",
+            "pass_rate_percent",
+        ] {
+            assert!(
+                html.contains(&format!("data-metric=\"{key}\" data-value=\"\"")),
+                "missing unavailable {key}"
+            );
+        }
+        assert!(html.contains("No basecalled reads are available."));
+        assert!(html.contains("No basecalled channel yield available."));
+        assert!(html.contains("Not available"));
+        assert!(!html.contains("NaN"));
+        assert!(!html.contains("Infinity"));
+        assert!(!html.contains("height=\"-"));
+    }
+}
+
+#[test]
+fn html_time_bins_preserve_gaps_and_relative_units() {
+    let directory = TestDirectory::new();
+    let second = ROW.replace("\t0\t1\tTRUE", "\t3600\t1\tTRUE");
+    let report = directory.analyze(&format!("{HEADER}{ROW}{second}"));
+    assert_eq!(report["time_bins"].as_array().unwrap().len(), 2);
+    let html = directory.html();
+    assert!(html.contains("Time from run start (h)"));
+    assert!(html.contains("[0, 900) seconds: 10 bp"));
+    assert!(html.contains("Through 4500 seconds: 20 bp cumulative"));
+    assert!(html.contains("[3600, 4500) seconds: 10 bp"));
+    assert!(!html.contains("[900, 1800) seconds:"));
+    assert!(html.contains("Cumulative yield steps at interval ends"));
+}
+
+#[test]
+fn html_handles_thousands_of_channels_without_a_channel_bar_chart() {
+    let directory = TestDirectory::new();
+    let mut data = HEADER.to_owned();
+    for channel in 1..=4096 {
+        data.push_str(&format!(
+            "synthetic-run\t{channel}\t1\t0\t1\tTRUE\t10\t12\tunknown\n"
+        ));
+    }
+    directory.analyze(&data);
+    let html = directory.html();
+    assert_eq!(html.matches("<tr data-channel=").count(), 4096);
+    assert_eq!(html.matches("class=\"channel-point\"").count(), 4096);
+    assert!(html.contains("data-channel=\"4096\""));
+    assert!(html.contains("id=\"channel-pagination\""));
+    assert!(html.contains("id=\"channel-search\""));
+    assert!(
+        html.len() < 4_000_000,
+        "unexpectedly large aggregated report"
+    );
+}
+
+#[test]
+fn html_is_deterministic_and_replacements_leave_no_temporary_files() {
+    let directory = TestDirectory::new();
+    let data = fs::read_to_string(fixture("synthetic.tsv")).unwrap();
+    directory.analyze(&data);
+    let first = directory.html();
+    directory.analyze(&data);
+    assert_eq!(first, directory.html());
+    let files: Vec<_> = fs::read_dir(directory.0.join("output"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(files.len(), 2);
+    assert!(
+        files
+            .iter()
+            .all(|name| name == "report.json" || name == "report.html")
+    );
+}
+
+#[test]
+fn html_preserves_large_integer_yields_without_nonfinite_plot_coordinates() {
+    let directory = TestDirectory::new();
+    let first = ROW.replace("\t10\t", "\t9007199254740993\t");
+    let second = ROW
+        .replace("\t10\t", "\t9007199254740992\t")
+        .replace("\t1\t1\t", "\t2\t1\t");
+    let report = directory.analyze(&format!("{HEADER}{first}{second}"));
+    assert_eq!(
+        report["metrics"]["total_yield_bp"],
+        18_014_398_509_481_985_u64
+    );
+    let html = directory.html();
+    assert!(html.contains("data-yield=\"9007199254740993\""));
+    assert!(html.contains("data-yield=\"9007199254740992\""));
+    assert!(html.contains("9,007,199,254,740,993"));
+    assert!(!html.contains("NaN"));
+    assert!(!html.contains("Infinity"));
+}
+
+#[test]
+fn blocked_html_destination_preserves_existing_json_and_cleans_staging() {
+    let directory = TestDirectory::new();
+    directory.analyze(&format!("{HEADER}{ROW}"));
+    let json_path = directory.0.join("output/report.json");
+    let previous = fs::read(&json_path).unwrap();
+    let html_path = directory.0.join("output/report.html");
+    fs::remove_file(&html_path).unwrap();
+    fs::create_dir(&html_path).unwrap();
+    let input = directory.0.join("updated.tsv");
+    fs::write(&input, format!("{HEADER}{ROW}{ROW}")).unwrap();
+    let output = directory.run(&input);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("not a regular file"));
+    assert_eq!(previous, fs::read(json_path).unwrap());
+    assert_eq!(fs::read_dir(directory.0.join("output")).unwrap().count(), 2);
 }
 
 #[test]

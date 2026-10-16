@@ -1,0 +1,47 @@
+// Progressive enhancement only. All metrics and plots are rendered in Rust.
+(() => {
+  const table = document.getElementById('channel-table');
+  const rows = Array.from(table.querySelectorAll('tbody tr[data-channel]'));
+  if (!rows.length) return;
+  const body = table.tBodies[0];
+  const search = document.getElementById('channel-search');
+  const sort = document.getElementById('channel-sort');
+  const size = document.getElementById('channel-page-size');
+  const previous = document.getElementById('channel-previous');
+  const next = document.getElementById('channel-next');
+  const status = document.getElementById('channel-status');
+  let page = 0;
+  function compare(a, b) {
+    const key = sort.value;
+    const av = a.dataset[key], bv = b.dataset[key];
+    if (av === '' || bv === '') return av === bv ? 0 : av === '' ? 1 : -1;
+    // Integer counts remain exact above Number.MAX_SAFE_INTEGER.
+    const an = key === 'qscore' ? Number(av) : BigInt(av);
+    const bn = key === 'qscore' ? Number(bv) : BigInt(bv);
+    const order = an < bn ? -1 : an > bn ? 1 : 0;
+    return (key === 'channel' ? order : -order) || Number(a.dataset.channel) - Number(b.dataset.channel);
+  }
+  function update() {
+    rows.sort(compare);
+    const matches = rows.filter(row => row.dataset.channel.includes(search.value.trim()));
+    const limit = Number(size.value);
+    const pages = Math.max(1, Math.ceil(matches.length / limit));
+    page = Math.min(page, pages - 1);
+    rows.forEach(row => { row.hidden = true; });
+    matches.slice(page * limit, (page + 1) * limit).forEach(row => { row.hidden = false; });
+    body.replaceChildren(...rows);
+    previous.disabled = page === 0;
+    next.disabled = page === pages - 1;
+    status.textContent = matches.length
+      ? `${page * limit + 1}–${Math.min((page + 1) * limit, matches.length)} of ${matches.length.toLocaleString('en-US')} channels`
+      : 'No matching channels';
+  }
+  search.addEventListener('input', () => { page = 0; update(); });
+  sort.addEventListener('change', () => { page = 0; update(); });
+  size.addEventListener('change', () => { page = 0; update(); });
+  previous.addEventListener('click', () => { page--; update(); });
+  next.addEventListener('click', () => { page++; update(); });
+  update();
+  document.getElementById('channel-controls').hidden = false;
+  document.getElementById('channel-pagination').hidden = false;
+})();

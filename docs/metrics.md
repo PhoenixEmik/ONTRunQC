@@ -114,3 +114,20 @@ For header-only input, `run.run_id` is `null`, counts/yields are zero, statistic
 are `null`, grouped arrays are empty, and fixed histograms contain zero counts.
 A run containing only zero-length records retains its run ID and grouped record
 counts but has unavailable length/quality statistics.
+
+## HTML presentation (v0.2.0)
+
+`report.html` presents this same final report model without adding individual
+reads or changing JSON schema 1. Pass rate is `100 * passed_reads /
+basecalled_reads`, defined centrally in the metrics implementation; it is
+unavailable when there are no basecalled reads. Other HTML conversions only
+format units, round display labels, sort groups, or scale SVG coordinates.
+
+Cumulative time plots step at each occupied bin's end using its existing
+`cumulative_yield_bp`. They hold constant across omitted intervals. Interval
+charts preserve actual start/end coordinates so gaps remain visible. The ranked
+channel plot displays one existing channel yield per point, with descending
+yield and ascending channel ID for ties. It carries no physical coordinate
+information. Histograms retain the original categorical interval boundaries;
+no per-read distribution is inferred. All table counts and bp yields are exact
+integers; unknown floating statistics display **Not available**.

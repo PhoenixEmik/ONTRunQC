@@ -1,4 +1,5 @@
 mod cli;
+mod html;
 mod input;
 mod metrics;
 mod record;
@@ -37,8 +38,8 @@ fn run(cli: Cli) -> Result<()> {
                     .with_context(|| format!("line {}", record.line))?;
             }
             let report = metrics.finish(reader.run_id().map(str::to_owned));
-            let path = report::write(&report, &output)?;
-            eprintln!("Report written to {}", path.display());
+            report::write(&report, &output)?;
+            eprintln!("JSON and HTML reports written to {}", output.display());
             Ok(())
         }
     }

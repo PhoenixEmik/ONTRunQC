@@ -2,24 +2,40 @@
 
 ## Project Structure & Module Organization
 
-This directory currently contains no application code, tests, assets, or build configuration. Establish the project layout when adding the first implementation, and update this guide to reflect it. Keep source code, tests, and static assets in clearly named directories appropriate to the chosen framework. For example, use `src/`, `tests/`, and `assets/` if the framework does not prescribe another layout.
+PoreGauge is a single-package Rust 2024 CLI for post-sequencing QC of PromethION summaries. `src/main.rs` connects the pipeline; `cli.rs` defines arguments; `input.rs` validates streaming TSV records; `record.rs` holds borrowed fields; `metrics.rs` owns QC calculations. `report.rs` serializes JSON and stages both outputs; `html.rs` renders offline HTML using embedded `report.css` and `report.js`.
+
+Unit tests live beside implementations; CLI integration tests are in `tests/integration.rs`, with fictional inputs in `tests/fixtures/`. Consult `docs/metrics.md` for definitions/schema and `docs/benchmark.md` for measurement procedures.
 
 ## Build, Test, and Development Commands
 
-No build, test, or local development commands are configured yet. When introducing a toolchain, document its prerequisites and exact setup, run, build, and test commands in `README.md`. Prefer repository-defined scripts so contributors can reproduce the same workflow. Do not assume commands such as `npm test` or `make build` exist until their configuration is committed.
+Use Rust 1.85 or newer. Run from the repository root:
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo build --release --locked
+target/release/poregauge analyze sequencing_summary.txt --output qc_results/
+```
+
+These check formatting/lints, run tests, build the binary, and generate `report.json` plus `report.html`. Open HTML with `file://`. Try `tests/fixtures/synthetic.tsv` as input. Commit `Cargo.lock` when dependencies change.
 
 ## Coding Style & Naming Conventions
 
-Follow the chosen language’s standard conventions and add its formatter or linter configuration alongside the first source files. Match existing formatting once established. Use descriptive names, keep modules focused, and avoid unrelated formatting changes. Document any nonstandard indentation or naming rules here.
+Use rustfmt defaults, four-space indentation, `snake_case` functions/modules, and `UpperCamelCase` types. Prefer straightforward functions, minimal dependencies, and contextual `anyhow` errors. Reuse parsing buffers and borrow fields; avoid per-record strings. Keep processing single-threaded unless measurements justify changing it.
 
 ## Testing Guidelines
 
-No test framework or coverage threshold is configured. Introduce tests with the first testable behavior, covering expected results and meaningful failure cases. Use descriptive test names and the framework’s normal file naming convention. Document how to run the full suite and individual tests.
+Use Rust's built-in test framework and descriptive behavior names. Preserve parser/metrics regressions; cover HTML/JSON consistency, unavailable statistics, metadata escaping, offline assets, thousands of channels, and write-failure cleanup. Review generated HTML on desktop and narrow screens. No coverage percentage is mandated. Run all checks above before submitting code changes.
+
+Zero-length records count toward summary totals but not basecalled length/quality statistics. Filtering comes exclusively from `passes_filtering`. Preserve unknown termination reasons, checked integer totals, ordered output, and `null` unavailable statistics. Update metric documentation with behavior/schema changes; increment `schema_version` for incompatible report changes.
+
+Render both formats from the final report model. Escape all input-derived HTML; keep metadata out of scripts and external resources out of reports. Prepare both temporary outputs before replacing files; do not claim atomicity across the pair.
 
 ## Commit & Pull Request Guidelines
 
-No Git history is available to establish commit conventions. Use concise, imperative commit subjects, such as `Add initial project configuration`, and keep commits focused. Pull requests should explain the purpose, summarize changes, and describe validation performed. Link relevant issues and include screenshots for visible interface changes. State explicitly when tests could not be run and why.
+Use focused, imperative commits, e.g. `Add standalone HTML reports`. PRs should explain behavior changes, link relevant issues, report validation, and identify compatibility implications.
 
-## Security & Configuration
+## Research Data & Performance
 
-Keep credentials and local configuration out of version control. When configuration is introduced, provide sanitized examples and ignore generated output and local environment files.
+Commit only synthetic fixtures. Keep research identifiers, real reads, credentials, and identifying reports out of Git. Build output, `qc_results/`, and `benchmark-results/` are ignored. Current scope is one run, uncompressed TSV, and JSON/HTML reporting. Keep HTML development focused; do not add input formats, large benchmarks, or speculative optimization.

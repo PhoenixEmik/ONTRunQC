@@ -19,7 +19,7 @@ pub enum Command {
     Analyze {
         /// Path to the sequencing summary.
         input: PathBuf,
-        /// Directory in which to write report.json (replaces an existing report).
+        /// Directory for report.json and report.html (replaces existing reports).
         #[arg(short, long, value_name = "DIRECTORY")]
         output: PathBuf,
     },

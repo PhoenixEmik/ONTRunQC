@@ -33,6 +33,15 @@ pub struct OverallMetrics {
     pub max_read_length_bp: Option<u64>,
 }
 
+impl OverallMetrics {
+    /// Percentage of basecalled reads passing the input's native filtering flag.
+    /// Kept here so renderers do not introduce a separate QC definition.
+    pub fn pass_rate_percent(&self) -> Option<f64> {
+        (self.basecalled_reads != 0)
+            .then(|| 100.0 * self.passed_reads as f64 / self.basecalled_reads as f64)
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct QualityMetrics {
     pub mean_qscore: Option<f64>,
@@ -320,6 +329,18 @@ fn n50(sorted_lengths: &[u64], total_yield: u64) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_filter_pass_rate_uses_basecalled_reads() {
+        assert_eq!(OverallMetrics::default().pass_rate_percent(), None);
+        let metrics = OverallMetrics {
+            total_records: 6,
+            basecalled_reads: 4,
+            passed_reads: 2,
+            ..OverallMetrics::default()
+        };
+        assert_eq!(metrics.pass_rate_percent(), Some(50.0));
+    }
 
     #[test]
     fn exact_length_statistics() {
