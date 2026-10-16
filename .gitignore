@@ -1,0 +1,6 @@
+/target/
+/qc_results/
+/benchmark-results/
+/sequencing_summary*.txt
+/sequencing_summary*.txt.gz
+.DS_Store

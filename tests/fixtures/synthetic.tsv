@@ -1,0 +1,7 @@
+filename_fastq	filename_fast5	filename_pod5	filename_bam	parent_read_id	read_id	run_id	channel	mux	minknow_events	start_time	duration	passes_filtering	template_start	num_events_template	template_duration	sequence_length_template	mean_qscore_template	pore_type	experiment_id	sample_id	end_reason
+synthetic.fastq				parent-1	read-1	synthetic-run	2	2	0	1800	1	TRUE	0	0	1	10	10	fictional	synthetic-experiment	synthetic-sample	normal
+synthetic.fastq				parent-2	read-2	synthetic-run	1	1	0	0	1	FALSE	0	0	1	20	20	fictional	synthetic-experiment	synthetic-sample	normal
+synthetic.fastq				parent-3	read-3	synthetic-run	2	1	0	900	1	TRUE	0	0	1	30	30	fictional	synthetic-experiment	synthetic-sample	future_reason
+synthetic.fastq				parent-4	read-4	synthetic-run	1	2	0	899.999	1	FALSE	0	0	1	40	0	fictional	synthetic-experiment	synthetic-sample	future_reason
+				parent-5	read-5	synthetic-run	3	2	0	0	1	TRUE	0	0	1	0	0	fictional	synthetic-experiment	synthetic-sample	signal_positive
+				parent-6	read-6	synthetic-run	3	3	0	2700	1	FALSE	0	0	1	0	0	fictional	synthetic-experiment	synthetic-sample	signal_positive
