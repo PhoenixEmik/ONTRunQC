@@ -1,13 +1,18 @@
 :root {
     color-scheme:light;
-    --ink:#203531;
-    --muted:#5b706b;
-    --accent:#216c59;
-    --pass:#287b66;
-    --fail:#b67936;
-    --line:#dce3de;
+    /* Neutral report chrome; reserve green for semantic pass data. */
+    --ink:#253041;
+    --muted:#667385;
+    --accent:#455998;
+    --pass:#26846f;
+    --fail:#b76e32;
+    --line:#e1e5ed;
     --paper:#fff;
-    --back:#f4f6f3;
+    --back:#f6f7f9;
+    --panel:#f0f2f7;
+    --hover:#f8f9fc;
+    --control-line:#cbd2df;
+    --focus:#b76e32;
 }
 * {
     box-sizing:border-box;
@@ -29,7 +34,7 @@ button,input,select {
     color:inherit;
 }
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,.plot-scroll:focus-visible {
-    outline:3px solid #b67936;
+    outline:3px solid var(--focus);
     outline-offset:4px;
 }
 .skip-link {
@@ -171,7 +176,7 @@ p {
 .run-identity {
     grid-column:1/-1;
     border-bottom:1px solid var(--line);
-    background:#edf2ec;
+    background:var(--panel);
 }
 .run-identity dd {
     font:14px/1.6 ui-monospace,SFMono-Regular,monospace;
@@ -207,7 +212,7 @@ dd {
 .notice {
     border-left:3px solid var(--fail);
     padding:12px 16px;
-    background:#faf4ea;
+    background:#fff7ee;
     font-size:13px;
     margin-top:14px;
 }
@@ -265,7 +270,10 @@ figcaption {
     stroke:var(--line);
     stroke-width:1;
 }
-.primary,.passed {
+.primary {
+    fill:var(--accent);
+}
+.passed {
     fill:var(--pass);
 }
 .failed {
@@ -273,12 +281,12 @@ figcaption {
 }
 .cumulative-line {
     fill:none;
-    stroke:var(--pass);
+    stroke:var(--accent);
     stroke-width:2.5;
     stroke-linejoin:round;
 }
 .channel-point {
-    fill:var(--pass);
+    fill:var(--accent);
     fill-opacity:.55;
 }
 .empty-chart {
@@ -348,7 +356,7 @@ th,td {
     white-space:nowrap;
 }
 thead th {
-    background:#eef2ee;
+    background:var(--panel);
     font-size:11px;
     font-weight:600;
     position:sticky;
@@ -364,7 +372,7 @@ tbody th {
     font-weight:500;
 }
 tbody tr:hover {
-    background:#f6f8f5;
+    background:var(--hover);
 }
 .empty-row {
     text-align:center;
@@ -394,7 +402,7 @@ summary {
     gap:5px;
 }
 .table-controls input,.table-controls select {
-    border:1px solid #c1cec7;
+    border:1px solid var(--control-line);
     border-radius:4px;
     padding:8px 10px;
     background:var(--paper);
@@ -414,7 +422,7 @@ input[type=search] {
     color:var(--muted);
 }
 button {
-    border:1px solid #c1cec7;
+    border:1px solid var(--control-line);
     border-radius:4px;
     padding:7px 12px;
     background:var(--paper);
@@ -425,7 +433,7 @@ button+button {
     margin-left:6px;
 }
 button:hover:not(:disabled) {
-    background:#e7eee7;
+    background:var(--panel);
 }
 button:disabled {
     opacity:.45;
