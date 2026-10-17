@@ -150,8 +150,8 @@ largest group across panels, LOESS for <1,000, otherwise mgcv-style `cs`/REML.
 Bounded unique-time knots and a second streaming pass avoid unbounded paired-read
 retention. LOESS now uses padded boundaries, median-split cells and Hermite
 interpolation of fitted vertex values/derivatives (cell .2). R's pseudoinverse
-for singular local fits, exact large-group GAM knots/null-space orientation and
-confidence bands are **not** claimed equivalent. Algorithm and population details
+for some singular local fits, exact large-group GAM knots/null-space orientation
+and confidence bands are **not** claimed equivalent. Algorithm and population details
 are in metrics.md. Polynomial/spline/constant-model unit tests and CLI regressions
 passed.
 
@@ -168,6 +168,19 @@ the dated container snapshot; full package versions/sessionInfo are in the local
 capture. No private input or derived report was committed.
 The executable harness compares methods, all 80 X/Y points and explicitly records
 unverified confidence intervals. Issue #12 remains open.
+
+Actual full-suite follow-up: the GAM cases with >4,096 unique start times fail
+the fitted-value target with approximate knots; these are reported as suspected
+defects, not rounded away. The 1,500-read synthetic GAM meets the target. A focused
+LOESS correction now uses equilibrated QR/SVD local solves and singleton cell
+splits, recovering the zero/cutoff subset. `tests/reference/trends-golden.json`
+contains only synthetic inputs and actual pinned-R layer values, with capture
+hashes. Its small/large/zero-cutoff test compares **958 uncensored fitted values**:
+maximum absolute error **6.698e-6**, within absolute 1e-6 + relative 1e-6.
+Two reference-negative length predictions are scale-censored, not invented zeros.
+Four-read N50/ultralong fixtures remain roundoff-sensitive in rank-deficient
+neighborhoods; confidence intervals remain unavailable. These limitations keep
+#12 **Partial/open**. No raw time-bin or core QC metric changed.
 
 ## R-grid densities (#13): Partial
 

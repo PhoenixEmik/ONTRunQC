@@ -194,7 +194,7 @@ impl Plan {
             }
         }
         Trends {
-            verification: "R_differential_required; bounded_unique_GAM_knots_and_confidence_bands_differ",
+            verification: "R_differential_partial; bounded_GAM_knots_singular_LOESS_and_confidence_bands_differ",
             single,
             combined,
         }
@@ -552,7 +552,7 @@ impl LoessSurface {
         let mut knots = vec![lower, upper];
         let cell = (rows.len() as f64 * 0.75 * 0.2).floor() as usize;
         fn split(times: &[f64], lower: f64, upper: f64, cell: usize, knots: &mut Vec<f64>) {
-            if times.len() <= cell || times.len() < 2 {
+            if times.len() <= cell || times.is_empty() {
                 return;
             }
             let middle = (times.len() - 1) / 2;
@@ -564,7 +564,9 @@ impl LoessSurface {
                 })
                 .take_while(|&i| i + 1 < times.len())
                 .find(|&i| times[i] != times[i + 1]);
-            let Some(i) = cut else { return };
+            // With cell=0 R also splits singleton leaves at their observation;
+            // all-tied leaves retain the median until it meets a boundary.
+            let i = cut.unwrap_or(middle);
             let point = times[i];
             if point <= lower || point >= upper {
                 return;
@@ -596,44 +598,202 @@ impl LoessSurface {
     }
 }
 fn local_quadratic(rows: &[Observation], x: f64, quality: bool) -> Option<(f64, f64)> {
-    let mut distances: Vec<_> = rows.iter().map(|v| (v.x - x).abs()).collect();
+    let mut distances: Vec<_> = rows.iter().map(|v| (v.x - x).powi(2)).collect();
     distances.sort_by(f64::total_cmp);
     let neighbors = (rows.len() as f64 * 0.75).floor() as usize;
-    if neighbors < 3 {
+    if neighbors < 2 {
         return None;
     }
-    let radius = distances[neighbors.min(rows.len()) - 1];
-    if radius <= 0.0 {
+    let radius_squared = distances[neighbors.min(rows.len()) - 1];
+    if radius_squared <= 0.0 {
         return None;
     }
     let scale = rows
         .iter()
         .map(|v| if quality { v.q.abs() } else { v.length })
         .fold(1.0, f64::max);
-    let mut a = [[0.0; K]; K];
-    let mut rhs = [0.0; K];
+    // R equilibrates weighted columns and solves by SVD. Working directly on
+    // the <=999-by-3 design also handles rank-deficient local quadratics;
+    // normal equations can appear nonsingular after roundoff in these cases.
+    let mut design = Vec::new();
+    let mut response = Vec::new();
     for row in rows {
-        let u = (row.x - x) / radius;
-        if u.abs() >= 1.0 {
+        let dx = row.x - x;
+        let u = (dx * dx / radius_squared).sqrt();
+        if u >= 1.0 {
             continue;
         }
-        let w = (1.0 - u.abs().powi(3)).powi(3);
-        let b = [1.0, u, u * u];
-        let y = if quality { row.q } else { row.length } / scale;
-        for i in 0..3 {
-            rhs[i] += w * b[i] * y;
-            for j in 0..3 {
-                a[i][j] += w * b[i] * b[j];
-            }
+        let w = (1.0 - u.powi(3)).powi(3).sqrt();
+        design.push([w, w * dx, w * dx * dx]);
+        response.push(w * (if quality { row.q } else { row.length }) / scale);
+    }
+    if design.len() < 3 {
+        design.resize(3, [0.0; 3]);
+        response.resize(3, 0.0);
+    }
+    let coefficients = local_pseudoinverse(&mut design, &mut response)?;
+    Some((coefficients[0] * scale, coefficients[1] * scale))
+}
+
+fn local_pseudoinverse(design: &mut [[f64; 3]], response: &mut [f64]) -> Option<[f64; K]> {
+    let norms: [f64; 3] =
+        std::array::from_fn(|j| design.iter().map(|r| r[j] * r[j]).sum::<f64>().sqrt());
+    for row in design.iter_mut() {
+        for j in 0..3 {
+            row[j] /= norms[j].max(f64::MIN_POSITIVE);
         }
     }
-    let coefficients = solve(a, rhs, 3)?.0;
-    Some((coefficients[0] * scale, coefficients[1] * scale / radius))
+    // Householder QR before the small SVD, as in R's dqrdc/dqrsl path.
+    // This preserves tiny weighted responses near singular neighborhoods;
+    // applying SVD rotations to the full design loses them by cancellation.
+    let mut reduced = [[0.0; 3]; 3];
+    for j in 0..3 {
+        let norm = design[j..].iter().fold(0.0_f64, |n, r| n.hypot(r[j]));
+        if norm > 0.0 {
+            let norm = norm.copysign(design[j][j]);
+            for row in &mut design[j..] {
+                row[j] /= norm;
+            }
+            design[j][j] += 1.0;
+            for k in j + 1..3 {
+                let t = -design[j..].iter().map(|r| r[j] * r[k]).sum::<f64>() / design[j][j];
+                for row in &mut design[j..] {
+                    row[k] += t * row[j];
+                }
+            }
+            let t = -design[j..]
+                .iter()
+                .zip(&response[j..])
+                .map(|(r, y)| r[j] * y)
+                .sum::<f64>()
+                / design[j][j];
+            for (row, y) in design[j..].iter().zip(&mut response[j..]) {
+                *y += t * row[j];
+            }
+            design[j][j] = -norm;
+        }
+        for i in 0..=j {
+            reduced[i][j] = design[i][j];
+        }
+    }
+    let design = &mut reduced;
+    let mut vectors: [[f64; 3]; 3] =
+        std::array::from_fn(|i| std::array::from_fn(|j| f64::from(i == j)));
+    // One-sided Jacobi SVD of three equilibrated columns. The singular-value
+    // cutoff is R loess's 100*epsilon; no ridge or invented observations.
+    for _ in 0..50 {
+        let mut changed = false;
+        for p in 0..3 {
+            for q in p + 1..3 {
+                let a = design.iter().map(|r| r[p] * r[p]).sum::<f64>();
+                let b = design.iter().map(|r| r[q] * r[q]).sum::<f64>();
+                let c = design.iter().map(|r| r[p] * r[q]).sum::<f64>();
+                if c.abs() <= f64::EPSILON * (a * b).sqrt() {
+                    continue;
+                }
+                let (s, c) = (0.5 * (2.0 * c).atan2(b - a)).sin_cos();
+                for row in design.iter_mut().chain(vectors.iter_mut()) {
+                    let (a, b) = (row[p], row[q]);
+                    row[p] = c * a - s * b;
+                    row[q] = s * a + c * b;
+                }
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let sigma: [f64; 3] =
+        std::array::from_fn(|j| design.iter().map(|r| r[j] * r[j]).sum::<f64>().sqrt());
+    let cutoff = sigma.into_iter().fold(0.0, f64::max) * 100.0 * f64::EPSILON;
+    if cutoff == 0.0 {
+        return None;
+    }
+    let mut coefficients = [0.0; K];
+    for k in 0..3 {
+        if sigma[k] <= cutoff {
+            continue;
+        }
+        let component = design
+            .iter()
+            .zip(response.iter())
+            .map(|(r, y)| r[k] * y)
+            .sum::<f64>()
+            / sigma[k].powi(2);
+        for j in 0..3 {
+            coefficients[j] += vectors[j][k] * component / norms[j].max(f64::MIN_POSITIVE);
+        }
+    }
+    coefficients
+        .iter()
+        .all(|v| v.is_finite())
+        .then_some(coefficients)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn actual_r_synthetic_loess_and_gam_predictions() {
+        use crate::input::SummaryReader;
+        let golden: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/reference/trends-golden.json")).unwrap();
+        let (mut compared, mut maximum_error) = (0, 0.0_f64);
+        for case in golden["cases"].as_array().unwrap() {
+            let input = case["input"].as_str().unwrap().as_bytes();
+            let mut tracker = Tracker::default();
+            let mut reader = SummaryReader::new(input).unwrap();
+            while let Some(record) = reader.next_record().unwrap() {
+                tracker.add(&record, 7.0);
+            }
+            let mut plan = tracker.prepare(false);
+            let mut reader = SummaryReader::new(input).unwrap();
+            while let Some(record) = reader.next_record().unwrap() {
+                plan.add(&record, 7.0);
+            }
+            let trends = plan.finish();
+            for reference in case["fits"].as_array().unwrap() {
+                let curve = trends
+                    .single
+                    .iter()
+                    .find(|c| {
+                        (c.metric == "qscore") == reference["quality"].as_bool().unwrap()
+                            && c.population.starts_with("qscore")
+                                == reference["selected"].as_bool().unwrap()
+                    })
+                    .unwrap();
+                let points = reference["points"].as_array().unwrap();
+                assert_eq!(
+                    curve.points.len(),
+                    points.len(),
+                    "{} {:?}",
+                    case["name"],
+                    curve
+                );
+                for (actual, expected) in curve.points.iter().zip(points) {
+                    assert!((actual.hours - expected[0].as_f64().unwrap()).abs() < 1e-10);
+                    if let Some(y) = expected[1].as_f64() {
+                        compared += 1;
+                        maximum_error = maximum_error.max((actual.value - y).abs());
+                        assert!(
+                            (actual.value - y).abs() <= 1e-6 + 1e-6 * y.abs(),
+                            "{} {} {} at {}: {} != {}",
+                            case["name"],
+                            curve.population,
+                            curve.metric,
+                            actual.hours,
+                            actual.value,
+                            y
+                        );
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "Actual R fitted values compared: {compared}; max absolute error: {maximum_error:e}"
+        );
+    }
     fn population(n: usize) -> Population {
         let mut p = Population::default();
         for i in 0..n {

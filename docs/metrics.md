@@ -606,8 +606,11 @@ shrinkage regression spline (`cs`, k=10) with profiled Gaussian REML. Combined
 selection uses the largest run/source across panels, so a small run can use LOESS
 alone and GAM in a collection. LOESS uses degree 2, span .75, tricube weights and
 a median-split interpolated surface (cell .2, padded range, vertex derivatives
-and cubic Hermite interpolation). Singular local fits remain unavailable rather
-than pretending to reproduce R's pseudoinverse. GAM uses natural cubic basis functions, integrated second-derivative
+and cubic Hermite interpolation). Local quadratics use equilibrated Householder
+QR and a three-column Jacobi SVD pseudoinverse with R's 100-epsilon cutoff;
+zero-cell leaves also split at singleton observations. This recovers several
+previously unavailable small fits. Roundoff-sensitive rank-deficient four-read
+curves still differ from R and remain Partial. GAM uses natural cubic basis functions, integrated second-derivative
 penalty, .1/.01 null-space shrinkage, a centered smooth and unpenalized intercept.
 The eigensolver's null-space orientation may differ from mgcv/LAPACK. Confidence
 intervals are intentionally null rather than invented.
@@ -618,7 +621,7 @@ times are retained by deterministic bottom-hash selection, with exact endpoints;
 raw observation contributes to the second-pass sufficient statistics: no fit uses
 interval means or downsampled responses. Up to 999 observations/population are
 retained only for small LOESS groups; larger groups discard that buffer. Empty,
-constant-time, rank-deficient and nonrepresentable fits have a reason and no points.
+constant-time, unsupported-rank and nonrepresentable fits have a reason and no points.
 Fits can bridge unobserved intervals; observed-bin plots still retain their gaps.
 All fit calculations live in `trends.rs`; HTML renders the final model only.
 
@@ -626,8 +629,10 @@ Unit/CLI tests exercise polynomial reproduction, natural knot interpolation,
 constant GAM intercepts, method selection, exact populations, unchanged existing
 metrics, sparse inputs and bounded storage. The public short-run LOESS comparison
 met the harness target (1e-10 hours and fitted-value absolute 1e-6 + relative 1e-6);
-measured errors and environment are in the parity matrix. Other fits, including
-large-group GAM and confidence intervals, remain unverified.
+measured errors and environment are in the parity matrix. Committed synthetic
+R golden data also test small/irregular LOESS, 1,500-observation GAM and the
+zero/cutoff case. Large-group approximate GAM, degenerate LOESS and confidence
+intervals do not meet full R parity; see the differential results.
 
 ## Optional R-grid density estimates (#13)
 

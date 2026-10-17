@@ -76,3 +76,9 @@ Unsupported confidence intervals remain explicitly Not yet verified. Density
 integrals are over the plotted domain; unplotted Gaussian tails are not silently
 renormalized to force area one. Constant-domain scaling remains pending actual R
 verification. Failed point/method comparisons are never automatically accepted.
+
+`trends-golden.json` is a small, synthetic-only numerical snapshot of the actual
+`StatSmooth` layers from `fit-small`, `fit-large` and `zero-cutoff`, including
+their exact TSV bytes, reference versions and capture SHA-256. The Rust unit test
+re-runs parsing/fitting and compares every uncensored prediction at the same
+tolerance. It is not evidence that the other paired cases pass.
