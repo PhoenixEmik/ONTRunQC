@@ -120,14 +120,26 @@ exact, rounding-tolerance, intentional semantic, suspected PoreGauge defect,
 proved upstream defect and unverified results. The validation-only Rust probe
 preserves upstream file-scoped populations without changing CLI run grouping.
 
-Initial execution: four harness tests and the expanded 17-case paired command.
-PoreGauge ran; **all 17 R comparisons are Not yet verified**: no R
-installation, stopped Docker daemon, restricted environment-download/network
-access. Saved YAML/Python checks remain valid but are not actual R execution.
-The command returned 2 rather than falsely passing. A later native short-run
-execution succeeded (see below); the complete paired suite remains unverified.
-Use an existing R installation as documented; automatic R CI builds were removed.
-No scientific parity status is promoted and issue #11 remains open.
+Actual execution (2026-10-18): all **17 cases executed the unmodified R script to
+completion**, including MinION, PromethION, short, 1D2, RNA, two-flowcell pooled
+QC and the synthetic boundary/fit/density cases. Native macOS arm64 versions were
+checked: R 4.4.1, ggplot2 3.5.1, mgcv 1.9-1. Complete transitive package versions
+are captured; these are not claimed identical to the optional CRAN snapshot.
+The first full `--capture-only` run saved actual YAML and numerical ggplot layers
+in `benchmark-results/minionqc-closure/`. It returned **1**, with 50,254 exact,
+38,165 tolerance, 34 intentional differences, 8,946 upstream defects, **10,425
+suspected defects** and 592 unverified checks. The suspected differences were
+GAM/singular LOESS, constant-domain densities, and six ultralong endpoint checks
+whose proof was too narrow (now extended to every full-prefix strict-half N50
+>=100 kb, with the reference count/yield checked independently). They are not
+accepted as equivalent. Subsequent corrections/results are recorded below.
+A separate preflight-enabled short run also generated **11 actual PDF figures**;
+its four confidence-band comparisons remain unverified (exit 2).
+
+The harness now checks installed versions before analysis, checkpoints every
+case, and records execution/completion/exit status and capture hashes. Six Python
+harness tests pass. Use an existing R installation as documented; automatic R CI
+builds remain removed. #11 execution evidence does not establish #12/#13 parity.
 
 ## Fitted time trends (#12): Partial
 

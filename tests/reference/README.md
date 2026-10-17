@@ -25,6 +25,12 @@ and OS package repositories are not bit-for-bit immutable: record the resolved
 Docker image ID/digest alongside the capture's full package versions/sessionInfo
 when archiving results. Native execution supports `--rscript /path/to/Rscript`
 with the same checked versions. Locale/timezone are fixed in the image; seed is 1.
+Before any case, a native/container preflight checks the **installed** R,
+ggplot2 and mgcv versions and saves `reference-environment.json` plus session and
+package versions. A version failure returns 2 with `preflight.log`; an environment
+name never substitutes for these checks. Each completed case checkpoints the
+comparison report, records R's exit status and capture SHA-256, and distinguishes
+execution from successful completion. An interrupted suite retains prior cases.
 
 This runs the unmodified script on unchanged source bytes, with matching Q
 cutoffs, one processor, explicit 8-hour mux references and PDF figures. The `ggsave` wrapper also calls

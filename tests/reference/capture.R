@@ -3,6 +3,17 @@
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(jsonlite))
 suppressPackageStartupMessages(library(yaml))
+environment <- list(r=as.character(getRversion()),
+  ggplot2=as.character(packageVersion("ggplot2")),
+  mgcv=as.character(packageVersion("mgcv")),
+  session=capture.output(sessionInfo()),
+  packages=as.data.frame(installed.packages()[,c("Package","Version")]))
+if (Sys.getenv("PG_REFERENCE_PREFLIGHT") == "true") {
+  write_json(environment, Sys.getenv("PG_REFERENCE_CAPTURE"),
+    auto_unbox=TRUE, pretty=TRUE)
+  quit(status=if (environment$r == "4.4.1" && environment$ggplot2 == "3.5.1" &&
+    environment$mgcv == "1.9.1") 0 else 2)
+}
 stopifnot(getRversion() == "4.4.1", packageVersion("ggplot2") == "3.5.1",
           packageVersion("mgcv") == "1.9-1")
 set.seed(1)

@@ -51,6 +51,26 @@ def digest(path):
     return h.hexdigest()
 
 
+def reference_command(args, cli, env, mounts):
+    if not args.docker:
+        return [args.rscript, *cli]
+    return ["docker", "run", "--rm",
+            *[v for path, writable in sorted(mounts.items()) for v in
+              ["-v", f"{path}:{path}" + ("" if writable else ":ro")]],
+            *[v for k in ("PG_REFERENCE_SOURCE", "PG_REFERENCE_CAPTURE",
+                          "PG_REFERENCE_RENDER", "PG_REFERENCE_PREFLIGHT")
+              if k in env for v in ["-e", f"{k}={env[k]}"]], args.docker, *cli]
+
+
+def save_comparison(output, report):
+    statuses = Counter(c["status"] for case in report["cases"] for c in case["checks"])
+    report["status_counts"] = dict(statuses)
+    temporary = output / "comparison.json.tmp"
+    temporary.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    temporary.replace(output / "comparison.json")
+    return statuses
+
+
 def synthetic(path, lengths, qualities, times=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as stream:
@@ -152,7 +172,7 @@ def metrics(reference, pg, rows, cutoff, channel_scope=False):
         ultra=pg["comparison"]["yield_by_minimum_length"]["ultralong_qscore_selected" if selected else "ultralong_all"]
         # Independent exhaustive longest-first prefix check for proof of the known endpoint bug.
         # The optional public validator already checks the optimized large-population definition.
-        known_endpoint = bool(lengths) and min(lengths)>=100000 and ultra["read_count"]==len(lengths) and r["reads"]["ultralong"]==len(lengths)-1
+        known_endpoint = bool(lengths) and strict is not None and strict>=100000 and ultra["read_count"]==len(lengths) and r["reads"]["ultralong"]==len(lengths)-1
         bug="Upstream binSearch drops the final eligible read (max-1 endpoint)." if known_endpoint else None
         results.append(comparison(f"{name}.ultralong.reads",r["reads"]["ultralong"],ultra["read_count"],upstream=bug))
         reference_ultra_bases = r["gigabases"]["ultralong"]*1e9
@@ -284,6 +304,21 @@ def main(argv=None):
         inspected=subprocess.run(["docker","image","inspect",args.docker,"--format","{{.Id}}"],capture_output=True,text=True)
         if inspected.returncode==0: image_id=inspected.stdout.strip()
     report=dict(reference_commit=REVISION,source_sha256=digest(upstream/"MinIONQC.R"),poregauge_binary_sha256=digest(binary),reference_image=dict(name=args.docker,id=image_id),cases=[])
+    mounts={upstream:False,output:True,harness.parent:False}
+    if available:
+        environment_file=output/"reference-environment.json"
+        environment_file.unlink(missing_ok=True)
+        env=dict(os.environ,TZ="UTC",LC_ALL="C",PG_REFERENCE_PREFLIGHT="true",
+                 PG_REFERENCE_CAPTURE=str(environment_file))
+        checked=subprocess.run(reference_command(args,[str(harness)],env,mounts),
+                               env=env,capture_output=True,text=True)
+        (output/"preflight.log").write_text(checked.stdout+checked.stderr)
+        report["reference_environment"]=json.loads(environment_file.read_text()) if environment_file.exists() else None
+        if checked.returncode:
+            report["cases"].append(dict(name="environment",checks=[unverified(
+                "reference_versions", "Pinned R 4.4.1 / ggplot2 3.5.1 / mgcv 1.9-1 preflight failed; inspect preflight.log.")]))
+            save_comparison(output,report)
+            return 2
     for name, paths, cutoff in cases(upstream, output):
         if args.case and name not in args.case: continue
         directory=output/name; directory.mkdir(exist_ok=True)
@@ -309,13 +344,11 @@ def main(argv=None):
         capture.unlink(missing_ok=True) # Never reuse a stale successful R capture.
         env=dict(os.environ,TZ="UTC",LC_ALL="C",PG_REFERENCE_SOURCE=str(upstream/"MinIONQC.R"),PG_REFERENCE_CAPTURE=str(capture),PG_REFERENCE_RENDER=str(not args.capture_only).lower())
         cli=[str(harness),"-i",str(inputdir if len(paths)>1 else copied[0]),"-o",str(rdir),"-q",str(cutoff),"-p","1","-m","8","-f","pdf","-s","TRUE"]
-        if args.docker:
-            # Same absolute paths inside the container; no shell interpolation.
-            mounts=set([upstream,output,harness.parent])
-            command=["docker","run","--rm",*[v for path in sorted(mounts) for v in ["-v",f"{path}:{path}"+("" if path==output else ":ro")]],*[v for k in ["PG_REFERENCE_SOURCE","PG_REFERENCE_CAPTURE","PG_REFERENCE_RENDER"] for v in ["-e",f"{k}={env[k]}"]],args.docker,*cli]
-        else: command=[args.rscript,*cli]
+        command=reference_command(args,cli,env,mounts)
+        returncode=None
         if available:
             result=subprocess.run(command,env=env,capture_output=True,text=True)
+            returncode=result.returncode
             (directory/"minionqc.log").write_text(result.stdout+result.stderr)
         else:
             (directory/"minionqc.log").write_text("Reference executable unavailable; original R script was not executed.\n")
@@ -329,6 +362,8 @@ def main(argv=None):
             checks.extend(density_comparisons(reference,source_population))
         if reference and reference.get("error"):
             checks.append(unverified("reference_completion",reference["error"]))
+        elif available and returncode:
+            checks.append(unverified("reference_completion",f"R exited {returncode}; inspect minionqc.log."))
         if reference:
             inventory=[dict(file=p["file"],directory=p["directory"],labels=p["labels"],panels=p["panels"],stats=[l["stat"] for l in p["layers"]]) for p in reference["plots"]]
             (directory/"plot-inventory.json").write_text(json.dumps(inventory,indent=2))
@@ -341,11 +376,10 @@ def main(argv=None):
             for item in inventory:
                 if not item["labels"].get("x") or not item["labels"].get("y"):
                     checks.append(unverified(f"plot.{item['file']}.axes","Reference axis metadata missing; inspect inventory."))
-        report["cases"].append(dict(name=name,qscore_cutoff=cutoff,inputs=[dict(sha256=digest(p),bytes=p.stat().st_size) for p in paths],excluded_controls=excluded,reference_executed=reference is not None,reference_environment=reference.get("session") if reference else None,checks=checks))
-        print(name,dict(Counter(c["status"] for c in checks)))
-    statuses=Counter(c["status"] for case in report["cases"] for c in case["checks"])
-    report["status_counts"]=dict(statuses)
-    (output/"comparison.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
+        report["cases"].append(dict(name=name,qscore_cutoff=cutoff,inputs=[dict(sha256=digest(p),bytes=p.stat().st_size) for p in paths],excluded_controls=excluded,reference_executed=available is not None,reference_completed=bool(reference is not None and returncode==0 and not reference.get("error")),reference_returncode=returncode,reference_capture_sha256=digest(capture) if capture.exists() else None,reference_environment=reference.get("session") if reference else None,checks=checks))
+        save_comparison(output,report)
+        print(name,dict(Counter(c["status"] for c in checks)),flush=True)
+    statuses=save_comparison(output,report)
     return 1 if statuses[STATUSES[3]] else 2 if statuses[STATUSES[5]] else 0
 
 

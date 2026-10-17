@@ -2,6 +2,9 @@
 from pathlib import Path
 import sys
 import unittest
+import tempfile
+import json
+from types import SimpleNamespace
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from minionqc_differential import comparison, unverified
@@ -21,6 +24,25 @@ class Classification(unittest.TestCase):
         self.assertEqual(comparison("N50",50,100,intentional="strict-half tie")["status"],"intentional_semantic_difference")
         self.assertEqual(comparison("ultra",3,4,upstream="proved endpoint bug")["status"],"upstream_minionqc_defect")
         self.assertEqual(unverified("R","not installed")["status"],"not_yet_verified")
+
+    def test_checkpoints_preserve_unverified_cases_and_exact_counts(self):
+        from minionqc_differential import save_comparison
+        with tempfile.TemporaryDirectory() as directory:
+            report={"cases":[{"checks":[comparison("bases",100,100),unverified("band","absent")]}]}
+            counts=save_comparison(Path(directory),report)
+            self.assertEqual(counts["not_yet_verified"],1)
+            self.assertEqual(json.loads((Path(directory)/"comparison.json").read_text()),report)
+            self.assertFalse((Path(directory)/"comparison.json.tmp").exists())
+
+    def test_reference_command_preserves_paths_and_preflight(self):
+        from minionqc_differential import reference_command
+        args=SimpleNamespace(docker=None,rscript="/R installation/Rscript")
+        self.assertEqual(reference_command(args,["capture.R"],{},{}),[args.rscript,"capture.R"])
+        args.docker="pinned-reference"
+        command=reference_command(args,["capture.R"],{"PG_REFERENCE_PREFLIGHT":"true"},
+                                  {Path("/input with spaces"):False,Path("/output"):True})
+        self.assertIn("/input with spaces:/input with spaces:ro",command)
+        self.assertIn("PG_REFERENCE_PREFLIGHT=true",command)
 
 
 
