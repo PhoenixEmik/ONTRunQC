@@ -194,7 +194,7 @@ impl Plan {
             }
         }
         Trends {
-            verification: "unverified_against_R; direct_loess_surface_and_bounded_unique_knots_differ",
+            verification: "R_differential_required; bounded_unique_GAM_knots_and_confidence_bands_differ",
             single,
             combined,
         }
@@ -248,7 +248,7 @@ impl Dataset {
             method: if gam {
                 "cubic_shrinkage_spline_REML_k10"
             } else {
-                "loess_degree2_span0.75_direct"
+                "loess_degree2_span0.75_interpolate_cell0.2"
             },
             observations: self.tracker.count,
             exact_knots: !self.tracker.truncated,
@@ -267,12 +267,17 @@ impl Dataset {
                 Some("GAM requires ten distinct times and a finite nonsingular fit");
             return curve;
         }
+        let surface = if gam {
+            None
+        } else {
+            LoessSurface::new(&self.tracker.small, self.quality)
+        };
         for i in 0..80 {
             let x = self.tracker.min + (self.tracker.max - self.tracker.min) * i as f64 / 79.0;
             let value = if let Some(c) = &coefficients {
                 Some(dot(&self.basis.as_ref().unwrap().evaluate(x), c) * self.scale + self.offset)
             } else {
-                local_quadratic(&self.tracker.small, x, self.quality)
+                surface.as_ref().map(|surface| surface.predict(x))
             };
             let Some(value) = value.filter(|v| v.is_finite()) else {
                 curve.points.clear();
@@ -526,7 +531,71 @@ fn symmetric_eigen(mut a: Matrix) -> ([f64; K], Matrix) {
         std::array::from_fn(|i| std::array::from_fn(|j| v[i][indices[j]])),
     )
 }
-fn local_quadratic(rows: &[Observation], x: f64, quality: bool) -> Option<f64> {
+// One-dimensional LOESS interpolation: median-split cells, padded boundaries
+// and cubic Hermite interpolation of vertex predictions/derivatives. Algorithm:
+// R stats loessf.f ehg124/126/128, control(cell=0.2), span=0.75.
+struct LoessSurface {
+    vertices: Vec<(f64, f64, f64)>,
+}
+impl LoessSurface {
+    fn new(rows: &[Observation], quality: bool) -> Option<Self> {
+        let mut times: Vec<_> = rows.iter().map(|v| v.x).collect();
+        times.sort_by(f64::total_cmp);
+        let first = *times.first()?;
+        let last = *times.last()?;
+        if first == last {
+            return None;
+        }
+        let padding = 0.005 * (last - first).max(1e-10 * first.abs().max(last.abs()) + 1e-30);
+        let lower = first - padding;
+        let upper = last + padding;
+        let mut knots = vec![lower, upper];
+        let cell = (rows.len() as f64 * 0.75 * 0.2).floor() as usize;
+        fn split(times: &[f64], lower: f64, upper: f64, cell: usize, knots: &mut Vec<f64>) {
+            if times.len() <= cell || times.len() < 2 {
+                return;
+            }
+            let middle = (times.len() - 1) / 2;
+            // R searches alternately right and left when median times tie.
+            let cut = (0..times.len())
+                .filter_map(|i| {
+                    let offset = i.div_ceil(2) as isize * if i % 2 == 1 { 1 } else { -1 };
+                    middle.checked_add_signed(offset)
+                })
+                .take_while(|&i| i + 1 < times.len())
+                .find(|&i| times[i] != times[i + 1]);
+            let Some(i) = cut else { return };
+            let point = times[i];
+            if point <= lower || point >= upper {
+                return;
+            }
+            knots.push(point);
+            split(&times[..=i], lower, point, cell, knots);
+            split(&times[i + 1..], point, upper, cell, knots);
+        }
+        split(&times, lower, upper, cell, &mut knots);
+        knots.sort_by(f64::total_cmp);
+        let vertices = knots
+            .into_iter()
+            .map(|x| local_quadratic(rows, x, quality).map(|(y, slope)| (x, y, slope)))
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self { vertices })
+    }
+    fn predict(&self, x: f64) -> f64 {
+        let i = self
+            .vertices
+            .partition_point(|v| v.0 <= x)
+            .saturating_sub(1)
+            .min(self.vertices.len() - 2);
+        let (a, ya, da) = self.vertices[i];
+        let (b, yb, db) = self.vertices[i + 1];
+        let h = (x - a) / (b - a);
+        (1.0 - h).powi(2) * (1.0 + 2.0 * h) * ya
+            + h * h * (3.0 - 2.0 * h) * yb
+            + (h * (1.0 - h).powi(2) * da + h * h * (h - 1.0) * db) * (b - a)
+    }
+}
+fn local_quadratic(rows: &[Observation], x: f64, quality: bool) -> Option<(f64, f64)> {
     let mut distances: Vec<_> = rows.iter().map(|v| (v.x - x).abs()).collect();
     distances.sort_by(f64::total_cmp);
     let neighbors = (rows.len() as f64 * 0.75).floor() as usize;
@@ -558,7 +627,8 @@ fn local_quadratic(rows: &[Observation], x: f64, quality: bool) -> Option<f64> {
             }
         }
     }
-    Some(solve(a, rhs, 3)?.0[0] * scale)
+    let coefficients = solve(a, rhs, 3)?.0;
+    Some((coefficients[0] * scale, coefficients[1] * scale / radius))
 }
 
 #[cfg(test)]
@@ -581,9 +651,30 @@ mod tests {
         let p = population(99);
         for x in [0.0, 0.01, 0.3, 0.9, 1.0] {
             assert!(
-                (local_quadratic(&p.small, x, false).unwrap() - (100.0 + 50.0 * x * x)).abs()
+                (local_quadratic(&p.small, x, false).unwrap().0 - (100.0 + 50.0 * x * x)).abs()
                     < 1e-9
             );
+        }
+    }
+    #[test]
+    fn interpolated_loess_preserves_quadratics_and_handles_tied_times() {
+        let mut p = population(99);
+        let fit = LoessSurface::new(&p.small, false).unwrap();
+        for i in 0..80 {
+            let x = i as f64 / 79.0;
+            assert!((fit.predict(x) - (100.0 + 50.0 * x * x)).abs() < 1e-8);
+        }
+        // Replicating observations must preserve predictions, not create
+        // zero-width cells at repeated median times.
+        let originals = p.small.clone();
+        for v in originals {
+            p.small.push(v);
+        }
+        let tied = LoessSurface::new(&p.small, false).unwrap();
+        assert!(tied.vertices.windows(2).all(|p| p[0].0 < p[1].0));
+        for i in 0..80 {
+            let x = i as f64 / 79.0;
+            assert!((tied.predict(x) - (100.0 + 50.0 * x * x)).abs() < 1e-8);
         }
     }
     #[test]

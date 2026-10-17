@@ -2283,7 +2283,7 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
         )
         .unwrap();
     }
-    out.push_str("</p><p class=\"annotation\">Provisional MinIONQC-style fit of individual records, including zero lengths. All/Q populations are distinct from native passing. LOESS uses degree 2, span 0.75 and a direct surface; GAM uses a 10-knot cubic shrinkage spline and REML. Large groups use deterministic bounded unique-time knot selection. Combined method selection uses the largest group across panels. Confidence intervals and R numerical equivalence are not yet verified. Fits may cross missing intervals; the separate observed-bin charts retain gaps.</p></figure>");
+    out.push_str("</p><p class=\"annotation\">Provisional MinIONQC-style fit of individual records, including zero lengths. All/Q populations are distinct from native passing. LOESS uses degree 2, span 0.75 and median-cell Hermite interpolation (cell 0.2); GAM uses a 10-knot cubic shrinkage spline and REML. Large groups use deterministic bounded unique-time knot selection. Combined method selection uses the largest group across panels. Confidence intervals and R numerical equivalence are not yet verified. Fits may cross missing intervals; the separate observed-bin charts retain gaps.</p></figure>");
 }
 
 fn time_markers(out: &mut String, report: &Report, end: f64) {

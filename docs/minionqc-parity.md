@@ -48,7 +48,7 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 | `length_histogram`, `q_histogram` | Complete | All/Q count and yield histograms; fixed documented bins rather than 300 automatic bins; U histogram conservation / offline tests, V. |
 | `yield_over_time`, `reads_per_hour` | Complete | Absolute cumulative yield and counts in 15-minute bins, All/Q; U interval/cumulative conservation and gap tests, V. Counts are per 15 min, explicitly labeled. |
 | `yield_by_length` | Complete | Exact retained bp at bounded display queries, exact threshold counts; All/Q, full yield range rather than R's 99% crop; U `every_display_query_uses_exact_lengths_including_ties`, P, V. |
-| `length_by_hour`, `q_by_hour` | Partial | Unchanged 15-minute means plus opt-in raw-read LOESS/cubic-shrinkage REML fits; U temporal/fitting tests. R interpolation, large-group exact knots and ribbons remain incomplete. |
+| `length_by_hour`, `q_by_hour` | Partial | Unchanged 15-minute means plus opt-in interpolated LOESS/cubic-shrinkage REML fits; U temporal/fitting tests. Singular LOESS, large-group exact knots and ribbons remain incomplete. |
 | `channel_summary` | Complete | Four channel distributions and exact values, All-summary/Q; U channel summary tests, V. |
 | `gb_per_channel_overview` | Complete | Explicit-layout yield heatmaps including All/Q (native maps additionally available); U layout/yield conservation, V. |
 | MinION `flowcell_overview` | Partial | Exact physical panels, actual start/length/Q values, deterministic <=16 reads/channel; U sample bound/mapping tests, V. Full-read panels not reproduced. |
@@ -90,11 +90,11 @@ YAML retains full available precision, null unavailable values and integer bases
 upstream rounds several fields to one decimal. No private input identifiers enter
 output paths. Detailed numeric MinION samples are bounded and explicitly labeled.
 
-Executed public comparisons: short 99 /1,089,633 bp; PromethION 75,160 /623,196,506;
+Earlier public comparisons: short 99 /1,089,633 bp; PromethION 75,160 /623,196,506;
 1D2 159,799 /930,249,488; RNA 963 retained /197,413 (37 excluded); pooled MinION
 608,208 /7,203,301,321 bp (N50 33,161; median 2,616). Threshold/ultralong values
 agree with upstream YAML and independent calculations. Short/1D2 YAML labels are
-stale (Q>=7 labels, Q8 invocation/results). R itself was not executed. The private
+stale (Q>=7 labels, Q8 invocation/results). This fast check did not execute R. The private
 PBM95914 baseline was not rerun; its historical totals remain in metrics.md.
 
 Issues should remain open wherever their required acceptance criteria exceed
@@ -120,12 +120,14 @@ exact, rounding-tolerance, intentional semantic, suspected PoreGauge defect,
 proved upstream defect and unverified results. The validation-only Rust probe
 preserves upstream file-scoped populations without changing CLI run grouping.
 
-Executed here: four harness tests and the expanded 17-case paired command.
+Initial execution: four harness tests and the expanded 17-case paired command.
 PoreGauge ran; **all 17 R comparisons are Not yet verified**: no R
 installation, stopped Docker daemon, restricted environment-download/network
 access. Saved YAML/Python checks remain valid but are not actual R execution.
-No scientific parity status was promoted, and issue #11 remains open pending a
-successful reference run. The command returns 2 rather than falsely passing.
+The command returned 2 rather than falsely passing. A later native short-run
+execution succeeded (see below); the complete paired suite remains unverified.
+Use an existing R installation as documented; automatic R CI builds were removed.
+No scientific parity status is promoted and issue #11 remains open.
 
 ## Fitted time trends (#12): Partial
 
@@ -134,10 +136,24 @@ comparative reports without replacing interval means. The implementation follows
 [ggplot2 3.5.1 method selection](https://github.com/tidyverse/ggplot2/blob/v3.5.1/R/stat-smooth.R):
 largest group across panels, LOESS for <1,000, otherwise mgcv-style `cs`/REML.
 Bounded unique-time knots and a second streaming pass avoid unbounded paired-read
-retention. R's interpolated LOESS surface, exact large-group knots/null-space
-orientation and confidence bands are **not** claimed equivalent. Algorithm and
-population details are in metrics.md. Polynomial/spline/constant-model unit tests
-and CLI regressions passed; no actual R numerical tolerance has been measured.
+retention. LOESS now uses padded boundaries, median-split cells and Hermite
+interpolation of fitted vertex values/derivatives (cell .2). R's pseudoinverse
+for singular local fits, exact large-group GAM knots/null-space orientation and
+confidence bands are **not** claimed equivalent. Algorithm and population details
+are in metrics.md. Polynomial/spline/constant-model unit tests and CLI regressions
+passed.
+
+Limited actual R comparison: the unchanged public short fixture at Q8, pinned
+upstream `54485d5`, ran to completion under native macOS arm64 R 4.4.1, ggplot2
+3.5.1, mgcv 1.9-1, data.table 1.15.4, readr 2.1.5 and scales 1.3.0. All four
+80-point fits (length/Q, All/Q8) met the stated tolerances: 320 fitted values,
+maximum absolute error **1.274e-10**, maximum relative error **1.855e-14**; maximum
+X error **1.388e-17 h**. The harness recorded 888 exact, 402 within tolerance,
+four intentional population differences, 20 proved upstream channel-count bugs
+and four unverified confidence-band comparisons. This is one fixture, not proof
+of GAM, density or complete-suite parity. Native transitive packages differ from
+the dated container snapshot; full package versions/sessionInfo are in the local
+capture. No private input or derived report was committed.
 The executable harness compares methods, all 80 X/Y points and explicitly records
 unverified confidence intervals. Issue #12 remains open.
 

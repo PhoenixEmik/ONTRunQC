@@ -430,7 +430,8 @@ The optional validator reads the original pinned public examples directly, witho
 fabricated fields or Q-score clipping. Results, control exclusions and fixture
 caveats are listed under [Legacy schemas and MinION](#legacy-schemas-and-minion-9).
 It checks exact integers, per-channel medians and independent pooled calculations;
-upstream rounded Gb values have a 50.1 bp tolerance. R itself was **not executed**.
+upstream rounded Gb values have a 50.1 bp tolerance. This fast check does not execute
+R; the later limited native R short-run comparison is recorded in the parity matrix.
 No upstream read records or identifying reports are committed.
 
 Lengths and Q-scores still consume **16 bytes per basecalled read** in elements.
@@ -604,8 +605,9 @@ The largest All group selects LOESS below 1,000 observations, otherwise a cubic
 shrinkage regression spline (`cs`, k=10) with profiled Gaussian REML. Combined
 selection uses the largest run/source across panels, so a small run can use LOESS
 alone and GAM in a collection. LOESS uses degree 2, span .75, tricube weights and
-a direct local-quadratic surface. R's default interpolated surface is not yet
-matched. GAM uses natural cubic basis functions, integrated second-derivative
+a median-split interpolated surface (cell .2, padded range, vertex derivatives
+and cubic Hermite interpolation). Singular local fits remain unavailable rather
+than pretending to reproduce R's pseudoinverse. GAM uses natural cubic basis functions, integrated second-derivative
 penalty, .1/.01 null-space shrinkage, a centered smooth and unpenalized intercept.
 The eigensolver's null-space orientation may differ from mgcv/LAPACK. Confidence
 intervals are intentionally null rather than invented.
@@ -622,9 +624,10 @@ All fit calculations live in `trends.rs`; HTML renders the final model only.
 
 Unit/CLI tests exercise polynomial reproduction, natural knot interpolation,
 constant GAM intercepts, method selection, exact populations, unchanged existing
-metrics, sparse inputs and bounded storage. Actual R curve comparisons remain
-unverified here; the harness's provisional target is 1e-10 hours and fitted-value
-absolute 1e-6 + relative 1e-6. These are acceptance targets, not measured accuracy.
+metrics, sparse inputs and bounded storage. The public short-run LOESS comparison
+met the harness target (1e-10 hours and fitted-value absolute 1e-6 + relative 1e-6);
+measured errors and environment are in the parity matrix. Other fits, including
+large-group GAM and confidence intervals, remain unverified.
 
 ## Optional R-grid density estimates (#13)
 
