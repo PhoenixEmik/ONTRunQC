@@ -3,15 +3,16 @@
 All metrics are calculated centrally in `src/metrics.rs`. Input rows must pass
 validation before aggregation. Counts and yields are unsigned 64-bit integers;
 overflow is an error, never wrapping arithmetic. Statistics use IEEE-754 `f64`;
-required floating input must be finite and nonnegative. There are no NaN/Infinity values
+required floating input must be finite; modern Q/time values are nonnegative,
+while legacy signed Q values are explicitly retained. There are no NaN/Infinity values
 in a valid report. Unavailable statistics are JSON `null`.
 
 ## Overall sequencing metrics
 
 | Field under `metrics` | Definition |
 | --- | --- |
-| `total_records` | All validated data rows, excluding the header. |
-| `basecalled_reads` | Rows with `sequence_length_template > 0`. |
+| `total_records` | All validated non-control data rows, excluding the header; RNA control exclusions are counted separately. |
+| `basecalled_reads` | Retained rows with selected representation length >0 (template or explicitly selected 2D pair). |
 | `zero_length_records` | Rows with length zero, even if filtering is TRUE. |
 | `total_yield_bp` | Sum of basecalled read lengths, in base pairs. |
 | `passed_reads`, `failed_reads` | Basecalled reads with TRUE or FALSE filtering, respectively. |
@@ -158,7 +159,8 @@ integers; unknown floating statistics display **Not available**.
 Schema version remains **1**: no previous fields, definitions, or array ordering
 are removed or changed. Consumers should ignore unfamiliar fields. The additive
 `diagnostics` object contains the following independently ordered groups. It has
-no individual-read data and does not imply automatic run-level QC judgments.
+no complete read records and does not imply automatic run-level QC judgments.
+The later explicit MinION extension includes a bounded numeric visualization sample.
 The v0.4.0 additions follow the same contract: tolerant consumers can continue
 reading old fields, but strict consumers rejecting unknown keys (including keys
 inside `channels`/`time_bins` entries) must update. No incompatible field change
@@ -321,8 +323,9 @@ original records or private identifiers are used in public regression fixtures.
 
 The additive top-level `comparison` object retains schema version **1**. Existing
 fields are unchanged for previously accepted inputs. Consumers must tolerate new
-fields; strict consumers that reject unknown properties must update. No per-read
-records are serialized. Source behavior was reviewed in [MinIONQC.R at
+fields; strict consumers that reject unknown properties must update. No complete per-read
+records are serialized; explicit MinION reports may include the documented bounded
+numeric visualization sample. Source behavior was reviewed in [MinIONQC.R at
 54485d5](https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R)
 (`add_cols`, `summary.stats`, `binSearch`, `channel.summary`, plotting functions),
 its README/options, public YAML summaries and example plots.
@@ -423,22 +426,12 @@ python3 tests/minionqc_reference.py /tmp/minion-qc-reference
 python3 tests/parity_memory.py  # 1 million fictional reads, 3,000 channels
 ```
 
-Executed against the pinned public examples: short-run **99 records / 1,089,633
-bp** and PromethION **75,160 / 623,196,506 bp**. Exact threshold counts and
-ultralong counts agree with upstream YAML; rounded Gb values agree within 50.1 bp
-(the precision of stored decimal Gb). Channel medians and subset statistics also
-pass independent Python reference calculations. R itself was **not executed**.
-No upstream read records or identifying reports are committed; the optional
-adapter replaces run IDs and supplies neutral missing mux/reason fields.
-
-Two upstream fixture caveats are explicit: short-run's YAML says Q>=7 but its
-values match **Q>=8** (upstream `tests.R` calls `single.flowcell(...,8)` while the
-global title remains Q>=7). The checker runs Q8 for that comparison. PromethION
-contains three negative Q-score values (-0.100058, -0.106873, -0.122276), all on
-5 bp reads. Production parsing still rejects negative Q-scores. Only the
-validation adapter replaces these with Q0, preserving length/yield/channel values
-and Q>=7 membership; adapted all-read Q statistics are **not** claimed to match.
-These cases do not justify weakening input validation or silently copying labels.
+The optional validator reads the original pinned public examples directly, without
+fabricated fields or Q-score clipping. Results, control exclusions and fixture
+caveats are listed under [Legacy schemas and MinION](#legacy-schemas-and-minion-9).
+It checks exact integers, per-channel medians and independent pooled calculations;
+upstream rounded Gb values have a 50.1 bp tolerance. R itself was **not executed**.
+No upstream read records or identifying reports are committed.
 
 Lengths and Q-scores still consume **16 bytes per basecalled read** in elements.
 Lengths are stored once in four disjoint native/Q partitions per channel; Q-scores
@@ -450,7 +443,8 @@ channels), global Q spare capacity <=2 MiB; final global length spare capacity
 very skewed channels can increase the peak. Aggregated maps/output also consume
 memory. No <512 MiB claim is made for 30 million records.
 
-On this macOS environment the focused 1,000,000-record / 3,000-channel synthetic
+Before the multi-run/legacy/export additions, the macOS focused
+1,000,000-record / 3,000-channel synthetic
 check (48,520,325 input bytes, all four partitions exercised) measured **59,310,080
 bytes / 56.56 MiB peak child RSS**. This is an actual small synthetic measurement,
 not a full-run benchmark or a performance guarantee. The private PBM95914 summary
@@ -552,3 +546,44 @@ pretended to be a single physical flowcell. Threshold/ultralong counts match
 available upstream YAML and independent calculations. Short/1D2 YAML labels
 Q>=7 are stale: numeric values match Q8, as used by upstream tests.R. R was not
 executed; the historical private PromethION dataset was not rerun.
+
+## Output controls and YAML (#10)
+
+`presentation` is additive schema-version-1 configuration: `write_yaml`,
+`export_svg`, `small_figures`, `add_stat`, optional `mux_interval_hours`, and
+centrally prepared `mux_markers_seconds`. It never changes QC populations or
+histogram definitions. Existing consumers must tolerate additive fields.
+
+`--yaml` emits `summary.yaml`, using quoted YAML mappings and JSON-compatible
+scalars (YAML 1.2), without a new runtime dependency. Sections `All reads` and
+`Q>=<cutoff>` project canonical exact statistics. They contain `total.reads`,
+`total.bases` (exact integer extension), `total.gigabases`, `N50.length`,
+`mean.length`, `median.length`, `max.length`, `mean.q`, `median.q`, `reads`, and
+`gigabases`. Threshold labels match upstream (`>10kb` through `>1m`) but selection
+is **inclusive**, as in its code. `ultralong` is the existing maximal prefix.
+Unavailable statistics are null; values are unrounded, unlike upstream's
+one-decimal summaries. Input identification uses generated source labels and
+run IDs, not original paths. Raw summary/control counts and notes make the
+positive-length All-read denominator explicit. Native passing remains separate.
+
+Configured mux references use relative hours, starting at zero, through the
+final occupied interval's end. Zero disables references (default); positive
+intervals producing more than 512 markers fail actionably. References share the
+same axes in individual/comparison charts. They are not telemetry, occupancy or
+inferred mux switching. Cumulative comparison points sit at bin ends; mean/count
+observations sit at midpoints. Missing intervals break mean lines.
+
+`--add-stat` places exact-model mean length/N50 and mean Q annotations in the
+corresponding histogram SVGs. Display rounding/unit conversion is presentation
+only. `--format svg` exports every nonempty scientific SVG, with embedded styles,
+internal accessible titles and a current-file manifest. There is no external
+renderer or font dependency. Width is 180 mm, or 120 mm with `--smallfigures`;
+wide physical figures retain 320 mm. Height preserves aspect ratio. Empty figures
+stay explanatory states in HTML, rather than meaningless SVG files. Old SVGs not
+listed in a new manifest are retained, not silently removed.
+
+JSON, HTML and optional artifacts are all staged before per-file replacement;
+there is no atomic transaction across outputs or runs. Predictable failures clean
+staged files and preserve prior valid reports. PNG/PDF/PS/JPEG/TIFF/BMP conversions
+are not implemented. Browser printing does not establish figure-format parity.
+See [the parity matrix](minionqc-parity.md) for the full audit and tests.

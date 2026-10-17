@@ -2396,3 +2396,356 @@ fn minion_physical_maps_and_bounded_samples_preserve_observations() {
     let no_map = directory.analyze(&input);
     assert!(no_map["diagnostics"]["minion_sample"].is_null());
 }
+
+// Read the emitted YAML mapping subset independently: keys/scalars use JSON
+// quoting, which is valid YAML 1.2. Nested maps are determined by indentation.
+fn yaml_mapping(text: &str) -> Value {
+    fn parse(lines: &[&str], position: &mut usize, indent: usize) -> Value {
+        let mut fields = serde_json::Map::new();
+        while *position < lines.len() {
+            let line = lines[*position];
+            let spaces = line.len() - line.trim_start().len();
+            if spaces < indent {
+                break;
+            }
+            assert_eq!(spaces, indent);
+            let (key, value) = line.trim_start().split_once(":").unwrap();
+            let key: String = serde_json::from_str(key).unwrap();
+            *position += 1;
+            let value = if value.is_empty() {
+                parse(lines, position, indent + 2)
+            } else {
+                serde_json::from_str(value.trim()).unwrap()
+            };
+            fields.insert(key, value);
+        }
+        Value::Object(fields)
+    }
+    let lines: Vec<_> = text.lines().filter(|l| *l != "---").collect();
+    parse(&lines, &mut 0, 0)
+}
+
+#[test]
+fn yaml_summary_projects_exact_json_metrics_without_conflating_native_passes() {
+    let directory = TestDirectory::new();
+    let data = fs::read_to_string(fixture("synthetic.tsv")).unwrap();
+    let report = directory.analyze_with_args(&data, &["--yaml", "--qscore_cutoff", "15"]);
+    let yaml = fs::read_to_string(directory.0.join("output/summary.yaml")).unwrap();
+    let summary = yaml_mapping(&yaml);
+    assert_eq!(summary["All reads"]["total.reads"], 4);
+    assert_eq!(
+        summary["All reads"]["total.bases"],
+        report["metrics"]["total_yield_bp"]
+    );
+    assert_eq!(
+        summary["All reads"]["N50.length"],
+        report["metrics"]["n50_bp"]
+    );
+    assert_eq!(summary["All reads"]["median.length"], 25.0);
+    assert_eq!(
+        summary["All reads"]["mean.q"],
+        report["quality"]["mean_qscore"]
+    );
+    assert_eq!(
+        summary["Q>=15"]["total.bases"],
+        report["comparison"]["qscore_selected"]["total_yield_bp"]
+    );
+    assert_eq!(summary["Q>=15"]["total.bases"], 50);
+    assert_eq!(report["metrics"]["passed_yield_bp"], 40);
+    assert_eq!(summary["summary.records"], 6);
+    assert_eq!(summary["All reads"]["reads"][">10kb"], 0);
+    assert_eq!(summary["All reads"]["reads"]["ultralong"], 0);
+    assert!(summary["notes"].as_str().unwrap().contains("inclusive"));
+    assert!(!yaml.contains("NaN"));
+    let same = directory.analyze_with_args(&data, &["--yaml", "--qscore_cutoff", "15"]);
+    assert_eq!(report, same);
+    assert_eq!(
+        yaml,
+        fs::read_to_string(directory.0.join("output/summary.yaml")).unwrap()
+    );
+}
+
+#[test]
+fn yaml_handles_exact_thresholds_ultralong_and_nulls_with_safe_metadata() {
+    let directory = TestDirectory::new();
+    let data = format!(
+        "{HEADER}{}
+{}{}",
+        ROW.trim_end()
+            .replace("synthetic-run", "<tag>&\"quoted\"")
+            .replace("\t10\t", "\t100000\t"),
+        ROW.replace("\t10\t", "\t10000\t")
+            .replace("synthetic-run", "<tag>&\"quoted\""),
+        ROW.replace("synthetic-run", "<tag>&\"quoted\"")
+            .replace("\t10\t", "\t0\t")
+    );
+    let report = directory.analyze_with_args(&data, &["--yaml"]);
+    let summary =
+        yaml_mapping(&fs::read_to_string(directory.0.join("output/summary.yaml")).unwrap());
+    assert_eq!(summary["run_id"], "<tag>&\"quoted\"");
+    assert_eq!(summary["All reads"]["reads"][">10kb"], 2);
+    assert_eq!(summary["All reads"]["gigabases"][">10kb"], 110000.0 / 1e9);
+    assert_eq!(
+        summary["All reads"]["reads"]["ultralong"],
+        report["comparison"]["yield_by_minimum_length"]["ultralong_all"]["read_count"]
+    );
+    directory.analyze_with_args(HEADER, &["--yaml"]);
+    let empty = yaml_mapping(&fs::read_to_string(directory.0.join("output/summary.yaml")).unwrap());
+    assert_eq!(empty["All reads"]["total.reads"], 0);
+    assert!(empty["All reads"]["mean.q"].is_null());
+    assert!(empty["Q>=7"]["N50.length"].is_null());
+}
+
+#[test]
+fn svg_exports_are_self_contained_sized_and_annotated_from_existing_statistics() {
+    let directory = TestDirectory::new();
+    let data = fs::read_to_string(fixture("synthetic.tsv")).unwrap();
+    let default = directory.analyze(&data);
+    assert!(!directory.0.join("output/figures").exists());
+    let report = directory.analyze_with_args(
+        &data,
+        &[
+            "--format",
+            "svg",
+            "--smallfigures",
+            "--add-stat",
+            "--muxes",
+            "0.25",
+        ],
+    );
+    for key in [
+        "metrics",
+        "quality",
+        "diagnostics",
+        "comparison",
+        "channels",
+        "time_bins",
+        "distributions",
+    ] {
+        assert_eq!(
+            report[key], default[key],
+            "presentation changed QC field {key}"
+        );
+    }
+    let figures = directory.0.join("output/figures");
+    let names: Vec<String> =
+        serde_json::from_slice(&fs::read(figures.join("manifest.json")).unwrap()).unwrap();
+    assert!(names.len() > 15);
+    for name in &names {
+        let svg = fs::read_to_string(figures.join(name)).unwrap();
+        assert!(svg.contains("xmlns=\"http://www.w3.org/2000/svg\""));
+        assert!(svg.contains("width=\"120mm\""));
+        assert!(svg.contains("<title id=\""));
+        assert!(svg.ends_with("</svg>"));
+        assert!(!svg.contains("<script"));
+        assert!(!svg.contains("<link"));
+        assert!(!svg.contains("href=\"https://"));
+        assert!(!svg.contains("NaN"));
+    }
+    let length = fs::read_to_string(figures.join("length-counts.svg")).unwrap();
+    assert!(length.contains("Mean length: 0.025 kb · N50: 0.03 kb"));
+    assert!(length.contains("id=\"length-counts-caption\">Reads by length interval</title>"));
+    let quality = fs::read_to_string(figures.join("quality-histogram.svg")).unwrap();
+    assert!(quality.contains("Mean read Q-score: 15"));
+    // Use the renderer's stable manifest, rather than guessing a figure title.
+    let yield_svg = names
+        .iter()
+        .map(|n| fs::read_to_string(figures.join(n)).unwrap())
+        .find(|s| s.contains("data-mux-reference-seconds"))
+        .unwrap();
+    assert!(yield_svg.contains("not a measured instrument event"));
+    directory.analyze_with_args(&data, &["--format", "svg"]);
+    assert!(
+        fs::read_to_string(figures.join("length-counts.svg"))
+            .unwrap()
+            .contains("width=\"180mm\"")
+    );
+    assert!(!directory.html().contains("class=\"stat-annotation\""));
+}
+
+#[test]
+fn export_failures_preserve_previous_reports_and_clean_all_temporary_outputs() {
+    for blocked in ["summary.yaml", "figures"] {
+        let directory = TestDirectory::new();
+        directory.analyze(&format!("{HEADER}{ROW}"));
+        let output = directory.0.join("output");
+        let previous_json = fs::read(output.join("report.json")).unwrap();
+        let previous_html = fs::read(output.join("report.html")).unwrap();
+        fs::create_dir(output.join(blocked)).unwrap();
+        if blocked == "figures" {
+            fs::write(output.join("figures/length-counts.svg"), "previous SVG").unwrap();
+            fs::create_dir(output.join("figures/quality-histogram.svg")).unwrap();
+        }
+        let input = directory.0.join("input.tsv");
+        fs::write(
+            &input,
+            format!("{HEADER}{}", ROW.replace("\t10\t", "\t20\t")),
+        )
+        .unwrap();
+        let result = directory.run_with_args(&input, &["--yaml", "--format", "svg"]);
+        assert!(!result.status.success());
+        assert_eq!(fs::read(output.join("report.json")).unwrap(), previous_json);
+        assert_eq!(fs::read(output.join("report.html")).unwrap(), previous_html);
+        for dir in [output.clone(), output.join("figures")] {
+            if dir.is_dir() {
+                for file in fs::read_dir(dir).unwrap() {
+                    assert!(!file.unwrap().file_name().to_string_lossy().contains(".tmp"));
+                }
+            }
+        }
+        if blocked == "figures" {
+            assert_eq!(
+                fs::read_to_string(output.join("figures/length-counts.svg")).unwrap(),
+                "previous SVG"
+            );
+            assert!(!output.join("summary.yaml").exists());
+        }
+    }
+}
+
+#[test]
+fn configured_mux_markers_use_relative_time_and_can_be_disabled() {
+    let directory = TestDirectory::new();
+    let data = fs::read_to_string(fixture("synthetic.tsv")).unwrap();
+    let report = directory.analyze_with_args(&data, &["--muxes", "0.25"]);
+    assert_eq!(
+        report["presentation"]["mux_markers_seconds"],
+        json!([0.0, 900.0, 1800.0, 2700.0, 3600.0])
+    );
+    let html = directory.html();
+    assert!(html.contains("class=\"mux-marker\""));
+    assert!(html.contains("data-mux-reference-seconds=\"900\" x1=\"238.50\""));
+    assert!(html.contains("not measured MinKNOW events"));
+    directory.analyze_with_args(&data, &["--muxes", "0"]);
+    assert!(!directory.html().contains("class=\"mux-marker\""));
+    let empty = directory.analyze_with_args(HEADER, &["--muxes", "1"]);
+    assert_eq!(empty["presentation"]["mux_markers_seconds"], json!([]));
+    assert_invalid_with_args(&data, "more than 512 markers", &["--muxes", "0.000001"]);
+    for bad in ["NaN", "inf", "-1"] {
+        assert_invalid_with_args(&data, "error:", &["--muxes", bad]);
+    }
+}
+
+#[test]
+fn output_compatibility_aliases_and_explicit_unsupported_formats_are_actionable() {
+    let directory = TestDirectory::new();
+    let output = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .args(["analyze", "--input"])
+        .arg(fixture("synthetic.tsv"))
+        .args(["--outputdirectory"])
+        .arg(directory.0.join("output"))
+        .args([
+            "--qscore_cutoff",
+            "10",
+            "--processors",
+            "1",
+            "--yaml",
+            "--smallfigures",
+            "--add-stat",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for args in [["--format", "png"], ["--processors", "2"]] {
+        let result = directory.run_with_args(&fixture("synthetic.tsv"), &args);
+        assert!(!result.status.success());
+        let error = String::from_utf8_lossy(&result.stderr);
+        assert!(error.contains("invalid value"));
+    }
+}
+
+#[test]
+fn collection_exports_preserve_pooled_statistics_and_skip_individuals_when_requested() {
+    let directory = TestDirectory::new();
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv");
+    fs::write(&a, format!("{HEADER}{ROW}")).unwrap();
+    fs::write(
+        &b,
+        format!(
+            "{HEADER}{}",
+            ROW.replace("synthetic-run", "different-run")
+                .replace("\t10\t", "\t100\t")
+        ),
+    )
+    .unwrap();
+    let report = run_collection(
+        &directory,
+        &[&a, &b],
+        &[
+            "--combined-only",
+            "--yaml",
+            "--format",
+            "svg",
+            "--muxes",
+            "1",
+        ],
+    );
+    let combined = directory.0.join("output/combined");
+    assert!(!directory.0.join("output/runs").exists());
+    let yaml = yaml_mapping(&fs::read_to_string(combined.join("summary.yaml")).unwrap());
+    assert_eq!(yaml["All reads"]["total.bases"], 110);
+    assert_eq!(yaml["All reads"]["N50.length"], 100);
+    assert_eq!(yaml["All reads"]["median.length"], 55.0);
+    assert_eq!(yaml["All reads"]["N50.length"], report["metrics"]["n50_bp"]);
+    let manifest = fs::read_to_string(combined.join("figures/manifest.json")).unwrap();
+    assert!(manifest.contains("combined-yield-time-false.svg"));
+    assert!(manifest.contains("combined-length-time-true.svg"));
+    let html = fs::read_to_string(combined.join("report.html")).unwrap();
+    assert!(html.contains("data-mux-reference-seconds=\"0\""));
+}
+
+#[test]
+fn empty_exports_and_wide_minion_figures_keep_explicit_available_states() {
+    let directory = TestDirectory::new();
+    let empty = directory.analyze_with_args(HEADER, &["--yaml", "--format", "svg", "--add-stat"]);
+    assert_eq!(empty["metrics"]["basecalled_reads"], 0);
+    let manifest: Vec<String> = serde_json::from_slice(
+        &fs::read(directory.0.join("output/figures/manifest.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(manifest.is_empty());
+    assert!(
+        directory
+            .html()
+            .contains("No basecalled reads are available")
+    );
+    directory.analyze_with_args(
+        &format!("{HEADER}{ROW}"),
+        &[
+            "--format",
+            "svg",
+            "--smallfigures",
+            "--flowcell-layout",
+            "minion-r9.5",
+        ],
+    );
+    let figures = directory.0.join("output/figures");
+    let overview = fs::read_to_string(figures.join("minion-flowcell-overview.svg")).unwrap();
+    assert!(overview.contains("width=\"320mm\""));
+    assert!(overview.contains("data-channel=\"1\""));
+    let length_time = fs::read_to_string(figures.join("length-time.svg")).unwrap();
+    assert!(length_time.contains(">All basecalled reads</text>"));
+    assert!(length_time.contains(">Native passed reads</text>"));
+    assert!(length_time.contains(">Q ≥ 7</text>"));
+}
+
+#[test]
+fn explicitly_grouped_empty_chunks_do_not_invent_an_extra_run() {
+    let directory = TestDirectory::new();
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv");
+    fs::write(&a, format!("{HEADER}{ROW}")).unwrap();
+    fs::write(&b, HEADER).unwrap();
+    let report = run_collection(&directory, &[&a, &b], &["--group-inputs", "--yaml"]);
+    assert_eq!(report["collection"]["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(report["collection"]["runs"][0]["source"]["input_files"], 2);
+    let yaml = yaml_mapping(
+        &fs::read_to_string(directory.0.join("output/runs/run_001/summary.yaml")).unwrap(),
+    );
+    assert_eq!(yaml["All reads"]["total.reads"], 1);
+}

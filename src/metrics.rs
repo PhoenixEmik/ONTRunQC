@@ -1346,6 +1346,7 @@ impl Aggregator {
                 comparison,
                 distributions,
                 input: self.input,
+                presentation: crate::report::PresentationOptions::default(),
                 source: None,
                 collection: None,
             },
@@ -1737,6 +1738,142 @@ fn n50_descending(lengths: impl Iterator<Item = u64>, total_yield: u64) -> Optio
         }
     }
     None
+}
+
+/// Reference positions are configuration, never inferred telemetry events.
+pub fn configure_mux_markers(report: &mut Report) -> Result<()> {
+    report.presentation.mux_markers_seconds.clear();
+    let Some(hours) = report.presentation.mux_interval_hours else {
+        return Ok(());
+    };
+    let end = report
+        .collection
+        .as_ref()
+        .map(|c| {
+            c.runs
+                .iter()
+                .filter_map(|r| r.time_bins.last().map(|b| b.end_seconds))
+                .max()
+                .unwrap_or(0)
+        })
+        .unwrap_or_else(|| report.time_bins.last().map_or(0, |b| b.end_seconds));
+    if end == 0 {
+        return Ok(());
+    }
+    let interval = hours * 3600.0;
+    let count = (end as f64 / interval).floor() + 1.0;
+    ensure!(
+        count <= 512.0,
+        "configured mux interval generates more than 512 markers; increase --muxes or use 0 to disable"
+    );
+    report.presentation.mux_markers_seconds =
+        (0..count as usize).map(|i| i as f64 * interval).collect();
+    Ok(())
+}
+
+/// MinIONQC-shaped projection of the same canonical metrics; no new QC engine.
+pub fn yaml_summary(report: &Report) -> serde_json::Value {
+    use serde_json::json;
+    let mut summary = serde_json::Map::new();
+    summary.insert(
+        "input file".into(),
+        json!(
+            report
+                .source
+                .as_ref()
+                .map(|s| s.source_id.as_str())
+                .unwrap_or(if report.collection.is_some() {
+                    "pooled run/source collection"
+                } else {
+                    "single input source"
+                })
+        ),
+    );
+    summary.insert("run_id".into(), json!(report.run.run_id));
+    summary.insert(
+        "summary.records".into(),
+        json!(report.metrics.total_records),
+    );
+    summary.insert(
+        "excluded.control.records".into(),
+        json!(report.input.excluded_control_records),
+    );
+    for selected in [false, true] {
+        let m = &report.metrics;
+        let s = &report.comparison.qscore_selected;
+        let (reads, yield_bp, n50, mean, median, maximum, mean_q, median_q) = if selected {
+            (
+                s.read_count,
+                s.total_yield_bp,
+                s.n50_bp,
+                s.mean_read_length_bp,
+                s.median_read_length_bp,
+                s.max_read_length_bp,
+                s.mean_qscore,
+                s.median_qscore,
+            )
+        } else {
+            (
+                m.basecalled_reads,
+                m.total_yield_bp,
+                m.n50_bp,
+                m.mean_read_length_bp,
+                m.median_read_length_bp,
+                m.max_read_length_bp,
+                report.quality.mean_qscore,
+                report.quality.median_qscore,
+            )
+        };
+        let analysis = &report.comparison.yield_by_minimum_length;
+        let (mut counts, mut yields) = (serde_json::Map::new(), serde_json::Map::new());
+        for t in &analysis.thresholds {
+            let key = if t.minimum_length_bp == 1_000_000 {
+                ">1m".to_owned()
+            } else {
+                format!(">{}kb", t.minimum_length_bp / 1000)
+            };
+            counts.insert(
+                key.clone(),
+                json!(if selected {
+                    t.qscore_selected_read_count
+                } else {
+                    t.all_read_count
+                }),
+            );
+            yields.insert(
+                key,
+                json!(
+                    (if selected {
+                        t.qscore_selected_yield_bp
+                    } else {
+                        t.all_yield_bp
+                    }) as f64
+                        / 1e9
+                ),
+            );
+        }
+        let ultra = if selected {
+            &analysis.ultralong_qscore_selected
+        } else {
+            &analysis.ultralong_all
+        };
+        counts.insert("ultralong".into(), json!(ultra.read_count));
+        yields.insert("ultralong".into(), json!(ultra.total_yield_bp as f64 / 1e9));
+        summary.insert(
+            if selected {
+                format!("Q>={}", report.comparison.qscore_cutoff)
+            } else {
+                "All reads".into()
+            },
+            json!({
+                "total.reads":reads,"total.bases":yield_bp,"total.gigabases":yield_bp as f64/1e9,
+                "N50.length":n50,"mean.length":mean,"median.length":median,"max.length":maximum,
+                "mean.q":mean_q,"median.q":median_q,"reads":counts,"gigabases":yields
+            }),
+        );
+    }
+    summary.insert("notes".into(),json!("All reads means positive-length basecalled reads; zero lengths/control exclusions are separate. Native passes_filtering is independent of Q cutoff. Length labels use inclusive >= boundaries. Unrounded per-read means/medians; core N50 reaches >=half; ultralong is the maximal longest-first prefix with strict-half N50 >=100kb. Input identification uses source labels/run_id, not original file paths."));
+    serde_json::Value::Object(summary)
 }
 
 #[cfg(test)]

@@ -20,6 +20,7 @@ pub struct AnalysisOptions {
     pub split_runs: bool,
     pub input_schema: crate::input::InputSchema,
     pub read_representation: crate::input::ReadRepresentation,
+    pub presentation: crate::report::PresentationOptions,
 }
 
 struct Group {
@@ -129,7 +130,14 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
                 .add(&record)
                 .with_context(|| format!("input {} line {}", path.display(), record.line))?;
         }
-        if !had_record {
+        if !had_record && options.group_inputs && !groups.is_empty() {
+            let group = &mut groups[0];
+            group.files.insert(file_index);
+            group.aggregator.include_input_capabilities(native, speed);
+            group
+                .aggregator
+                .include_input_format(schema, representation)?;
+        } else if !had_record {
             let mut aggregator = Aggregator::new(options.layout, speed);
             aggregator.set_qscore_cutoff(options.cutoff, native);
             aggregator.set_sampling_enabled(!options.combined_only);
@@ -153,6 +161,9 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
     for (index, group) in groups.into_iter().enumerate() {
         let (mut report, observations) = group.aggregator.finish_retaining(group.run_id)?;
         if !collection {
+            drop(observations);
+            report.presentation = options.presentation.clone();
+            crate::metrics::configure_mux_markers(&mut report)?;
             report::write(&report, output)?;
             return Ok(());
         }
@@ -163,6 +174,8 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             grouping: group.grouping,
             flow_cell_id: group.flow_cell_id,
         });
+        report.presentation = options.presentation.clone();
+        crate::metrics::configure_mux_markers(&mut report)?;
         if !options.combined_only {
             report::write(&report, &output.join("runs").join(&source_id))?;
         }
@@ -174,6 +187,8 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         unit: "sequencing_runs_or_explicit_sources",
         runs,
     });
+    report.presentation = options.presentation.clone();
+    crate::metrics::configure_mux_markers(&mut report)?;
     report::write(&report, &output.join("combined"))?;
     Ok(())
 }

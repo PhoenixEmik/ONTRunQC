@@ -40,6 +40,46 @@ def expected_summary(path):
     return result
 
 
+def projected_yaml(path):
+    """Parse the writer's quoted mapping/scalar subset (YAML 1.2)."""
+    root, stack = {}, []
+    stack.append((-1, root))
+    for line in path.read_text().splitlines():
+        if line == "---":
+            continue
+        indent = len(line) - len(line.lstrip())
+        key, value = line.lstrip().split(":", 1)
+        while stack[-1][0] >= indent:
+            stack.pop()
+        key = json.loads(key)
+        current = {} if not value else json.loads(value)
+        stack[-1][1][key] = current
+        if not value:
+            stack.append((indent, current))
+    return root
+
+
+def check_projected_yaml(summary, report, cutoff):
+    for selected in [False, True]:
+        section = summary[f"Q>={cutoff}" if selected else "All reads"]
+        m = report["comparison"]["qscore_selected"] if selected else report["metrics"]
+        q = m if selected else report["quality"]
+        assert section["total.reads"] == m["read_count" if selected else "basecalled_reads"]
+        assert section["total.bases"] == m["total_yield_bp"]
+        for external, internal in [("N50.length", "n50_bp"), ("mean.length", "mean_read_length_bp"), ("median.length", "median_read_length_bp"), ("max.length", "max_read_length_bp")]:
+            assert section[external] == m[internal]
+        assert section["mean.q"] == q["mean_qscore"]
+        assert section["median.q"] == q["median_qscore"]
+        for threshold in report["comparison"]["yield_by_minimum_length"]["thresholds"]:
+            n = threshold["minimum_length_bp"]
+            key = ">1m" if n == 1000000 else f">{n//1000}kb"
+            prefix = "qscore_selected" if selected else "all"
+            assert section["reads"][key] == threshold[f"{prefix}_read_count"]
+            assert abs(section["gigabases"][key]*1e9 - threshold[f"{prefix}_yield_bp"]) < 0.001
+        ultra = report["comparison"]["yield_by_minimum_length"]["ultralong_qscore_selected" if selected else "ultralong_all"]
+        assert section["reads"]["ultralong"] == ultra["read_count"]
+
+
 def n50(lengths):
     total = sum(lengths)
     cumulative = 0
@@ -151,11 +191,13 @@ def main():
         paths = [upstream/n for n in names]
         rows, excluded = observations(paths)
         with tempfile.TemporaryDirectory(prefix="poregauge-upstream-") as directory:
-            result = subprocess.run([binary, "analyze", *map(str,paths), "--split-runs", "-q", str(cutoff), "-o", directory], capture_output=True, text=True)
+            result = subprocess.run([binary, "analyze", *map(str,paths), "--split-runs", "--yaml", "-q", str(cutoff), "-o", directory], capture_output=True, text=True)
             assert result.returncode == 0, result.stderr
             report = json.loads((Path(directory)/"combined/report.json").read_text())
+            check_projected_yaml(projected_yaml(Path(directory)/"combined/summary.yaml"), report, cutoff)
             for individual in sorted((Path(directory)/"runs").glob("*/report.json")):
                 single = json.loads(individual.read_text())
+                check_projected_yaml(projected_yaml(individual.with_name("summary.yaml")), single, cutoff)
                 check_metrics(single, [r for r in rows if r[3] == single["run"]["run_id"]], cutoff)
         check_metrics(report, rows, cutoff)
         assert report["input"]["excluded_control_records"] == excluded

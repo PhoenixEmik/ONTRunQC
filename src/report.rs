@@ -29,10 +29,21 @@ pub struct Report {
     pub comparison: ComparisonMetrics,
     pub distributions: crate::metrics::DistributionEstimates,
     pub input: crate::metrics::InputSummary,
+    pub presentation: PresentationOptions,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collection: Option<Collection>,
+}
+
+#[derive(Clone, Default, Debug, Serialize)]
+pub struct PresentationOptions {
+    pub write_yaml: bool,
+    pub export_svg: bool,
+    pub small_figures: bool,
+    pub add_stat: bool,
+    pub mux_interval_hours: Option<f64>,
+    pub mux_markers_seconds: Vec<f64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -134,13 +145,76 @@ pub fn write(report: &Report, directory: &Path) -> Result<()> {
             .context("cannot write report newline")?;
         Ok(())
     })?;
+    let rendered = crate::html::render(report);
     let html = StagedReport::prepare(directory, "report.html", |writer| {
         writer
-            .write_all(crate::html::render(report).as_bytes())
+            .write_all(rendered.as_bytes())
             .context("cannot write HTML report")
     })?;
-    json.publish()?;
-    html.publish()?;
+    let mut staged = vec![json, html];
+    if report.presentation.write_yaml {
+        validate_extra_destination(directory, "summary.yaml")?;
+        let yaml = crate::export::yaml(report)?;
+        staged.push(StagedReport::prepare(
+            directory,
+            "summary.yaml",
+            |writer| {
+                writer
+                    .write_all(yaml.as_bytes())
+                    .context("cannot write YAML summary")
+            },
+        )?);
+    }
+    if report.presentation.export_svg {
+        let figures = crate::export::figures(&rendered, report.presentation.small_figures)?;
+        let figures_directory = directory.join("figures");
+        fs::create_dir_all(&figures_directory).context("cannot create figures directory")?;
+        for figure in &figures {
+            validate_extra_destination(&figures_directory, &figure.name)?;
+            staged.push(StagedReport::prepare(
+                &figures_directory,
+                &figure.name,
+                |writer| {
+                    writer
+                        .write_all(figure.svg.as_bytes())
+                        .context("cannot write SVG figure")
+                },
+            )?);
+        }
+        validate_extra_destination(&figures_directory, "manifest.json")?;
+        staged.push(StagedReport::prepare(
+            &figures_directory,
+            "manifest.json",
+            |writer| {
+                serde_json::to_writer_pretty(
+                    writer,
+                    &figures.iter().map(|f| &f.name).collect::<Vec<_>>(),
+                )
+                .context("cannot write figure manifest")
+            },
+        )?);
+    }
+    // Every requested output is staged before replacing any previous report.
+    // Publication remains per-file; no atomic transaction across the collection.
+    for file in staged {
+        file.publish()?;
+    }
+    Ok(())
+}
+
+fn validate_extra_destination(directory: &Path, name: &str) -> Result<()> {
+    let path = directory.join(name);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) => ensure!(
+            metadata.is_file(),
+            "report destination is not a regular file: {}",
+            path.display()
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => {
+            return Err(error).with_context(|| format!("cannot inspect {}", path.display()));
+        }
+    }
     Ok(())
 }
 

@@ -29,6 +29,9 @@ pub fn render(report: &Report) -> String {
         out.push_str(r##"<a href="#overview">01 Run overview</a><a href="#yield">02 Sequencing yield</a><a href="#length">03 Read length</a><a href="#quality">04 Read quality</a><a href="#channels">05 Channels</a><a href="#mux">06 Mux performance</a><a href="#termination">07 Termination reasons</a><a href="#speed">08 Sequencing speed</a><a href="#qcutoff">09 Q-cutoff comparison</a><div class="nav-note">One run.<br>Summary-derived QC.<br>Available offline.</div></nav><main>"##);
     }
     overview(&mut out, report);
+    if let Some(hours) = report.presentation.mux_interval_hours {
+        write!(out, "<p class=\"annotation\">Dashed mux-reference markers every {} hours are user configuration, not measured MinKNOW events.</p>", decimal(hours)).unwrap();
+    }
     if report.collection.is_some() {
         combined_comparisons(&mut out, report);
     } else {
@@ -124,6 +127,7 @@ fn combined_comparisons(out: &mut String, report: &Report) {
                     TimeSeries {
                         label: &r.source.source_id,
                         color: run_color(i),
+                        bin_offset_seconds: if kind == 0 { 900 } else { 450 },
                         points,
                     }
                 })
@@ -214,7 +218,7 @@ fn comparison_distribution(
             &if quality {
                 decimal(value)
             } else {
-                format!("10^{}", decimal(value))
+                format!("10^{}", compact(value))
             },
         );
     }
@@ -331,8 +335,16 @@ fn overview(out: &mut String, report: &Report) {
         out,
         "overview",
         "01",
-        "Run overview",
-        "Oxford Nanopore sequencing summary · Single-run analysis",
+        if report.collection.is_some() {
+            "Pooled overview"
+        } else {
+            "Run overview"
+        },
+        if report.collection.is_some() {
+            "Exact pooled statistics · Independent runs / explicitly identified sources"
+        } else {
+            "Oxford Nanopore sequencing summary · Single-run analysis"
+        },
     );
     if !report.comparison.native_filtering_available {
         out.push_str("<p class=\"notice\">Native filtering unavailable or incomplete: passes_filtering is absent or missing on some reads. Native count fields in JSON count observed TRUE/FALSE only; no reads are inferred to fail. Q-cutoff comparisons remain available.</p>");
@@ -539,10 +551,11 @@ fn time_plot(out: &mut String, report: &Report, id: &str, title: &str, kind: Tim
         x_tick(
             out,
             LEFT + (RIGHT - LEFT) * i as f64 / 4.0,
-            &decimal(end / 3600.0 * i as f64 / 4.0),
+            &compact(end / 3600.0 * i as f64 / 4.0),
         );
     }
     out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Time from run start (h)</text>");
+    time_markers(out, report, end);
     if matches!(kind, TimePlot::Cumulative) {
         let mut path = format!("M {LEFT} {BOTTOM}");
         let mut previous = 0;
@@ -615,13 +628,14 @@ fn lengths(out: &mut String, report: &Report) {
             )
         })
         .collect();
-    bars(
+    annotated_bars(
         out,
         "length-counts",
         "Reads by length interval",
         "Basecalled reads (reads)",
         1.0,
         &reads,
+        statistic_annotation(report, false, false).as_deref(),
     );
     let yields: Vec<_> = bins
         .iter()
@@ -634,13 +648,14 @@ fn lengths(out: &mut String, report: &Report) {
         })
         .collect();
     let (scale, unit) = bp_scale(bins.iter().map(|b| b.yield_bp).max().unwrap_or(0));
-    bars(
+    annotated_bars(
         out,
         "length-yield",
         "Yield by length interval",
         &format!("Yield ({unit})"),
         scale,
         &yields,
+        statistic_annotation(report, false, false).as_deref(),
     );
     out.push_str("</div><details><summary>View exact length histogram</summary><div class=\"table-scroll\"><table><caption>Basecalled read length intervals</caption><thead><tr><th class=\"label\" scope=\"col\">Length interval (bp)</th><th scope=\"col\">Reads</th><th scope=\"col\">Yield (bp)</th></tr></thead><tbody>");
     for b in bins {
@@ -686,13 +701,14 @@ fn quality(out: &mut String, report: &Report) {
             )
         })
         .collect();
-    bars(
+    annotated_bars(
         out,
         "quality-histogram",
         "Read Q-score distribution",
         "Basecalled reads (reads)",
         1.0,
         &histogram,
+        statistic_annotation(report, true, false).as_deref(),
     );
     out.push_str("<div class=\"chart-grid\">");
     let m = &report.metrics;
@@ -784,7 +800,7 @@ fn qscore_comparison(out: &mut String, report: &Report) {
         } else {
             (1.0, "reads")
         };
-        bars(
+        annotated_bars(
             out,
             id,
             &format!("{title} · {label}"),
@@ -798,6 +814,7 @@ fn qscore_comparison(out: &mut String, report: &Report) {
             ),
             scale,
             &rows,
+            statistic_annotation(report, false, true).as_deref(),
         );
     }
     let rows: Vec<_> = comparison
@@ -811,13 +828,14 @@ fn qscore_comparison(out: &mut String, report: &Report) {
             )
         })
         .collect();
-    bars(
+    annotated_bars(
         out,
         "qcutoff-quality",
         &format!("Read Q-score distribution · {label}"),
         "Basecalled reads (reads)",
         1.0,
         &rows,
+        statistic_annotation(report, true, true).as_deref(),
     );
     out.push_str("</div>");
     if report.collection.is_none() {
@@ -838,6 +856,7 @@ fn qscore_comparison(out: &mut String, report: &Report) {
             let all = TimeSeries {
                 label: "All basecalled reads",
                 color: "primary",
+                bin_offset_seconds: if cumulative { 900 } else { 450 },
                 points: report
                     .time_bins
                     .iter()
@@ -856,6 +875,7 @@ fn qscore_comparison(out: &mut String, report: &Report) {
             let selected = TimeSeries {
                 label: &label,
                 color: "qselected",
+                bin_offset_seconds: if cumulative { 900 } else { 450 },
                 points: comparison
                     .time_bins
                     .iter()
@@ -1161,6 +1181,7 @@ fn read_time_plot(out: &mut String, report: &Report, quality: bool) {
         TimeSeries {
             label: "All basecalled reads",
             color: "primary",
+            bin_offset_seconds: 450,
             points: Vec::new(),
         },
         TimeSeries {
@@ -1170,11 +1191,13 @@ fn read_time_plot(out: &mut String, report: &Report, quality: bool) {
                 "Native passed · unavailable"
             },
             color: "passed",
+            bin_offset_seconds: 450,
             points: Vec::new(),
         },
         TimeSeries {
             label: &selected_label,
             color: "qselected",
+            bin_offset_seconds: 450,
             points: Vec::new(),
         },
     ];
@@ -1760,7 +1783,7 @@ fn minion_read_plots(out: &mut String, report: &Report) {
         out,
         "minion-length-quality",
         "Observed sampled reads; X is log10 read length, Y is per-read Q-score, color is log10(1+events/base). Gray indicates missing events.",
-        294,
+        324,
     );
     for i in 0..=4 {
         let fraction = i as f64 / 4.0;
@@ -1770,7 +1793,7 @@ fn minion_read_plots(out: &mut String, report: &Report) {
         x_tick(
             out,
             LEFT + (RIGHT - LEFT) * fraction,
-            &format!("10^{}", decimal(log_max * fraction)),
+            &format!("10^{}", compact(log_max * fraction)),
         );
     }
     out.push_str("<text class=\"axis-label\" x=\"80\" y=\"17\">Mean read Q-score</text><text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Read length (bp; logarithmic axis)</text>");
@@ -1792,7 +1815,7 @@ fn minion_read_plots(out: &mut String, report: &Report) {
         );
         write!(out, "<circle cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"2\" fill=\"{color}\"><title>{} bp; Q {}; events/base {}</title></circle>", count(point.length_bp), cutoff_value(point.qscore), optional(point.events_per_base, 1.0, "")).unwrap();
     }
-    write!(out, "</svg></div><p class=\"annotation\">Events/base palette: light 0 → dark {} (log10(1+ratio)); gray = unavailable. Template event counts are never used for 2D reads.</p></figure>", decimal(max_events)).unwrap();
+    write!(out, "<text class=\"tick\" x=\"80\" y=\"313\">Events/base: light 0 → dark {} (log10(1+ratio)); gray = unavailable</text></svg></div><p class=\"annotation\">Events/base palette: light 0 → dark {} (log10(1+ratio)); gray = unavailable. Template event counts are never used for 2D reads.</p></figure>", decimal(max_events), decimal(max_events)).unwrap();
     let layout = report.diagnostics.physical_layout.as_ref().unwrap();
     figure(
         out,
@@ -1803,7 +1826,7 @@ fn minion_read_plots(out: &mut String, report: &Report) {
     let sampled: std::collections::BTreeMap<_, _> =
         sample.channels.iter().map(|c| (c.channel, c)).collect();
     write!(out, "<p class=\"annotation\">Each physical panel: X = 0–{} h from run start; Y = 1–{} bp on a logarithmic axis. Indigo light → dark represents Q {}–{}. Channel labels identify panels; blank panels mean no sampled basecalled reads, not dead pores.</p>", decimal(end/3600.0), count(max_length as u64), cutoff_value(qmin), cutoff_value(qmax)).unwrap();
-    out.push_str("<p class=\"scroll-hint\">Scroll the physical overview horizontally to read all channel panels.</p><div class=\"plot-scroll\" tabindex=\"0\" role=\"group\" aria-label=\"Scrollable MinION flowcell overview\"><svg class=\"plot minion-overview\" viewBox=\"0 0 1320 2190\" role=\"img\" aria-labelledby=\"minion-flowcell-overview-caption\"><title>Exact R9.5 physical panels; sampled observations on shared time and logarithmic length scales, colored by per-read Q-score.</title><g>");
+    out.push_str("<p class=\"scroll-hint\">Scroll the physical overview horizontally to read all channel panels.</p><div class=\"plot-scroll\" tabindex=\"0\" role=\"group\" aria-label=\"Scrollable MinION flowcell overview\"><svg class=\"plot minion-overview\" viewBox=\"0 0 1320 2240\" role=\"img\" aria-labelledby=\"minion-flowcell-overview-caption\"><title>Exact R9.5 physical panels; sampled observations on shared time and logarithmic length scales, colored by per-read Q-score.</title><g>");
     for c in &layout.channel_coordinates {
         let x0 = 55 + c.column * 76;
         let y0 = 30 + c.row * 66;
@@ -1818,7 +1841,7 @@ fn minion_read_plots(out: &mut String, report: &Report) {
         }
         out.push_str("</g>");
     }
-    out.push_str("</g><text class=\"axis-label\" x=\"80\" y=\"2180\">Physical columns 0–15; rows 0–31 (top to bottom)</text></svg></div></figure>");
+    write!(out, "</g><text class=\"axis-label\" x=\"80\" y=\"2158\">Each channel: X = 0–{} h from run start; Y = 1–{} bp (logarithmic)</text><text class=\"tick\" x=\"80\" y=\"2182\">Indigo light → dark: Q {}–{}; at most 16 sampled reads/channel; blank = no sampled reads</text><text class=\"tick\" x=\"80\" y=\"2206\">Physical columns 0–15; rows 0–31 (top to bottom)</text></svg></div></figure>", decimal(end/3600.0), count(max_length.max(10.0) as u64), cutoff_value(qmin), cutoff_value(qmax)).unwrap();
 }
 
 fn plot_fraction(value: f64, minimum: f64, maximum: f64) -> f64 {
@@ -1950,6 +1973,7 @@ fn diagnostic_time_plot(out: &mut String, report: &Report, speed: bool) {
                 "Observed channels"
             },
             color: "primary",
+            bin_offset_seconds: 450,
             points,
         }],
         !speed,
@@ -1959,13 +1983,14 @@ fn diagnostic_time_plot(out: &mut String, report: &Report, speed: bool) {
 struct TimeSeries<'a> {
     label: &'a str,
     color: &'static str,
+    bin_offset_seconds: u64,
     points: Vec<(u64, Option<f64>)>,
 }
 
 // Shared only by start-time diagnostics: common axes, bin midpoints and gaps.
 fn time_series_plot(
     out: &mut String,
-    _report: &Report,
+    report: &Report,
     id: &str,
     title: &str,
     axis: &str,
@@ -2012,10 +2037,11 @@ fn time_series_plot(
         x_tick(
             out,
             LEFT + (RIGHT - LEFT) * i as f64 / 4.0,
-            &decimal(end / 3600.0 * i as f64 / 4.0),
+            &compact(end / 3600.0 * i as f64 / 4.0),
         );
     }
     out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Time from run start (h)</text>");
+    time_markers(out, report, end);
     for s in series {
         let mut path = String::new();
         let mut previous = None;
@@ -2024,7 +2050,7 @@ fn time_series_plot(
                 previous = None;
                 continue;
             };
-            let x = LEFT + (start as f64 + 450.0) / end * (RIGHT - LEFT);
+            let x = LEFT + (start as f64 + s.bin_offset_seconds as f64) / end * (RIGHT - LEFT);
             let y = BOTTOM - plot_fraction(value, minimum, ymax) * (BOTTOM - TOP);
             let command = if previous.is_some_and(|last| start - last == 900) {
                 'L'
@@ -2066,6 +2092,48 @@ fn time_series_plot(
         out.push_str("</p>");
     }
     out.push_str("</figure>");
+}
+
+// Configured reference lines share the plotted relative-time coordinate system.
+fn time_markers(out: &mut String, report: &Report, end: f64) {
+    for &seconds in &report.presentation.mux_markers_seconds {
+        if seconds <= end {
+            let x = LEFT + seconds / end * (RIGHT - LEFT);
+            write!(out, "<line class=\"mux-marker\" data-mux-reference-seconds=\"{seconds}\" x1=\"{x:.2}\" x2=\"{x:.2}\" y1=\"{TOP}\" y2=\"{BOTTOM}\"><title>Configured mux reference at {} h; not a measured instrument event</title></line>", decimal(seconds / 3600.0)).unwrap();
+        }
+    }
+}
+
+fn statistic_annotation(report: &Report, quality: bool, selected: bool) -> Option<String> {
+    if !report.presentation.add_stat {
+        return None;
+    }
+    let subset = &report.comparison.qscore_selected;
+    Some(if quality {
+        format!(
+            "Mean read Q-score: {}",
+            optional(
+                if selected {
+                    subset.mean_qscore
+                } else {
+                    report.quality.mean_qscore
+                },
+                1.0,
+                ""
+            )
+        )
+    } else {
+        let (mean, n50) = if selected {
+            (subset.mean_read_length_bp, subset.n50_bp)
+        } else {
+            (report.metrics.mean_read_length_bp, report.metrics.n50_bp)
+        };
+        format!(
+            "Mean length: {} · N50: {}",
+            optional(mean, 1000.0, "kb"),
+            optional(n50.map(|v| v as f64), 1000.0, "kb")
+        )
+    })
 }
 
 fn figure(out: &mut String, id: &str, title: &str) {
@@ -2128,6 +2196,18 @@ fn bars(
     scale: f64,
     rows: &[(String, u64, &str)],
 ) {
+    annotated_bars(out, id, title, axis, scale, rows, None);
+}
+
+fn annotated_bars(
+    out: &mut String,
+    id: &str,
+    title: &str,
+    axis: &str,
+    scale: f64,
+    rows: &[(String, u64, &str)],
+    annotation: Option<&str>,
+) {
     figure(out, id, title);
     let max = rows.iter().map(|r| r.1).max().unwrap_or(0);
     if max == 0 {
@@ -2136,7 +2216,12 @@ fn bars(
     }
     let height = 80 + rows.len() * 34;
     let baseline = height - 50;
-    svg_start(out, id, title, height);
+    svg_start(
+        out,
+        id,
+        title,
+        height + if annotation.is_some() { 30 } else { 0 },
+    );
     let (xmax, ticks) = plot_scale(max as f64 / scale, scale == 1.0);
     for i in 0..=ticks {
         let x = 165.0 + 480.0 * i as f64 / ticks as f64;
@@ -2154,7 +2239,23 @@ fn bars(
         write!(out, "<text class=\"tick category\" x=\"154\" y=\"{}\" text-anchor=\"end\">{}</text><rect class=\"{color}\" x=\"165\" y=\"{y}\" width=\"{:.2}\" height=\"18\" rx=\"2\" data-value=\"{value}\"><title>{}: {} {raw_unit}</title></rect><text class=\"tick\" x=\"736\" y=\"{}\" text-anchor=\"end\">{}</text>",
             y + 13, escape(label), *value as f64 / scale / xmax * 480.0, escape(label), count(*value), y + 13, compact(*value as f64 / scale)).unwrap();
     }
-    write!(out, "<text class=\"axis-label\" x=\"405\" y=\"{}\" text-anchor=\"middle\">{}</text></svg></div></figure>", height - 7, escape(axis)).unwrap();
+    write!(
+        out,
+        "<text class=\"axis-label\" x=\"405\" y=\"{}\" text-anchor=\"middle\">{}</text>",
+        height - 7,
+        escape(axis)
+    )
+    .unwrap();
+    if let Some(annotation) = annotation {
+        write!(
+            out,
+            "<text class=\"stat-annotation\" x=\"165\" y=\"{}\">{}</text>",
+            height + 20,
+            escape(annotation)
+        )
+        .unwrap();
+    }
+    out.push_str("</svg></div></figure>");
 }
 
 // Presentation-only scale rounding; histogram counts and QC values stay intact.
@@ -2227,12 +2328,19 @@ fn bp_scale(value: u64) -> (f64, &'static str) {
 }
 
 fn compact(value: f64) -> String {
-    if value >= 1e9 {
+    if value.abs() >= 1e9 {
         format!("{}G", decimal(value / 1e9))
-    } else if value >= 1e6 {
+    } else if value.abs() >= 1e6 {
         format!("{}M", decimal(value / 1e6))
-    } else if value >= 1e3 {
+    } else if value.abs() >= 1e3 {
         format!("{}k", decimal(value / 1e3))
+    } else if value != 0.0 && value.abs() < 0.001 {
+        format!("{value:.2e}")
+    } else if value.abs() < 1.0 {
+        format!("{value:.3}")
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_owned()
     } else {
         decimal(value)
     }
@@ -2278,6 +2386,15 @@ fn escape(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn small_density_ticks_fit_axis_margins_without_changing_raw_values() {
+        assert_eq!(super::compact(0.881160859), "0.881");
+        assert_eq!(super::compact(0.000001234), "1.23e-6");
+        assert_eq!(super::compact(-0.881160859), "-0.881");
+        assert_eq!(super::compact(0.0), "0");
+        assert_eq!(super::decimal(0.881160859), "0.881160859");
+    }
     use super::*;
 
     #[test]

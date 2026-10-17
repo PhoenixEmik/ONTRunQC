@@ -6,7 +6,7 @@ modern MinKNOW/Dorado output. It streams TSV records, validates them, calculates
 run metrics, and writes deterministic JSON and standalone HTML reports.
 
 Current release: **[v0.4.0 — Advanced Read Quality Diagnostics](https://github.com/PhoenixEmik/PoreGauge/tree/v0.4.0)**.
-Unreleased development: **MinIONQC parity, issues #5–#7** (on the 0.4.1 codebase).
+Unreleased development: **MinIONQC parity, issues #5–#10** (on the 0.4.1 codebase).
 
 PoreGauge is not a basecaller or a replacement for MinKNOW instrument monitoring.
 It does not analyze FASTQ, BAM, or POD5 files.
@@ -30,6 +30,9 @@ It does not analyze FASTQ, BAM, or POD5 files.
 - Independent inclusive `--qscore-cutoff` comparisons (default 7), preserving native pass/fail.
 - Exact retained yield/counts at minimum lengths and MinIONQC-style ultralong subsets.
 - Four channel-summary distribution families with All-summary/Q-cutoff comparisons.
+- Recursive multi-input analysis, run-aware chunk grouping and exact pooled QC.
+- Legacy template/2D summaries, named RNA-control exclusion and explicit MinION maps.
+- Optional YAML summaries, independent SVG figures and configured mux references.
 
 ## Installation
 
@@ -85,12 +88,12 @@ Open `report.html` directly in a modern browser using `file://`, or double-click
 The HTML file can be moved or shared alone: CSS, SVG, and the optional channel-table
 script are embedded, with no CDN, network requests, or web server required.
 Invalid input exits nonzero with an error on stderr and preserves previous reports.
-The input must fit the single-run model: different `run_id` values are rejected.
+Ordinary single-file commands reject mixed `run_id` values; use `--split-runs` to route them explicitly. Directory/multiple-file commands group matching run IDs.
 
-Both outputs are fully rendered, flushed, and synced to temporary files in the
-destination directory before publication. Each completed file is replaced by a
-rename; **the two replacements are not an atomic pair**. A failure during the
-second replacement can leave new JSON alongside older HTML. Ordinary failures
+All requested outputs are rendered, flushed, and synced to temporary files in
+the destination directory before publication. Each completed file is replaced
+by a rename; **publication is not atomic across files or runs**. A later rename
+failure can leave a mixture of complete old and new outputs. Ordinary failures
 clean up temporary files; abrupt process termination can leave temporary files.
 Inspect errors and rerun analysis before using outputs after a failed command.
 
@@ -121,7 +124,7 @@ target/release/poregauge analyze tests/fixtures/deep_qc.tsv \
 
 ## Supported input
 
-One uncompressed, unquoted TSV file with a header. LF and CRLF line endings,
+Uncompressed, unquoted TSV files with headers. LF and CRLF line endings,
 additional columns, and arbitrary column order are supported. Quotes are literal
 characters; CSV-style quoting and multiline fields are not supported.
 
@@ -191,8 +194,9 @@ Units use decimal prefixes:
 
 The JSON schema has `schema_version: 1`, tool version, run ID, overall metrics,
 quality metrics, and ordered arrays of distributions and grouped statistics.
-Unavailable values are `null`; integer yields are in base pairs. No individual
-read records, sample IDs, filenames, or experiment IDs appear in reports.
+Unavailable values are `null`; integer yields are in base pairs. No complete
+read records, sample IDs, filenames, or experiment IDs appear in reports. Explicit
+MinION plots retain a bounded numeric sample without read identifiers.
 The run ID and unknown termination-reason strings are preserved. Schema version 1
 is retained: the new `comparison` section is additive; existing fields, definitions and ordering are preserved for previously accepted inputs.
 The v0.4.0 additions remain available.
@@ -267,8 +271,7 @@ not been reprocessed for this milestone.
 `--qscore-cutoff 7` selects **positive-length reads with mean Q ≥ 7**, independently
 of native `passes_filtering`. Zero lengths remain summary records, even at cutoff 0.
 A missing native flag is supported without inferring pass/fail; availability and
-unclassified counts are explicit in JSON. Other legacy column adaptations remain
-out of scope. Existing native/all-basecalled metrics keep their definitions.
+unclassified counts are explicit in JSON. Legacy schema handling is described above. Existing native/all-basecalled metrics keep their definitions.
 
 The report compares exact subset statistics, length/quality histograms, yield/read
 counts over time, and length/quality means over time. The retained-yield curve uses
@@ -281,11 +284,12 @@ lengths; all-basecalled channel statistics remain separately available.
 The [metric definitions](docs/metrics.md#minionqc-parity-comparisons) explain
 intentional differences: N50 half-yield ties, zero-length denominators, histogram
 bins, rounding, and corrected upstream endpoint/read-count bugs. Public example
-validation is reproducible with `tests/minionqc_reference.py`; its adapters and
-upstream fixture inconsistencies are documented there. No private sequencing
+validation is reproducible with `tests/minionqc_reference.py`; original public
+inputs are tested directly, including signed legacy Q values and documented
+upstream fixture inconsistencies. No private sequencing
 summary was rerun. The supplied PBM95914 totals remain historical reference values.
 
-Issues #5–#8 are implemented here. Directory inputs recursively discover only
+Single- and multi-input parity analyses are implemented here. Directory inputs recursively discover only
 sequencing-summary `.txt`/`.tsv` names; explicit file paths can have any name.
 Multiple paths and `-i/--input PATH` are accepted. Canonical paths/inodes remove
 aliases, and directory symlinks are never followed. Run IDs group chunks, not
@@ -303,9 +307,50 @@ modern validation; `--read-representation template` overrides 2D auto-selection.
 Unrelated modern metadata is optional for legacy inputs and is never invented.
 MinION read-level plots use at most 16 sampled reads/channel (8,192 points);
 PromethION remains aggregated. Full point-for-point scatter parity is not claimed.
-Issue #10 output controls and the complete parity audit remain in progress. This is not a claim of full MinIONQC
-parity; event-per-base coloring and individual-channel temporal overview plots
-also remain to be assessed in that checklist.
+MinION physical time/length panels and length/Q scatter plots use actual sampled
+values; optional events-per-base coloring is available. These are bounded
+representations, not full point-for-point replicas. See the complete
+[MinIONQC parity matrix](docs/minionqc-parity.md) for tested functionality and
+remaining differences; full format and rendering parity is not claimed.
+
+## YAML, figures and plot controls
+
+```sh
+poregauge analyze /data/flowcells/ --output qc_results/ --yaml \
+  --format svg --smallfigures --add-stat --muxes 8
+poregauge analyze a.tsv b.tsv --combined-only --output pooled/ --yaml
+```
+
+`--yaml` adds `summary.yaml` beside each requested report, with MinIONQC-shaped
+All/Q-cutoff sections, threshold counts/yields and ultralong results. JSON is
+canonical; YAML preserves unrounded per-read statistics and adds exact integer
+`total.bases`. All reads in YAML means positive-length basecalled reads. Original
+paths are replaced by generated source labels; run IDs remain reported metadata.
+
+`--format svg` additionally writes independent figures to `figures/`, with embedded
+styles and accessible titles. `manifest.json` lists figures from the current run;
+older unlisted figures are not deleted automatically. Optional YAML/SVG artifacts
+are refreshed only when requested. Standard widths are 180 mm,
+or 120 mm with `--smallfigures`; dense physical maps retain 320 mm for readable
+labels. Height follows each figure's aspect ratio. `--add-stat` annotates length
+histograms with mean/N50 and Q-score histograms with mean Q, using existing values.
+
+`--muxes HOURS` adds dashed configured references to global time charts, never
+measured mux events. Default **0 disables markers**; positive intervals include
+run start and must generate at most 512 markers. Upstream's automatic/8-hour
+combined defaults are deliberately not inferred. Time statistics remain unchanged.
+
+PNG, PDF, PS, JPEG, TIFF and BMP figure export are **unsupported**. Native SVG
+avoids a font/rendering runtime; users may convert these files with their own
+scientific publishing tools. Browser printing is available but is not equivalent
+to exporting every individual figure in those formats. No converter is bundled.
+
+Compatibility aliases include `-i/--input`, `-o/--outputdirectory`,
+`-q/--qscore_cutoff`, `-c/--combined-only`, `-s/--smallfigures`, `-a/--add-stat`,
+`-m/--muxes`, and `-f/--format`. Boolean options are flags, not `TRUE/FALSE` values.
+`--processors 1` is accepted; larger values are rejected explicitly because
+processing remains sequential. `--output` is always required; reports are never
+written beside input files implicitly.
 
 ## Development
 
@@ -347,8 +392,9 @@ source tag is preserved. Immutable releases cannot be updated this way.
 Prereleases and Windows binaries are not currently automated. Adding the workflow
 does not publish existing tags automatically.
 
-`src/input.rs` validates borrowed records; `src/metrics.rs` owns all statistical
-calculations; `src/report.rs` serializes JSON and stages both outputs.
+`src/input.rs` validates borrowed records; `src/batch.rs` discovers and groups inputs;
+`src/metrics.rs` owns all statistical calculations. `src/report.rs` stages requested
+outputs; `src/export.rs` emits YAML and standalone SVG.
 `src/layout.rs` defines the supported coordinate map. `src/html.rs` renders HTML
 with embedded `src/report.css` and `src/report.js`;
 there is no frontend build pipeline. The CLI is in `src/cli.rs` and
@@ -373,7 +419,7 @@ browser checks using the procedure in [benchmarking](docs/benchmark.md#html-repo
 
 The unreleased parity additions preserve existing scientific results and the
 v0.4.1 report optimizations. There is no
-automatic QC judgment, gzip support, barcode analysis, multi-run analysis, live
+automatic QC judgment, gzip support, barcode analysis, live
 monitoring, or instrument API integration. Physical maps support the explicit EPI2ME 3000-channel and MinIONQC R9.5
 512-channel layouts; other models/geometries are not verified.
 
@@ -382,7 +428,7 @@ Q-scores (`f64`): 16 bytes per basecalled read, approximately 466 MiB of element
 for 30,549,981 reads, plus allocator overhead and grouped metrics. Length observations are partitioned by channel, native status and cutoff status,
 with Q-scores in four global partitions; no observation is duplicated for an
 independent subset. Channel medians are computed first, then length buffers are
-moved and reused for exact run statistics. At 3,000 channels, spare channel length
+moved and reused for exact run and pooled statistics. At 3,000 channels, spare channel length
 capacity is bounded by about 23.4 MiB, plus up to 2 MiB spare Q-score capacity;
 final global length partitions add at most 2 MiB spare capacity. Moving buffers
 can temporarily duplicate the channel partition currently being consumed.

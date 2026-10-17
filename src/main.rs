@@ -1,5 +1,6 @@
 mod batch;
 mod cli;
+mod export;
 mod html;
 mod input;
 mod layout;
@@ -34,6 +35,12 @@ fn run(cli: Cli) -> Result<()> {
             split_runs,
             input_schema,
             read_representation,
+            yaml,
+            format,
+            small_figures,
+            add_stat,
+            muxes,
+            processors: _,
         } => {
             input.extend(input_paths);
             batch::analyze(
@@ -47,6 +54,14 @@ fn run(cli: Cli) -> Result<()> {
                     split_runs,
                     input_schema,
                     read_representation,
+                    presentation: report::PresentationOptions {
+                        write_yaml: yaml,
+                        export_svg: matches!(format, cli::FigureFormat::Svg),
+                        small_figures,
+                        add_stat,
+                        mux_interval_hours: (muxes > 0.0).then_some(muxes),
+                        mux_markers_seconds: Vec::new(),
+                    },
                 },
             )?;
             eprintln!("Reports written to {}", output.display());

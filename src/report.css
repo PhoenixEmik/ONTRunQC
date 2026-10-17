@@ -705,3 +705,7 @@ footer {
 .run7 { fill:#846159; } path.run7 { fill:none; stroke:#846159; } .legend.run7:before { background:#846159; }
 
 .minion-overview { min-width:1320px; }
+
+/* User-configured references, not instrument telemetry. */
+.mux-marker{stroke:#7c8799;stroke-width:1;stroke-dasharray:5 4;opacity:.7}
+.stat-annotation{fill:#475569;font-size:13px}
