@@ -1,0 +1,12 @@
+run_id	channel	mux	start_time	duration	passes_filtering	sequence_length_template	mean_qscore_template	end_reason
+advanced-synthetic-run	3	7	3600	1	FALSE	35	35	future_reason
+advanced-synthetic-run	2	2	0	1	TRUE	20	10	normal
+advanced-synthetic-run	99	1	1800	1	TRUE	0	1e308	zero
+advanced-synthetic-run	1	1	900	1	TRUE	30	20	normal
+advanced-synthetic-run	2	2	3600	1	TRUE	40	30	normal
+advanced-synthetic-run	1	1	0	1	FALSE	5	5	normal
+advanced-synthetic-run	99	1	4500	1	TRUE	0	0	zero
+advanced-synthetic-run	3	7	900	1	FALSE	15	15	normal
+advanced-synthetic-run	1	1	0	1	TRUE	10	0	normal
+advanced-synthetic-run	3	7	3600	1	FALSE	25	25	future_reason
+advanced-synthetic-run	99	1	1800	1	FALSE	0	0	zero

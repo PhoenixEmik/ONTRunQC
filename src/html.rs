@@ -305,6 +305,7 @@ fn lengths(out: &mut String, report: &Report) {
     );
     write!(out, "<div class=\"stat-line\"><span>N50 <strong>{}</strong></span><span>Median length <strong data-metric=\"median_read_length_bp\" data-value=\"{}\">{}</strong></span></div>",
         optional(report.metrics.n50_bp.map(|v| v as f64), 1e3, "kb"), report.metrics.median_read_length_bp.map(|v| v.to_string()).unwrap_or_default(), optional(report.metrics.median_read_length_bp, 1e3, "kb")).unwrap();
+    read_comparison(out, report);
     out.push_str("<p class=\"annotation\">Intervals are lower-inclusive and upper-exclusive, in bp. The final interval is open-ended. These are categorical bins; bar spacing does not imply equal length ranges. Zero-length records are excluded.</p><div class=\"chart-grid\">");
     let bins = &report.read_length_distribution;
     let reads: Vec<_> = bins
@@ -358,7 +359,9 @@ fn lengths(out: &mut String, report: &Report) {
     if bins.is_empty() {
         empty_row(out, 3, "No histogram intervals.");
     }
-    out.push_str("</tbody></table></div></details></section>");
+    out.push_str("</tbody></table></div></details>");
+    read_time_plot(out, report, false);
+    out.push_str("</section>");
 }
 
 fn quality(out: &mut String, report: &Report) {
@@ -430,7 +433,302 @@ fn quality(out: &mut String, report: &Report) {
     if report.quality.histogram.is_empty() {
         empty_row(out, 2, "No histogram intervals.");
     }
-    out.push_str("</tbody></table></div></details></section>");
+    out.push_str("</tbody></table></div></details>");
+    read_time_plot(out, report, true);
+    length_quality_heatmaps(out, report);
+    out.push_str("</section>");
+}
+
+fn read_comparison(out: &mut String, report: &Report) {
+    let all = &report.metrics;
+    let passed = &report.diagnostics.passed_read_statistics;
+    out.push_str("<div class=\"table-scroll comparison-table\"><table id=\"read-statistics\"><caption>All basecalled reads versus native passed reads · zero-length records excluded</caption><thead><tr><th class=\"label\" scope=\"col\">Metric</th><th scope=\"col\">All basecalled reads</th><th class=\"passed-heading\" scope=\"col\">Passed reads</th></tr></thead><tbody>");
+    for (label, key, a, p) in [
+        (
+            "Read count",
+            "read_count",
+            Some(all.basecalled_reads),
+            Some(passed.read_count),
+        ),
+        (
+            "Total yield (bp)",
+            "total_yield_bp",
+            Some(all.total_yield_bp),
+            Some(passed.total_yield_bp),
+        ),
+        ("N50 (bp)", "n50_bp", all.n50_bp, passed.n50_bp),
+        (
+            "Minimum length (bp)",
+            "min_read_length_bp",
+            all.min_read_length_bp,
+            passed.min_read_length_bp,
+        ),
+        (
+            "Maximum length (bp)",
+            "max_read_length_bp",
+            all.max_read_length_bp,
+            passed.max_read_length_bp,
+        ),
+    ] {
+        comparison_row(
+            out,
+            label,
+            key,
+            (
+                a.map(|v| v.to_string()),
+                a.map(count).unwrap_or_else(|| "Not available".into()),
+            ),
+            (
+                p.map(|v| v.to_string()),
+                p.map(count).unwrap_or_else(|| "Not available".into()),
+            ),
+        );
+    }
+    for (label, key, a, p) in [
+        (
+            "Mean length (bp)",
+            "mean_read_length_bp",
+            all.mean_read_length_bp,
+            passed.mean_read_length_bp,
+        ),
+        (
+            "Median length (bp)",
+            "median_read_length_bp",
+            all.median_read_length_bp,
+            passed.median_read_length_bp,
+        ),
+        (
+            "Mean Q-score",
+            "mean_qscore",
+            report.quality.mean_qscore,
+            passed.mean_qscore,
+        ),
+        (
+            "Median Q-score",
+            "median_qscore",
+            report.quality.median_qscore,
+            passed.median_qscore,
+        ),
+    ] {
+        comparison_row(
+            out,
+            label,
+            key,
+            (a.map(|v| v.to_string()), optional(a, 1.0, "")),
+            (p.map(|v| v.to_string()), optional(p, 1.0, "")),
+        );
+    }
+    out.push_str("</tbody></table></div><p class=\"annotation\">Both subsets use exact sorted middle values and N50, not histogram estimates. Passed reads use only <code>passes_filtering=TRUE</code>, with no Q-score cutoff. Mean Q-score is arithmetic per read.</p>");
+}
+
+fn comparison_row(
+    out: &mut String,
+    label: &str,
+    key: &str,
+    all: (Option<String>, String),
+    passed: (Option<String>, String),
+) {
+    write!(
+        out,
+        "<tr><th class=\"label\" scope=\"row\">{}</th>",
+        escape(label)
+    )
+    .unwrap();
+    for (subset, (raw, display)) in [("all", all), ("passed", passed)] {
+        write!(
+            out,
+            "<td data-metric=\"{subset}_{key}\" data-value=\"{}\">{}</td>",
+            escape(raw.as_deref().unwrap_or("")),
+            escape(&display)
+        )
+        .unwrap();
+    }
+    out.push_str("</tr>");
+}
+
+fn read_time_plot(out: &mut String, report: &Report, quality: bool) {
+    let (id, title, axis) = if quality {
+        (
+            "qscore-time",
+            "Mean read Q-score over time",
+            "Mean read Q-score",
+        )
+    } else {
+        (
+            "length-time",
+            "Mean read length over time",
+            "Mean read length (kb)",
+        )
+    };
+    let mut series = [
+        TimeSeries {
+            label: "All basecalled reads",
+            color: "primary",
+            points: Vec::new(),
+        },
+        TimeSeries {
+            label: "Passed reads",
+            color: "passed",
+            points: Vec::new(),
+        },
+    ];
+    for bin in &report.time_bins {
+        let (all, passed) = if quality {
+            (bin.mean_qscore, bin.mean_passed_qscore)
+        } else {
+            (
+                bin.mean_read_length_bp.map(|v| v / 1000.0),
+                bin.mean_passed_read_length_bp.map(|v| v / 1000.0),
+            )
+        };
+        series[0].points.push((bin.start_seconds, all));
+        series[1].points.push((bin.start_seconds, passed));
+    }
+    time_series_plot(out, report, id, title, axis, &series, false);
+    out.push_str("<p class=\"annotation\">Arithmetic means in 15-minute read-start bins; no smoothing. Zero-length records are excluded. Missing or unavailable intervals break each line independently. These observations do not reconstruct read completion time.</p><details><summary>View interval means and denominators</summary><div class=\"table-scroll\"><table><caption>Read-start intervals; length means in bp, Q-score means per read. Unrounded means are retained in data-value attributes and JSON.</caption><thead><tr><th class=\"label\" scope=\"col\">Start–end (s)</th><th scope=\"col\">Basecalled reads</th><th scope=\"col\">Passed reads</th><th scope=\"col\">All mean</th><th scope=\"col\">Passed mean</th></tr></thead><tbody>");
+    for bin in &report.time_bins {
+        let (all, passed) = if quality {
+            (bin.mean_qscore, bin.mean_passed_qscore)
+        } else {
+            (bin.mean_read_length_bp, bin.mean_passed_read_length_bp)
+        };
+        write!(out, "<tr><th class=\"label\" scope=\"row\">{}–{}</th><td>{}</td><td>{}</td><td data-value=\"{}\">{}</td><td data-value=\"{}\">{}</td></tr>", count(bin.start_seconds), count(bin.end_seconds), count(bin.basecalled_reads), count(bin.passed_reads), all.map(|v| v.to_string()).unwrap_or_default(), optional(all, 1.0, ""), passed.map(|v| v.to_string()).unwrap_or_default(), optional(passed, 1.0, "")).unwrap();
+    }
+    if report.time_bins.is_empty() {
+        empty_row(out, 5, "No time-bin observations.");
+    }
+    out.push_str("</tbody></table></div></details>");
+}
+
+fn length_quality_heatmaps(out: &mut String, report: &Report) {
+    let h = &report.diagnostics.length_quality_histogram;
+    out.push_str("<h3 id=\"length-quality\">Read length vs Q-score</h3><p class=\"annotation\">Log₂ read-length intervals and 2-point Q-score intervals; zero-length records excluded. The final length column (≥ 1,048,576 bp) and Q-score row (≥ 50) are open-ended overflow bins, drawn with dashed borders. High values remain counted. Both maps use the same indigo log-count scale; filtering is the native flag.</p><div class=\"chart-grid\">");
+    let maximum = h
+        .all_read_counts
+        .iter()
+        .flatten()
+        .copied()
+        .max()
+        .unwrap_or(0);
+    for (id, title, counts) in [
+        (
+            "length-quality-all",
+            "Read length vs Q-score · All basecalled reads",
+            &h.all_read_counts,
+        ),
+        (
+            "length-quality-passed",
+            "Read length vs Q-score · Passed reads",
+            &h.passed_read_counts,
+        ),
+    ] {
+        length_quality_map(out, h, id, title, counts, maximum);
+    }
+    out.push_str("</div><details><summary>View exact length × Q-score cell counts</summary><div class=\"table-scroll\"><table><caption>Nonzero all-read cells; omitted cells contain zero reads in both subsets. Intervals are lower-inclusive and upper-exclusive; final intervals are unbounded.</caption><thead><tr><th class=\"label\" scope=\"col\">Length interval (bp)</th><th class=\"label\" scope=\"col\">Q-score interval</th><th scope=\"col\">All reads</th><th scope=\"col\">Passed reads</th></tr></thead><tbody>");
+    let mut populated = false;
+    for (q, row) in h.all_read_counts.iter().enumerate() {
+        for (l, &reads) in row.iter().enumerate() {
+            if reads == 0 {
+                continue;
+            }
+            populated = true;
+            write!(out, "<tr><th class=\"label\" scope=\"row\">{}</th><td class=\"label\">{}</td><td>{}</td><td>{}</td></tr>", length_interval(h.length_lower_bounds_bp[l], h.length_lower_bounds_bp.get(l+1).copied()), quality_interval(h.qscore_lower_bounds[q], h.qscore_lower_bounds.get(q+1).copied()), count(reads), count(h.passed_read_counts[q][l])).unwrap();
+        }
+    }
+    if !populated {
+        empty_row(out, 4, "No basecalled length/Q-score observations.");
+    }
+    out.push_str("</tbody></table></div></details>");
+}
+
+fn length_quality_map(
+    out: &mut String,
+    histogram: &crate::metrics::LengthQualityHistogram,
+    id: &str,
+    title: &str,
+    counts: &[Vec<u64>],
+    maximum: u64,
+) {
+    figure(out, id, title);
+    if !counts.iter().flatten().any(|&v| v != 0)
+        || histogram.length_lower_bounds_bp.is_empty()
+        || histogram.qscore_lower_bounds.is_empty()
+    {
+        empty_chart(out, "No basecalled observations in this subset.");
+        return;
+    }
+    let columns = histogram.length_lower_bounds_bp.len();
+    let rows = histogram.qscore_lower_bounds.len();
+    let width = (RIGHT - LEFT) / columns as f64;
+    let height = 14.0;
+    let bottom = 48.0 + rows as f64 * height;
+    svg_start(
+        out,
+        id,
+        "Each cell counts reads, not bases. Exact counts and intervals are also available in the following table. Color uses log10(1 + read count), shared across both subsets.",
+        560,
+    );
+    out.push_str(
+        "<text class=\"axis-label\" x=\"80\" y=\"20\">Read Q-score · final row ≥ 50</text>",
+    );
+    for (q, row) in counts.iter().enumerate() {
+        for (l, &reads) in row.iter().enumerate() {
+            let x = LEFT + l as f64 * width;
+            let y = bottom - (q + 1) as f64 * height;
+            let intensity = (reads as f64).ln_1p() / (maximum.max(1) as f64).ln_1p();
+            let label = format!(
+                "Length {} bp; Q-score {}; {} reads",
+                length_interval(
+                    histogram.length_lower_bounds_bp[l],
+                    histogram.length_lower_bounds_bp.get(l + 1).copied()
+                ),
+                quality_interval(
+                    histogram.qscore_lower_bounds[q],
+                    histogram.qscore_lower_bounds.get(q + 1).copied()
+                ),
+                count(reads)
+            );
+            write!(out, "<rect class=\"joint-cell\" x=\"{x:.2}\" y=\"{y:.2}\" width=\"{width:.2}\" height=\"{height}\" fill=\"hsl(225 45% {:.2}%)\" data-length-bin=\"{l}\" data-qscore-bin=\"{q}\" data-read-count=\"{reads}\" role=\"img\" aria-label=\"{}\"><title>{}</title></rect>", 97.0 - 65.0 * intensity, escape(&label), escape(&label)).unwrap();
+        }
+    }
+    for (q, &bound) in histogram.qscore_lower_bounds.iter().enumerate().step_by(5) {
+        let y = bottom - q as f64 * height - if q + 1 == rows { height / 2.0 } else { 0.0 };
+        write!(
+            out,
+            "<text class=\"tick\" x=\"68\" y=\"{:.2}\" text-anchor=\"end\">{}{}</text>",
+            y + 4.0,
+            if q + 1 == rows { "≥ " } else { "" },
+            decimal(bound)
+        )
+        .unwrap();
+    }
+    for (l, &bound) in histogram
+        .length_lower_bounds_bp
+        .iter()
+        .enumerate()
+        .step_by(4)
+    {
+        let overflow = l + 1 == columns;
+        let x = LEFT + (l as f64 + if overflow { 0.5 } else { 0.0 }) * width;
+        write!(
+            out,
+            "<text class=\"tick\" x=\"{x:.2}\" y=\"436\" text-anchor=\"middle\">{}{}</text>",
+            if overflow { "≥ " } else { "" },
+            compact(bound as f64)
+        )
+        .unwrap();
+    }
+    write!(out, "<rect class=\"histogram-overflow\" x=\"{:.2}\" y=\"48\" width=\"{width:.2}\" height=\"{:.2}\"/><rect class=\"histogram-overflow\" x=\"{LEFT}\" y=\"48\" width=\"{}\" height=\"{height}\"/><text class=\"axis-label\" x=\"397\" y=\"466\" text-anchor=\"middle\">Read length (bp, log₂ intervals; final column open-ended)</text>", RIGHT-width, rows as f64*height, RIGHT-LEFT).unwrap();
+    for i in 0..64 {
+        write!(
+            out,
+            "<rect x=\"{}\" y=\"500\" width=\"5\" height=\"12\" fill=\"hsl(225 45% {:.2}%)\"/>",
+            80 + i * 5,
+            97.0 - 65.0 * i as f64 / 63.0
+        )
+        .unwrap();
+    }
+    write!(out, "<text class=\"tick\" x=\"80\" y=\"530\">0 reads</text><text class=\"tick\" x=\"400\" y=\"530\" text-anchor=\"end\">{} reads</text><text class=\"axis-label\" x=\"80\" y=\"553\">Read count · log₁₀(1 + count), common scale</text></svg></div></figure>", count(maximum)).unwrap();
 }
 
 fn channels(out: &mut String, report: &Report) {
@@ -483,14 +781,35 @@ fn channels(out: &mut String, report: &Report) {
         }
         out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Channel rank (descending yield)</text></svg></div></figure>");
     }
-    out.push_str(r##"<div id="channel-controls" class="table-controls" hidden><label>Find channel <input id="channel-search" type="search" placeholder="Channel ID" autocomplete="off"></label><label>Sort by <select id="channel-sort"><option value="channel">Channel ID ↑</option><option value="yield">Yield ↓</option><option value="reads">Basecalled reads ↓</option><option value="qscore">Mean Q-score ↓</option></select></label><label>Rows <select id="channel-page-size"><option>25</option><option>50</option><option>100</option></select></label></div>
-<div class="table-scroll channel-table"><table id="channel-table"><caption>All observed channels · exact counts and yield; default order is channel ID</caption><thead><tr><th scope="col">Channel</th><th scope="col">Records</th><th scope="col">Basecalled reads</th><th scope="col">Yield (bp)</th><th scope="col">Passed reads</th><th scope="col">Passed yield (bp)</th><th scope="col">Mean Q-score</th></tr></thead><tbody>"##);
+    let mean_lengths: Vec<_> = report
+        .diagnostics
+        .channel_read_length_distribution
+        .iter()
+        .map(|bin| {
+            (
+                length_interval(bin.lower_inclusive_bp, bin.upper_exclusive_bp),
+                bin.channel_count,
+                "primary",
+            )
+        })
+        .collect();
+    bars(
+        out,
+        "channel-length",
+        "Mean read length by channel",
+        "Channels (channels)",
+        1.0,
+        &mean_lengths,
+    );
+    out.push_str("<p class=\"annotation\">Each eligible channel counts once in its mean-length interval; channels without basecalled reads are excluded. This is a distribution of channel means, not individual read lengths. Exact all/passed channel means are in the table; per-channel medians are not calculated.</p>");
+    out.push_str(r##"<div id="channel-controls" class="table-controls" hidden><label>Find channel <input id="channel-search" type="search" placeholder="Channel ID" autocomplete="off"></label><label>Sort by <select id="channel-sort"><option value="channel">Channel ID ↑</option><option value="yield">Yield ↓</option><option value="reads">Basecalled reads ↓</option><option value="qscore">Mean Q-score ↓</option><option value="meanlength">Mean length ↓</option><option value="passedlength">Mean passed length ↓</option></select></label><label>Rows <select id="channel-page-size"><option>25</option><option>50</option><option>100</option></select></label></div>
+<div class="table-scroll channel-table"><table id="channel-table"><caption>All observed channels · exact counts and yield; default order is channel ID</caption><thead><tr><th scope="col">Channel</th><th scope="col">Records</th><th scope="col">Basecalled reads</th><th scope="col">Yield (bp)</th><th scope="col">Passed reads</th><th scope="col">Passed yield (bp)</th><th scope="col">Mean Q-score</th><th scope="col">Mean length (bp)</th><th scope="col">Mean passed length (bp)</th></tr></thead><tbody>"##);
     for c in &report.channels {
-        write!(out, "<tr data-channel=\"{}\" data-yield=\"{}\" data-reads=\"{}\" data-qscore=\"{}\"><th scope=\"row\">{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-            c.channel, c.total_yield_bp, c.basecalled_reads, c.mean_qscore.map(|v| v.to_string()).unwrap_or_default(), c.channel, count(c.total_records), count(c.basecalled_reads), count(c.total_yield_bp), count(c.passed_reads), count(c.passed_yield_bp), optional(c.mean_qscore, 1.0, "")).unwrap();
+        write!(out, "<tr data-channel=\"{}\" data-yield=\"{}\" data-reads=\"{}\" data-qscore=\"{}\" data-meanlength=\"{}\" data-passedlength=\"{}\"><th scope=\"row\">{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            c.channel, c.total_yield_bp, c.basecalled_reads, c.mean_qscore.map(|v| v.to_string()).unwrap_or_default(), c.mean_read_length_bp.map(|v| v.to_string()).unwrap_or_default(), c.mean_passed_read_length_bp.map(|v| v.to_string()).unwrap_or_default(), c.channel, count(c.total_records), count(c.basecalled_reads), count(c.total_yield_bp), count(c.passed_reads), count(c.passed_yield_bp), optional(c.mean_qscore, 1.0, ""), optional(c.mean_read_length_bp, 1.0, ""), optional(c.mean_passed_read_length_bp, 1.0, "")).unwrap();
     }
     if report.channels.is_empty() {
-        empty_row(out, 7, "No observed channels.");
+        empty_row(out, 9, "No observed channels.");
     }
     out.push_str(r##"</tbody></table></div><div class="pagination" id="channel-pagination" hidden><span id="channel-status" role="status" aria-live="polite"></span><div><button id="channel-previous" type="button">Previous</button><button id="channel-next" type="button">Next</button></div></div><noscript><p class="annotation">JavaScript is disabled. All channels remain available in the scrollable table.</p></noscript>"##);
     channel_mux_table(out, report);
@@ -825,23 +1144,59 @@ fn diagnostic_time_plot(out: &mut String, report: &Report, speed: bool) {
             })
             .collect()
     };
+    time_series_plot(
+        out,
+        report,
+        id,
+        title,
+        axis,
+        &[TimeSeries {
+            label: if speed {
+                "Mean read speed"
+            } else {
+                "Observed channels"
+            },
+            color: "primary",
+            points,
+        }],
+        !speed,
+    );
+}
+
+struct TimeSeries {
+    label: &'static str,
+    color: &'static str,
+    points: Vec<(u64, Option<f64>)>,
+}
+
+// Shared only by start-time diagnostics: common axes, bin midpoints and gaps.
+fn time_series_plot(
+    out: &mut String,
+    report: &Report,
+    id: &str,
+    title: &str,
+    axis: &str,
+    series: &[TimeSeries],
+    integer_ticks: bool,
+) {
     figure(out, id, title);
-    let maximum = points
+    let maximum = series
         .iter()
-        .filter_map(|(_, value)| *value)
-        .fold(0.0, f64::max);
-    if maximum == 0.0 {
+        .flat_map(|s| s.points.iter().filter_map(|(_, value)| *value))
+        .reduce(f64::max);
+    let Some(maximum) = maximum else {
         empty_chart(
             out,
             "No eligible basecalled observations in these intervals.",
         );
         return;
-    }
+    };
+    let maximum = if maximum == 0.0 { 1.0 } else { maximum };
     // Finite extreme ratios remain valid data; avoid overflow in rounded axes.
     let (ymax, ticks) = if !(1e-200..1e300).contains(&maximum) {
         (maximum, 4)
     } else {
-        plot_scale(maximum, !speed)
+        plot_scale(maximum, integer_ticks)
     };
     let end = report.time_bins.last().map_or(900, |b| b.end_seconds) as f64;
     svg_start(out, id, title, 294);
@@ -854,29 +1209,37 @@ fn diagnostic_time_plot(out: &mut String, report: &Report, speed: bool) {
         );
     }
     out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Time from run start (h)</text>");
-    let mut path = String::new();
-    let mut previous = None;
-    for (start, value) in points {
-        let Some(value) = value else {
-            previous = None;
-            continue;
-        };
-        let x = LEFT + (start as f64 + 450.0) / end * (RIGHT - LEFT);
-        let y = BOTTOM - value / ymax * (BOTTOM - TOP);
-        let command = if previous.is_some_and(|last| start - last == 900) {
-            'L'
+    for s in series {
+        let mut path = String::new();
+        let mut previous = None;
+        for &(start, value) in &s.points {
+            let Some(value) = value else {
+                previous = None;
+                continue;
+            };
+            let x = LEFT + (start as f64 + 450.0) / end * (RIGHT - LEFT);
+            let y = BOTTOM - value / ymax * (BOTTOM - TOP);
+            let command = if previous.is_some_and(|last| start - last == 900) {
+                'L'
+            } else {
+                'M'
+            };
+            write!(path, " {command} {x:.2} {y:.2}").unwrap();
+            write!(out, "<circle class=\"{}\" cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"3\" data-value=\"{value}\"><title>[{}, {}) seconds · {}: {} ({})</title></circle>", s.color, start, start + 900, escape(s.label), decimal(value), escape(axis)).unwrap();
+            previous = Some(start);
+        }
+        let class = if s.color == "passed" {
+            "passed-line"
         } else {
-            'M'
+            "cumulative-line"
         };
-        write!(path, " {command} {x:.2} {y:.2}").unwrap();
-        write!(out, "<circle class=\"primary\" cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"3\"><title>[{}, {}) seconds: {} {}</title></circle>", start, start + 900, decimal(value), if speed { "bp/s mean read speed" } else { "basecalled-producing channels" }).unwrap();
-        previous = Some(start);
+        write!(out, "<path class=\"{class}\" d=\"{path}\"/>").unwrap();
     }
-    write!(
-        out,
-        "<path class=\"cumulative-line\" d=\"{path}\"/></svg></div></figure>"
-    )
-    .unwrap();
+    out.push_str("</svg></div>");
+    if series.len() > 1 {
+        out.push_str("<p class=\"annotation\"><span class=\"legend all\">All basecalled reads · solid</span><span class=\"legend pass\">Passed reads · dashed</span></p>");
+    }
+    out.push_str("</figure>");
 }
 
 fn figure(out: &mut String, id: &str, title: &str) {
@@ -953,6 +1316,8 @@ fn bars(
         let y = 25 + i * 34;
         let raw_unit = if axis.starts_with("Yield") {
             "bp"
+        } else if axis.ends_with("(channels)") {
+            "channels"
         } else {
             "reads"
         };

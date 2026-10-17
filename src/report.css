@@ -285,6 +285,31 @@ figcaption {
     stroke-width:2.5;
     stroke-linejoin:round;
 }
+.passed-line {
+    fill:none;
+    stroke:var(--pass);
+    stroke-width:2.5;
+    stroke-dasharray:7 4;
+    stroke-linejoin:round;
+}
+.joint-cell {
+    stroke:var(--paper);
+    stroke-width:.5;
+}
+.joint-cell:hover {
+    stroke:var(--ink);
+    stroke-width:1.5;
+}
+.histogram-overflow {
+    fill:none;
+    stroke:var(--muted);
+    stroke-width:1;
+    stroke-dasharray:4 3;
+    pointer-events:none;
+}
+.passed-heading {
+    color:var(--pass);
+}
 .heatmap {
     display:block;
     width:100%;
@@ -346,6 +371,9 @@ h3 {
 .legend.fail:before {
     background:var(--fail);
 }
+.legend.all:before {
+    background:var(--accent);
+}
 .table-scroll {
     overflow:auto;
     max-inline-size:100%;
@@ -354,6 +382,9 @@ h3 {
     border:1px solid var(--line);
     border-radius:6px;
     background:var(--paper);
+}
+.comparison-table {
+    max-height:none;
 }
 table {
     width:100%;

@@ -17,8 +17,9 @@
       const av = a.dataset[key], bv = b.dataset[key];
       if (av === '' || bv === '') return av === bv ? 0 : av === '' ? 1 : -1;
       // Integer counts remain exact above Number.MAX_SAFE_INTEGER.
-      const an = key === 'qscore' ? Number(av) : BigInt(av);
-      const bn = key === 'qscore' ? Number(bv) : BigInt(bv);
+      const floating = ['qscore', 'meanlength', 'passedlength'].includes(key);
+      const an = floating ? Number(av) : BigInt(av);
+      const bn = floating ? Number(bv) : BigInt(bv);
       const order = an < bn ? -1 : an > bn ? 1 : 0;
       return (['channel', 'mux'].includes(key) ? order : -order) || Number(a.dataset.channel) - Number(b.dataset.channel) || Number(a.dataset.mux || 0) - Number(b.dataset.mux || 0);
     }

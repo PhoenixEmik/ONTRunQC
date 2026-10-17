@@ -130,9 +130,9 @@ fn complete_synthetic_metrics() {
     assert_eq!(
         report["channels"],
         json!([
-            {"channel":1,"total_records":2,"basecalled_reads":2,"total_yield_bp":60,"passed_reads":0,"passed_yield_bp":0,"mean_qscore":10.0},
-            {"channel":2,"total_records":2,"basecalled_reads":2,"total_yield_bp":40,"passed_reads":2,"passed_yield_bp":40,"mean_qscore":20.0},
-            {"channel":3,"total_records":2,"basecalled_reads":0,"total_yield_bp":0,"passed_reads":0,"passed_yield_bp":0,"mean_qscore":null}
+            {"channel":1,"total_records":2,"basecalled_reads":2,"total_yield_bp":60,"passed_reads":0,"passed_yield_bp":0,"mean_qscore":10.0,"mean_read_length_bp":30.0,"mean_passed_read_length_bp":null},
+            {"channel":2,"total_records":2,"basecalled_reads":2,"total_yield_bp":40,"passed_reads":2,"passed_yield_bp":40,"mean_qscore":20.0,"mean_read_length_bp":20.0,"mean_passed_read_length_bp":20.0},
+            {"channel":3,"total_records":2,"basecalled_reads":0,"total_yield_bp":0,"passed_reads":0,"passed_yield_bp":0,"mean_qscore":null,"mean_read_length_bp":null,"mean_passed_read_length_bp":null}
         ])
     );
     assert_eq!(
@@ -146,10 +146,10 @@ fn complete_synthetic_metrics() {
     assert_eq!(
         report["time_bins"],
         json!([
-            {"start_seconds":0,"end_seconds":900,"total_records":3,"basecalled_reads":2,"yield_bp":60,"cumulative_yield_bp":60},
-            {"start_seconds":900,"end_seconds":1800,"total_records":1,"basecalled_reads":1,"yield_bp":30,"cumulative_yield_bp":90},
-            {"start_seconds":1800,"end_seconds":2700,"total_records":1,"basecalled_reads":1,"yield_bp":10,"cumulative_yield_bp":100},
-            {"start_seconds":2700,"end_seconds":3600,"total_records":1,"basecalled_reads":0,"yield_bp":0,"cumulative_yield_bp":100}
+            {"start_seconds":0,"end_seconds":900,"total_records":3,"basecalled_reads":2,"yield_bp":60,"cumulative_yield_bp":60,"passed_reads":0,"passed_yield_bp":0,"mean_read_length_bp":30.0,"mean_passed_read_length_bp":null,"qscore_observations":2,"mean_qscore":10.0,"mean_passed_qscore":null},
+            {"start_seconds":900,"end_seconds":1800,"total_records":1,"basecalled_reads":1,"yield_bp":30,"cumulative_yield_bp":90,"passed_reads":1,"passed_yield_bp":30,"mean_read_length_bp":30.0,"mean_passed_read_length_bp":30.0,"qscore_observations":1,"mean_qscore":30.0,"mean_passed_qscore":30.0},
+            {"start_seconds":1800,"end_seconds":2700,"total_records":1,"basecalled_reads":1,"yield_bp":10,"cumulative_yield_bp":100,"passed_reads":1,"passed_yield_bp":10,"mean_read_length_bp":10.0,"mean_passed_read_length_bp":10.0,"qscore_observations":1,"mean_qscore":10.0,"mean_passed_qscore":10.0},
+            {"start_seconds":2700,"end_seconds":3600,"total_records":1,"basecalled_reads":0,"yield_bp":0,"cumulative_yield_bp":100,"passed_reads":0,"passed_yield_bp":0,"mean_read_length_bp":null,"mean_passed_read_length_bp":null,"qscore_observations":0,"mean_qscore":null,"mean_passed_qscore":null}
         ])
     );
     assert_eq!(
@@ -1117,4 +1117,322 @@ fn activity_counts_distinct_channels_in_unsorted_bins_and_preserves_gaps() {
         .unwrap();
     assert_eq!(path.matches('M').count(), 2);
     assert_eq!(path.matches('L').count(), 1);
+}
+
+fn assert_number(value: &Value, expected: f64) {
+    let actual = value.as_f64().unwrap();
+    assert!(
+        (actual - expected).abs() <= 1e-12 * expected.abs().max(1.0),
+        "{actual} != {expected}"
+    );
+}
+
+fn matrix_total(matrix: &Value) -> u64 {
+    matrix
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|row| row.as_array().unwrap())
+        .map(|v| v.as_u64().unwrap())
+        .sum()
+}
+
+#[test]
+fn advanced_quality_fixture_has_exact_subset_time_and_channel_statistics() {
+    let directory = TestDirectory::new();
+    let report = directory.analyze(&fs::read_to_string(fixture("advanced_quality.tsv")).unwrap());
+    let metrics = &report["metrics"];
+    assert_eq!(metrics["total_records"], 11);
+    assert_eq!(metrics["basecalled_reads"], 8);
+    assert_eq!(metrics["zero_length_records"], 3);
+    assert_eq!(metrics["total_yield_bp"], 180);
+    assert_eq!(metrics["passed_reads"], 4);
+    assert_eq!(metrics["passed_yield_bp"], 100);
+    assert_eq!(metrics["n50_bp"], 30);
+    assert_eq!(metrics["median_read_length_bp"], 22.5);
+    assert_number(&report["quality"]["mean_qscore"], 17.5);
+    assert_eq!(report["quality"]["median_qscore"], 17.5);
+    let passed = &report["diagnostics"]["passed_read_statistics"];
+    assert_eq!(
+        passed,
+        &json!({
+            "read_count":4,"total_yield_bp":100,"mean_read_length_bp":25.0,
+            "median_read_length_bp":25.0,"n50_bp":30,"min_read_length_bp":10,
+            "max_read_length_bp":40,"mean_qscore":15.0,"median_qscore":15.0
+        })
+    );
+    let bins = report["time_bins"].as_array().unwrap();
+    assert_eq!(
+        bins.iter()
+            .map(|b| b["start_seconds"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [0, 900, 1800, 3600, 4500]
+    );
+    for (index, count, bases, pass_count, pass_bases, mean, pass_mean, q, pass_q) in [
+        (0, 3, 35, 2, 30, 35.0 / 3.0, 15.0, 5.0, 5.0),
+        (1, 2, 45, 1, 30, 22.5, 30.0, 17.5, 20.0),
+        (3, 3, 100, 1, 40, 100.0 / 3.0, 40.0, 30.0, 30.0),
+    ] {
+        let bin = &bins[index];
+        assert_eq!(bin["basecalled_reads"], count);
+        assert_eq!(bin["qscore_observations"], count);
+        assert_eq!(bin["yield_bp"], bases);
+        assert_eq!(bin["passed_reads"], pass_count);
+        assert_eq!(bin["passed_yield_bp"], pass_bases);
+        assert_number(&bin["mean_read_length_bp"], mean);
+        assert_number(&bin["mean_passed_read_length_bp"], pass_mean);
+        assert_number(&bin["mean_qscore"], q);
+        assert_number(&bin["mean_passed_qscore"], pass_q);
+    }
+    for index in [2, 4] {
+        for key in [
+            "mean_read_length_bp",
+            "mean_passed_read_length_bp",
+            "mean_qscore",
+            "mean_passed_qscore",
+        ] {
+            assert!(bins[index][key].is_null());
+        }
+        assert_eq!(bins[index]["qscore_observations"], 0);
+    }
+    for (bin_key, run_key) in [
+        ("basecalled_reads", "basecalled_reads"),
+        ("passed_reads", "passed_reads"),
+        ("yield_bp", "total_yield_bp"),
+        ("passed_yield_bp", "passed_yield_bp"),
+    ] {
+        assert_eq!(
+            bins.iter()
+                .map(|b| b[bin_key].as_u64().unwrap())
+                .sum::<u64>(),
+            metrics[run_key].as_u64().unwrap()
+        );
+    }
+    let channels = report["channels"].as_array().unwrap();
+    for (i, mean, pass_mean) in [
+        (0, 15.0, Some(20.0)),
+        (1, 30.0, Some(30.0)),
+        (2, 25.0, None),
+    ] {
+        assert_number(&channels[i]["mean_read_length_bp"], mean);
+        if let Some(value) = pass_mean {
+            assert_number(&channels[i]["mean_passed_read_length_bp"], value);
+        } else {
+            assert!(channels[i]["mean_passed_read_length_bp"].is_null());
+        }
+    }
+    assert!(channels[3]["mean_read_length_bp"].is_null());
+    let distribution = report["diagnostics"]["channel_read_length_distribution"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        distribution
+            .iter()
+            .map(|b| b["channel_count"].as_u64().unwrap())
+            .sum::<u64>(),
+        3
+    );
+    assert_eq!(
+        distribution
+            .iter()
+            .map(|b| b["passed_channel_count"].as_u64().unwrap())
+            .sum::<u64>(),
+        2
+    );
+    let joint = &report["diagnostics"]["length_quality_histogram"];
+    assert_eq!(matrix_total(&joint["all_read_counts"]), 8);
+    assert_eq!(matrix_total(&joint["passed_read_counts"]), 4);
+}
+
+#[test]
+fn length_quality_bins_include_boundaries_and_unbounded_tails_without_thresholds() {
+    let directory = TestDirectory::new();
+    // (length, Q-score, expected length column, expected Q row)
+    let observations = [
+        (1, "0", 0, 0),
+        (2, "2", 1, 1),
+        (3, "2", 1, 1),
+        (4, "4", 2, 2),
+        (1023, "49.999", 9, 24),
+        (1024, "50", 10, 25),
+        (1048575, "100", 19, 25),
+        (1048576, "1e308", 20, 25),
+        (1048577, "0", 20, 0),
+    ];
+    let mut data = HEADER.to_owned();
+    let mut counts = vec![vec![0_u64; 21]; 26];
+    let mut passed = counts.clone();
+    for (i, (length, q, l, row)) in observations.into_iter().enumerate() {
+        let flag = i % 2 == 0;
+        data.push_str(&format!(
+            "fictional\t1\t1\t0\t1\t{}\t{length}\t{q}\tnormal\n",
+            if flag { "TRUE" } else { "FALSE" }
+        ));
+        counts[row][l] += 1;
+        passed[row][l] += u64::from(flag);
+    }
+    let report = directory.analyze(&data);
+    let h = &report["diagnostics"]["length_quality_histogram"];
+    assert_eq!(
+        h["length_lower_bounds_bp"],
+        json!((0..=20).map(|i| 1_u64 << i).collect::<Vec<_>>())
+    );
+    assert_eq!(
+        h["qscore_lower_bounds"],
+        json!((0..=25).map(|i| i as f64 * 2.0).collect::<Vec<_>>())
+    );
+    assert_eq!(h["all_read_counts"], json!(counts));
+    assert_eq!(h["passed_read_counts"], json!(passed));
+    assert_eq!(report["metrics"]["passed_reads"], 5);
+    assert!(
+        report["quality"]["mean_qscore"]
+            .as_f64()
+            .unwrap()
+            .is_finite()
+    );
+    let html = directory.html();
+    assert!(html.contains("open-ended overflow bins"));
+    assert!(html.contains("log₁₀(1 + count)"));
+    assert!(!html.contains("NaN") && !html.contains("Infinity"));
+    let huge = TestDirectory::new().analyze(&format!(
+        "{HEADER}{}",
+        ROW.replace("\t10\t12.5\t", &format!("\t{}\t{}\t", u64::MAX, f64::MAX))
+    ));
+    let huge_h = &huge["diagnostics"]["length_quality_histogram"];
+    assert_eq!(huge_h["all_read_counts"][25][20], 1);
+    assert_eq!(huge_h["passed_read_counts"][25][20], 1);
+    assert_eq!(
+        huge["diagnostics"]["passed_read_statistics"]["n50_bp"],
+        u64::MAX
+    );
+}
+
+#[test]
+fn advanced_empty_zero_length_and_no_passed_subsets_are_unavailable() {
+    for rows in [
+        String::new(),
+        ROW.replace("\t10\t12.5\t", "\t0\t1e308\t"),
+        ROW.replace("TRUE", "FALSE"),
+    ] {
+        let directory = TestDirectory::new();
+        let report = directory.analyze(&format!("{HEADER}{rows}"));
+        let passed = &report["diagnostics"]["passed_read_statistics"];
+        assert_eq!(passed["read_count"], 0);
+        assert_eq!(passed["total_yield_bp"], 0);
+        for key in [
+            "mean_read_length_bp",
+            "median_read_length_bp",
+            "n50_bp",
+            "min_read_length_bp",
+            "max_read_length_bp",
+            "mean_qscore",
+            "median_qscore",
+        ] {
+            assert!(passed[key].is_null(), "{key}");
+        }
+        assert_eq!(
+            matrix_total(&report["diagnostics"]["length_quality_histogram"]["passed_read_counts"]),
+            0
+        );
+        let html = directory.html();
+        assert!(html.contains("Not available"));
+        assert!(html.contains("No basecalled observations in this subset."));
+        assert!(html.contains("data-metric=\"passed_read_count\" data-value=\"0\""));
+    }
+    assert_invalid("", "empty");
+}
+
+#[test]
+fn advanced_time_series_preserve_independent_gaps_and_valid_q_zero() {
+    let directory = TestDirectory::new();
+    let row = |time, passed, length, q| {
+        format!("fictional\t1\t1\t{time}\t1\t{passed}\t{length}\t{q}\tnormal\n")
+    };
+    let report = directory.analyze(&format!(
+        "{HEADER}{}{}{}{}{}",
+        row(4500, "TRUE", 40, 30),
+        row(900, "FALSE", 20, 10),
+        row(2700, "TRUE", 0, 0),
+        row(0, "TRUE", 10, 0),
+        row(1800, "TRUE", 30, 20)
+    ));
+    assert_eq!(report["time_bins"][0]["mean_qscore"], 0.0);
+    assert_eq!(report["time_bins"][0]["mean_passed_qscore"], 0.0);
+    assert!(report["time_bins"][1]["mean_passed_qscore"].is_null());
+    let html = directory.html();
+    for id in ["length-time", "qscore-time"] {
+        let figure = html
+            .split(&format!("id=\"{id}-caption\""))
+            .nth(1)
+            .unwrap()
+            .split("</figure>")
+            .next()
+            .unwrap();
+        for (class, moves, lines) in [("cumulative-line", 2, 2), ("passed-line", 3, 0)] {
+            let path = figure
+                .split(&format!("class=\"{class}\" d=\""))
+                .nth(1)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap();
+            assert_eq!(path.matches('M').count(), moves, "{id}: {path}");
+            assert_eq!(path.matches('L').count(), lines, "{id}: {path}");
+        }
+    }
+}
+
+#[test]
+fn advanced_reports_are_deterministic_offline_and_match_json_values() {
+    let directory = TestDirectory::new();
+    let data = fs::read_to_string(fixture("advanced_quality.tsv")).unwrap();
+    let report = directory.analyze(&data);
+    let html = directory.html();
+    let json_bytes = fs::read(directory.0.join("output/report.json")).unwrap();
+    for key in [
+        "read_count",
+        "total_yield_bp",
+        "n50_bp",
+        "mean_read_length_bp",
+        "median_read_length_bp",
+        "mean_qscore",
+        "median_qscore",
+    ] {
+        let value = &report["diagnostics"]["passed_read_statistics"][key];
+        let value = value
+            .as_u64()
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| value.as_f64().unwrap().to_string());
+        assert!(html.contains(&format!(
+            "data-metric=\"passed_{key}\" data-value=\"{value}\""
+        )));
+    }
+    for (id, expected) in [("length-quality-all", 8), ("length-quality-passed", 4)] {
+        let chart = html
+            .split(&format!("id=\"{id}-caption\""))
+            .nth(1)
+            .unwrap()
+            .split("</figure>")
+            .next()
+            .unwrap();
+        let counts: Vec<_> = chart
+            .split("data-read-count=\"")
+            .skip(1)
+            .map(|s| s.split('"').next().unwrap().parse::<u64>().unwrap())
+            .collect();
+        assert_eq!(counts.len(), 21 * 26);
+        assert_eq!(counts.iter().sum::<u64>(), expected);
+    }
+    assert!(html.contains("Mean read length by channel"));
+    assert!(html.contains("value=\"meanlength\""));
+    assert!(html.contains("data-meanlength=\"15\" data-passedlength=\"20\""));
+    for forbidden in ["https://", "http://", "fetch(", "@import", "<link"] {
+        assert!(!html.contains(forbidden));
+    }
+    directory.analyze(&data);
+    assert_eq!(
+        json_bytes,
+        fs::read(directory.0.join("output/report.json")).unwrap()
+    );
+    assert_eq!(html, directory.html());
 }

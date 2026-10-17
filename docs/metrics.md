@@ -76,8 +76,10 @@ counts sum to `basecalled_reads`; histogram yields sum to `total_yield_bp`.
 | `muxes` | `mux`, `total_records`, `basecalled_reads`, `total_yield_bp`, `passed_yield_bp` |
 | `end_reasons` | `end_reason`, `total_records`, `basecalled_reads`, `total_yield_bp` |
 
-Channel means use the same arithmetic definition and zero-length exclusion as
-the run mean. A channel without basecalled reads has `mean_qscore: null`.
+Channel Q-score means use the same arithmetic definition and zero-length exclusion
+as the run mean. v0.4.0 adds `mean_read_length_bp` and
+`mean_passed_read_length_bp`, calculated as channel yield / corresponding
+basecalled read count. A zero denominator gives `null` for that mean.
 Unknown termination strings are preserved verbatim and grouped by exact string.
 Channels and muxes are identifiers. Physical coordinates exist only with an explicitly selected supported layout.
 
@@ -97,6 +99,23 @@ calculated after aggregation, so input need not be time-sorted.
 All bases of a read are attributed to its **start time**. Duration is validated
 but not used to distribute bases across bins. This is not exact instrument
 throughput, pore occupancy, or completion-time yield.
+
+v0.4.0 adds the following fields to each existing occupied bin:
+
+| Field | Definition |
+| --- | --- |
+| `passed_reads`, `passed_yield_bp` | Native passed basecalled count and yield. |
+| `mean_read_length_bp` | `yield_bp / basecalled_reads`. |
+| `mean_passed_read_length_bp` | `passed_yield_bp / passed_reads`. |
+| `qscore_observations` | Number of positive-length Q-score observations; equals `basecalled_reads` since Q-score is required. |
+| `mean_qscore` | Arithmetic per-basecalled-read Q-score mean. |
+| `mean_passed_qscore` | Arithmetic Q-score mean among passed reads; denominator `passed_reads`. |
+
+Zero-length rows contribute none of these observations; means with zero
+denominators are null. HTML uses hours, kb, and per-read Q-score units, connects
+only adjacent occupied 900-second bins with available means, and breaks each
+series independently at unavailable values. Q0 on a positive-length read is
+available data, not a gap. There is no smoothing or hourly resampling.
 
 ## Report envelope and ordering
 
@@ -139,6 +158,10 @@ Schema version remains **1**: no previous fields, definitions, or array ordering
 are removed or changed. Consumers should ignore unfamiliar fields. The additive
 `diagnostics` object contains the following independently ordered groups. It has
 no individual-read data and does not imply automatic run-level QC judgments.
+The v0.4.0 additions follow the same contract: tolerant consumers can continue
+reading old fields, but strict consumers rejecting unknown keys (including keys
+inside `channels`/`time_bins` entries) must update. No incompatible field change
+requires a schema version increment in this milestone.
 
 ### Explicit physical layout
 
@@ -232,3 +255,72 @@ null, never an invented zero. HTML formats fractions as percentages. This new
 array and the HTML table sort by descending record count, then ascending reason
 name. The original `end_reasons` array retains ascending name order. Reasons are
 not assigned a good/bad classification and do not determine filtering status.
+
+## Advanced read-quality diagnostics (v0.4.0)
+
+### Exact passed-read statistics and storage
+
+`diagnostics.passed_read_statistics` contains `read_count`, `total_yield_bp`,
+`mean_read_length_bp`, `median_read_length_bp`, `n50_bp`, `min_read_length_bp`,
+`max_read_length_bp`, `mean_qscore`, and `median_qscore`. Definitions are identical
+to the corresponding overall statistics, restricted to positive-length native
+passed reads. Empty subsets have zero counts/yield and null statistics. Medians
+and N50 use exact observations, never histogram interpolation.
+
+Lengths/Q-scores are partitioned by native pass/fail status, sorted in place,
+and merged with constant lookahead for global medians/N50. Each read still
+contributes one `u64` length and one `f64` Q-score: 16 bytes of elements, not
+multiple independent copies for all/passed. Four fixed-growth buffers reserve
+at most 4 × 65,536 × 8 bytes (2 MiB) spare element capacity. This is up to 1 MiB
+more than the former two-buffer bound, independent of record count. A synthetic
+131,075-read test checks retained counts/capacity; this does not measure RSS.
+Existing streaming global Q-score means keep their input-order arithmetic.
+
+Per-channel exact medians are deliberately deferred: a straightforward additional
+per-channel length collection costs 8 bytes/read (about 233 MiB for 30.55 million
+reads), in addition to the roughly 466 MiB retained core elements. Retaining
+channel identity through ordering also needs extra storage or complexity.
+No approximate per-channel median is substituted.
+
+### Read length × Q-score histogram
+
+`diagnostics.length_quality_histogram` contains:
+
+- `length_lower_bounds_bp`: 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1,024, 2,048,
+  4,096, 8,192, 16,384, 32,768, 65,536, 131,072, 262,144, 524,288, 1,048,576.
+- `qscore_lower_bounds`: 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28,
+  30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50.
+- `all_read_counts` and `passed_read_counts`: 26 rows × 21 columns of `u64` counts.
+  Rows follow ascending Q-score bins; columns follow ascending length bins.
+
+Intervals are `[lower, next_lower)`; the final interval on each axis is
+`[last_lower, infinity)`. Zero lengths are excluded. All finite nonnegative
+Q-scores and positive `u64` lengths, including values above the display range,
+are counted. The two matrices use 8,736 bytes during aggregation and no per-read
+length/Q-score pairs. Their sums equal `basecalled_reads` and `passed_reads`.
+
+HTML positions finite length bins logarithmically (base 2) and Q-score bins
+linearly. Dashed terminal column/row boundaries identify open-ended overflow
+cells; their widths do not represent an infinite numeric interval. Both maps
+share a sequential indigo scale normalized by `log10(1 + cell_count)` against the
+all-read maximum. Accessible SVG cell labels/tooltips and a nonzero-cell table
+retain integer counts. Histogram boundaries impose no filtering threshold.
+
+### Distribution of channel mean lengths
+
+`diagnostics.channel_read_length_distribution` uses the existing nine read-length
+interval boundaries. Each entry has `lower_inclusive_bp`, `upper_exclusive_bp`,
+`channel_count`, and `passed_channel_count`. The first count bins channel all-read
+means; the second bins channel passed-read means. Each eligible channel counts
+once, without read-count weighting. Channels without the corresponding reads are
+excluded. These are channel-mean distributions, not per-read length distributions.
+HTML shows the all-read distribution and both means in the existing channel table.
+
+### Validation denominators
+
+Summary records include zero lengths; basecalled reads exclude them; passed reads
+add the native TRUE flag. An externally defined Q ≥ 9 subset is distinct from
+native passing. The maintainer's real-run reference matched these subset totals
+for that run only. Different zero-length denominators and rounded external Gb
+outputs must be reconciled before comparing means, medians, and yields. No
+original records or private identifiers are used in public regression fixtures.

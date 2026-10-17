@@ -5,7 +5,7 @@ of Oxford Nanopore sequencing summaries, initially designed for PromethION and
 modern MinKNOW/Dorado output. It streams TSV records, validates them, calculates
 run metrics, and writes deterministic JSON and standalone HTML reports.
 
-Current release: **[v0.3.0 — PromethION Deep QC](https://github.com/PhoenixEmik/PoreGauge/tree/v0.3.0)**.
+Current release: **[v0.4.0 — Advanced Read Quality Diagnostics](https://github.com/PhoenixEmik/PoreGauge/tree/v0.4.0)**.
 
 PoreGauge is not a basecaller or a replacement for MinKNOW instrument monitoring.
 It does not analyze FASTQ, BAM, or POD5 files.
@@ -22,6 +22,10 @@ It does not analyze FASTQ, BAM, or POD5 files.
 - Explicit PromethION 3000-channel total/passed-yield heatmaps.
 - Distinct basecalled-producing channels over time and channel × mux statistics.
 - Optional template-duration speed proxy and termination-reason percentages.
+- Exact passed-read length median/N50 and Q-score median, with all/passed comparison.
+- All/passed mean read length and arithmetic Q-score in 15-minute read-start bins.
+- Bounded length × Q-score heatmaps, including open-ended length/quality tails.
+- Per-channel all/passed mean length and a compact distribution of channel means.
 
 ## Installation
 
@@ -31,8 +35,8 @@ When available, download the matching archive from
 [GitHub Releases](https://github.com/PhoenixEmik/PoreGauge/releases), verify its
 checksum, extract it, and run the included `poregauge` binary. The Linux release
 workflow builds static musl binaries with no system glibc dependency. Download
-`poregauge-v0.3.0-linux-x86_64.tar.gz` for Intel/AMD systems or
-`poregauge-v0.3.0-linux-arm64.tar.gz` for ARM64 systems. The extracted directory
+`poregauge-v0.4.0-linux-x86_64.tar.gz` for Intel/AMD systems or
+`poregauge-v0.4.0-linux-arm64.tar.gz` for ARM64 systems. The extracted directory
 uses the same name without `.tar.gz`. Rocky Linux 8 is the
 minimum Linux compatibility test environment: each Linux archive must pass a
 version check and synthetic JSON/HTML analysis in its native Rocky Linux 8
@@ -96,6 +100,10 @@ Open `qc_results/example/report.html`. This small fixture has 6 summary records,
 and a 25 bp median read length. Its intentionally small values exercise report
 behavior; they are not representative of a production sequencing run.
 
+For the advanced diagnostics, use `tests/fixtures/advanced_quality.tsv` with the
+same command. This fictional unsorted input includes missing/zero-length-only
+intervals, native passed Q0 reads, and an exact passed median of 25 bp/N50 of 30 bp.
+
 For a compatible 3000-channel PromethION summary, explicitly enable spatial maps:
 
 ```sh
@@ -137,9 +145,9 @@ file produces zero counts and `null` statistics; an empty file is rejected.
 | --- | --- |
 | Run overview | Run ID, summary/basecalled counts, yield, native pass rate, N50, mean length, mean Q-score. |
 | Sequencing yield | Cumulative/interval yield, basecalled reads, distinct basecalled-producing channels, exact interval values. |
-| Read length | Read-count and yield histograms, exact N50/median, original interval boundaries. |
-| Read quality | Per-read Q-score histogram, mean/median, pass/fail read counts and yields. |
-| Channel performance | Ranked yield, optional total/passed spatial maps, searchable/sortable/paginated channel and channel × mux tables. |
+| Read length | All/passed comparison table, exact subset median/N50, length/yield histograms, mean length over time. |
+| Read quality | Q-score histogram, mean Q-score over time, all/passed length × Q-score heatmaps, native pass/fail counts and yields. |
+| Channel performance | Ranked yield, distribution of channel mean lengths, all/passed mean lengths in the existing sortable table, optional spatial maps and channel × mux table. |
 | Mux performance | Basecalled read counts, total/passed yield by observed mux, exact totals. |
 | Termination reasons | Counts, yield, record/yield shares, zero-length/basecalled fractions, and native pass fraction, sorted by record count. |
 | Sequencing speed | Fixed-bin speed distribution and mean per-read speed over time, when eligible template durations exist. |
@@ -164,8 +172,10 @@ quality metrics, and ordered arrays of distributions and grouped statistics.
 Unavailable values are `null`; integer yields are in base pairs. No individual
 read records, sample IDs, filenames, or experiment IDs appear in reports.
 The run ID and unknown termination-reason strings are preserved. Schema version 1
-is retained in v0.3.0: existing fields and array ordering are preserved, with an
-additive `diagnostics` object. Both renderers use the same final metrics model.
+is retained in v0.4.0: previous fields, definitions, and array ordering are preserved.
+New fields extend time bins/channels and `diagnostics`; consumers must tolerate
+unknown fields. Strict consumers that reject additional fields need updating.
+Both renderers use the same final metrics model.
 The HTML pass rate is passed basecalled reads divided by all basecalled reads,
 or unavailable when that denominator is zero. Input-derived HTML text is escaped;
 no input data is interpolated into scripts.
@@ -208,6 +218,26 @@ pore occupancy, or run-level pass/fail judgment is inferred from missing metadat
 
 Summary-derived observations cannot establish pore health, availability, or the
 cause of spatial or temporal variation. Instrument telemetry is not analyzed.
+
+## Advanced quality definitions and limits
+
+- All-read length/quality means refer to **basecalled reads**, excluding zero lengths.
+  Passed statistics additionally require native `passes_filtering=TRUE`.
+- Time plots retain unsmoothed 15-minute bins and break at missing/unavailable values.
+  Q-score means are arithmetic per read; neither length weighting nor an aggregate
+  error-probability transformation is applied. Values are attributed to read start.
+- Joint histograms use powers-of-two length boundaries from 1 to 1,048,576 bp and
+  Q-score boundaries 0, 2, …, 50. Final bins are unbounded; no reads are discarded
+  above the displayed range. Both heatmaps share a log-count color scale.
+- Channel means are channel yield / channel basecalled count (likewise for passed
+  reads). Exact per-channel medians are deferred to avoid additional per-read storage.
+
+In the maintainer-supplied v0.3.0 validation baseline, 28,202,608 summary records
+include 1,310 zero lengths, leaving 28,201,298 basecalled reads. MinIONQC's
+all-record denominator can therefore produce different means/medians. The matching
+native passed and Q ≥ 9 totals in that run do **not** make these filters universally
+equivalent. v0.4.0 regression tests use fictional inputs; that real summary has
+not been reprocessed for this milestone.
 
 ## Development
 
@@ -265,19 +295,24 @@ at desktop and mobile widths after presentation changes.
 
 ## Status and limitations
 
-Version 0.3.0 extends the existing QC engine and offline reports. There is no
+Version 0.4.0 extends the existing QC engine and offline reports. There is no
 automatic QC judgment, gzip support, barcode analysis, multi-run analysis, live
 monitoring, or instrument API integration. Physical maps support only the explicit
 EPI2ME 3000-channel layout; other models/geometries are not verified.
 
 Parsing is streaming, but exact medians require retained lengths (`u64`) and
-Q-scores (`f64`): approximately 466 MiB of elements for 30,549,981 basecalled reads,
-plus allocator overhead and grouped metrics. New diagnostics retain channel/mux
+Q-scores (`f64`): 16 bytes per basecalled read, approximately 466 MiB of elements
+for 30,549,981 reads, plus allocator overhead and grouped metrics. Pass/fail
+partitions each retain an observation once; global exact statistics merge sorted
+partitions without a combined copy. Four vectors have at most about 2 MiB spare
+element capacity (about 1 MiB more than v0.3.0). Two fixed joint-count matrices
+use 8,736 bytes during aggregation. A synthetic storage regression checks this
+bound; it is not an RSS benchmark. New diagnostics retain channel/mux
 pairs and distinct channel IDs per occupied time bin, not individual reads.
 Memory also grows with reasons and occupied time bins. Sorting is in place. The
 below-512-MiB RSS goal needs validation on the full real run; the supplied fixture
 and historical v0.1.0 engine measurements are documented in [benchmarking](docs/benchmark.md).
-No real-run benchmark was performed for v0.3.0. HTML size depends on grouped
+No real-run benchmark was performed for v0.4.0. HTML size depends on grouped
 observations (channels, muxes, time bins, reasons), not individual reads.
 
 Licensed under the [MIT License](LICENSE).

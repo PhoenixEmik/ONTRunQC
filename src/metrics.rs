@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
@@ -15,7 +18,15 @@ const LENGTH_BOUNDS: [u64; 9] = [
 ];
 const QUALITY_BOUNDS: [f64; 9] = [0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0, 50.0];
 const SPEED_BOUNDS: [f64; 9] = [0.0, 100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 800.0, 1000.0];
-// Limit spare capacity instead of geometrically doubling two large vectors.
+const JOINT_LENGTH_BOUNDS: [u64; 21] = [
+    1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072,
+    262144, 524288, 1048576,
+];
+const JOINT_QUALITY_BOUNDS: [f64; 26] = [
+    0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0,
+    32.0, 34.0, 36.0, 38.0, 40.0, 42.0, 44.0, 46.0, 48.0, 50.0,
+];
+// Bound spare capacity; each observation belongs to exactly one pass/fail partition.
 const RESERVE_ELEMENTS: usize = 65_536;
 
 #[derive(Default, Debug, Serialize)]
@@ -77,6 +88,8 @@ pub struct ChannelMetrics {
     pub passed_reads: u64,
     pub passed_yield_bp: u64,
     pub mean_qscore: Option<f64>,
+    pub mean_read_length_bp: Option<f64>,
+    pub mean_passed_read_length_bp: Option<f64>,
 }
 
 #[derive(Default, Debug, Serialize)]
@@ -96,6 +109,13 @@ pub struct TimeBin {
     pub basecalled_reads: u64,
     pub yield_bp: u64,
     pub cumulative_yield_bp: u64,
+    pub passed_reads: u64,
+    pub passed_yield_bp: u64,
+    pub mean_read_length_bp: Option<f64>,
+    pub mean_passed_read_length_bp: Option<f64>,
+    pub qscore_observations: u64,
+    pub mean_qscore: Option<f64>,
+    pub mean_passed_qscore: Option<f64>,
 }
 
 #[derive(Default, Debug, Serialize)]
@@ -113,6 +133,40 @@ pub struct Diagnostics {
     pub channel_mux: Vec<ChannelMuxMetrics>,
     pub sequencing_speed: Option<SequencingSpeed>,
     pub termination_reasons: Vec<TerminationDiagnostics>,
+    pub passed_read_statistics: PassedReadStatistics,
+    pub length_quality_histogram: LengthQualityHistogram,
+    pub channel_read_length_distribution: Vec<ChannelLengthBin>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PassedReadStatistics {
+    pub read_count: u64,
+    pub total_yield_bp: u64,
+    pub mean_read_length_bp: Option<f64>,
+    pub median_read_length_bp: Option<f64>,
+    pub n50_bp: Option<u64>,
+    pub min_read_length_bp: Option<u64>,
+    pub max_read_length_bp: Option<u64>,
+    pub mean_qscore: Option<f64>,
+    pub median_qscore: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LengthQualityHistogram {
+    pub length_lower_bounds_bp: Vec<u64>,
+    pub qscore_lower_bounds: Vec<f64>,
+    // Rows are ascending Q-score bins; columns are ascending read-length bins.
+    // The final interval on each axis is unbounded.
+    pub all_read_counts: Vec<Vec<u64>>,
+    pub passed_read_counts: Vec<Vec<u64>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChannelLengthBin {
+    pub lower_inclusive_bp: u64,
+    pub upper_exclusive_bp: Option<u64>,
+    pub channel_count: u64,
+    pub passed_channel_count: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -200,9 +254,12 @@ struct ReasonAccumulator {
 #[derive(Default)]
 pub struct Aggregator {
     overall: OverallMetrics,
-    lengths: Vec<u64>,
-    qscores: Vec<f64>,
+    passed_lengths: Vec<u64>,
+    failed_lengths: Vec<u64>,
+    passed_qscores: Vec<f64>,
+    failed_qscores: Vec<f64>,
     mean_qscore: f64,
+    passed_mean_qscore: f64,
     quality_counts: [u64; QUALITY_BOUNDS.len()],
     length_counts: [u64; LENGTH_BOUNDS.len()],
     length_yields: [u64; LENGTH_BOUNDS.len()],
@@ -215,6 +272,8 @@ pub struct Aggregator {
     speed_available: bool,
     speed: SpeedSummary,
     speed_counts: [u64; SPEED_BOUNDS.len()],
+    joint_counts: [[u64; JOINT_LENGTH_BOUNDS.len()]; JOINT_QUALITY_BOUNDS.len()],
+    joint_passed_counts: [[u64; JOINT_LENGTH_BOUNDS.len()]; JOINT_QUALITY_BOUNDS.len()],
 }
 
 impl Aggregator {
@@ -304,8 +363,13 @@ impl Aggregator {
             return Ok(());
         }
 
-        push_compact(&mut self.lengths, record.length)?;
-        push_compact(&mut self.qscores, record.qscore)?;
+        let (lengths, qscores) = if record.passed {
+            (&mut self.passed_lengths, &mut self.passed_qscores)
+        } else {
+            (&mut self.failed_lengths, &mut self.failed_qscores)
+        };
+        push_compact(lengths, record.length)?;
+        push_compact(qscores, record.qscore)?;
         self.overall.basecalled_reads += 1;
         update_mean(
             &mut self.mean_qscore,
@@ -320,6 +384,12 @@ impl Aggregator {
         mux.total_yield_bp += record.length;
         time.metrics.basecalled_reads += 1;
         time.metrics.yield_bp += record.length;
+        time.metrics.qscore_observations += 1;
+        update_mean(
+            time.metrics.mean_qscore.get_or_insert(0.0),
+            record.qscore,
+            time.metrics.qscore_observations,
+        );
         time.channels.insert(record.channel);
         reason.metrics.basecalled_reads += 1;
         reason.metrics.total_yield_bp += record.length;
@@ -338,12 +408,24 @@ impl Aggregator {
         if record.passed {
             self.overall.passed_reads += 1;
             self.overall.passed_yield_bp += record.length;
+            update_mean(
+                &mut self.passed_mean_qscore,
+                record.qscore,
+                self.overall.passed_reads,
+            );
             channel.passed_reads += 1;
             channel.passed_yield_bp += record.length;
             mux.passed_yield_bp += record.length;
             channel_mux.passed_reads += 1;
             channel_mux.passed_yield_bp += record.length;
             reason.passed_reads += 1;
+            time.metrics.passed_reads += 1;
+            time.metrics.passed_yield_bp += record.length;
+            update_mean(
+                time.metrics.mean_passed_qscore.get_or_insert(0.0),
+                record.qscore,
+                time.metrics.passed_reads,
+            );
         } else {
             self.overall.failed_reads += 1;
             self.overall.failed_yield_bp += record.length;
@@ -353,25 +435,77 @@ impl Aggregator {
         self.length_yields[length_bin] += record.length;
         let quality_bin = QUALITY_BOUNDS.partition_point(|bound| *bound <= record.qscore) - 1;
         self.quality_counts[quality_bin] += 1;
+        let joint_length = JOINT_LENGTH_BOUNDS.partition_point(|bound| *bound <= record.length) - 1;
+        let joint_quality =
+            JOINT_QUALITY_BOUNDS.partition_point(|bound| *bound <= record.qscore) - 1;
+        self.joint_counts[joint_quality][joint_length] += 1;
+        if record.passed {
+            self.joint_passed_counts[joint_quality][joint_length] += 1;
+        }
         Ok(())
     }
 
     pub fn finish(mut self, run_id: Option<String>) -> Report {
-        self.lengths.sort_unstable();
-        self.qscores.sort_unstable_by(f64::total_cmp);
-        if !self.lengths.is_empty() {
+        self.passed_lengths.sort_unstable();
+        self.failed_lengths.sort_unstable();
+        self.passed_qscores.sort_unstable_by(f64::total_cmp);
+        self.failed_qscores.sort_unstable_by(f64::total_cmp);
+        if self.overall.basecalled_reads != 0 {
             self.overall.mean_read_length_bp =
                 Some(self.overall.total_yield_bp as f64 / self.overall.basecalled_reads as f64);
-            self.overall.median_read_length_bp = median_lengths(&self.lengths);
-            self.overall.min_read_length_bp = self.lengths.first().copied();
-            self.overall.max_read_length_bp = self.lengths.last().copied();
-            self.overall.n50_bp = n50(&self.lengths, self.overall.total_yield_bp);
+            self.overall.median_read_length_bp =
+                merged_median_lengths(&self.passed_lengths, &self.failed_lengths);
+            self.overall.min_read_length_bp = self
+                .passed_lengths
+                .first()
+                .into_iter()
+                .chain(self.failed_lengths.first())
+                .min()
+                .copied();
+            self.overall.max_read_length_bp = self
+                .passed_lengths
+                .last()
+                .into_iter()
+                .chain(self.failed_lengths.last())
+                .max()
+                .copied();
+            self.overall.n50_bp = n50_descending(
+                merge_sorted(
+                    self.passed_lengths.iter().rev().copied(),
+                    self.failed_lengths.iter().rev().copied(),
+                    |a, b| b.cmp(a),
+                ),
+                self.overall.total_yield_bp,
+            );
         }
+        let passed_read_statistics = PassedReadStatistics {
+            read_count: self.overall.passed_reads,
+            total_yield_bp: self.overall.passed_yield_bp,
+            mean_read_length_bp: fraction(self.overall.passed_yield_bp, self.overall.passed_reads),
+            median_read_length_bp: median_lengths(&self.passed_lengths),
+            n50_bp: n50(&self.passed_lengths, self.overall.passed_yield_bp),
+            min_read_length_bp: self.passed_lengths.first().copied(),
+            max_read_length_bp: self.passed_lengths.last().copied(),
+            mean_qscore: (self.overall.passed_reads != 0).then_some(self.passed_mean_qscore),
+            median_qscore: median_quality(&self.passed_qscores),
+        };
         let quality = QualityMetrics {
-            mean_qscore: (!self.qscores.is_empty()).then_some(self.mean_qscore),
-            median_qscore: median_quality(&self.qscores),
-            min_qscore: self.qscores.first().copied(),
-            max_qscore: self.qscores.last().copied(),
+            mean_qscore: (self.overall.basecalled_reads != 0).then_some(self.mean_qscore),
+            median_qscore: merged_median_quality(&self.passed_qscores, &self.failed_qscores),
+            min_qscore: self
+                .passed_qscores
+                .first()
+                .into_iter()
+                .chain(self.failed_qscores.first())
+                .copied()
+                .min_by(f64::total_cmp),
+            max_qscore: self
+                .passed_qscores
+                .last()
+                .into_iter()
+                .chain(self.failed_qscores.last())
+                .copied()
+                .max_by(f64::total_cmp),
             histogram: QUALITY_BOUNDS
                 .iter()
                 .enumerate()
@@ -396,6 +530,30 @@ impl Aggregator {
         for time in self.time_bins.values_mut() {
             cumulative += time.metrics.yield_bp;
             time.metrics.cumulative_yield_bp = cumulative;
+            time.metrics.mean_read_length_bp =
+                fraction(time.metrics.yield_bp, time.metrics.basecalled_reads);
+            time.metrics.mean_passed_read_length_bp =
+                fraction(time.metrics.passed_yield_bp, time.metrics.passed_reads);
+        }
+        let mut channel_length_counts = [0_u64; LENGTH_BOUNDS.len()];
+        let mut passed_channel_length_counts = [0_u64; LENGTH_BOUNDS.len()];
+        for channel in self.channels.values_mut() {
+            channel.mean_read_length_bp =
+                fraction(channel.total_yield_bp, channel.basecalled_reads);
+            channel.mean_passed_read_length_bp =
+                fraction(channel.passed_yield_bp, channel.passed_reads);
+            for (mean, counts) in [
+                (channel.mean_read_length_bp, &mut channel_length_counts),
+                (
+                    channel.mean_passed_read_length_bp,
+                    &mut passed_channel_length_counts,
+                ),
+            ] {
+                if let Some(mean) = mean {
+                    let index = LENGTH_BOUNDS.partition_point(|bound| *bound as f64 <= mean) - 1;
+                    counts[index] += 1;
+                }
+            }
         }
         let channel_activity = self
             .time_bins
@@ -472,6 +630,27 @@ impl Aggregator {
             channel_mux: self.channel_mux.into_values().collect(),
             sequencing_speed,
             termination_reasons,
+            passed_read_statistics,
+            length_quality_histogram: LengthQualityHistogram {
+                length_lower_bounds_bp: JOINT_LENGTH_BOUNDS.to_vec(),
+                qscore_lower_bounds: JOINT_QUALITY_BOUNDS.to_vec(),
+                all_read_counts: self.joint_counts.iter().map(|row| row.to_vec()).collect(),
+                passed_read_counts: self
+                    .joint_passed_counts
+                    .iter()
+                    .map(|row| row.to_vec())
+                    .collect(),
+            },
+            channel_read_length_distribution: LENGTH_BOUNDS
+                .iter()
+                .enumerate()
+                .map(|(i, &lower)| ChannelLengthBin {
+                    lower_inclusive_bp: lower,
+                    upper_exclusive_bp: LENGTH_BOUNDS.get(i + 1).copied(),
+                    channel_count: channel_length_counts[i],
+                    passed_channel_count: passed_channel_length_counts[i],
+                })
+                .collect(),
         };
         Report {
             schema_version: 1,
@@ -513,30 +692,64 @@ fn update_mean(mean: &mut f64, value: f64, count: u64) {
 }
 
 fn median_lengths(sorted: &[u64]) -> Option<f64> {
-    let middle = sorted.len() / 2;
-    let &upper = sorted.get(middle)?;
-    if sorted.len() % 2 == 0 {
-        // Widen before adding so even u64::MAX lengths cannot overflow.
-        Some((u128::from(sorted[middle - 1]) + u128::from(upper)) as f64 / 2.0)
-    } else {
-        Some(upper as f64)
-    }
+    merged_median_lengths(sorted, &[])
 }
 
 fn median_quality(sorted: &[f64]) -> Option<f64> {
-    let middle = sorted.len() / 2;
-    let &upper = sorted.get(middle)?;
-    if sorted.len() % 2 == 0 {
-        Some(sorted[middle - 1] + (upper - sorted[middle - 1]) / 2.0)
-    } else {
-        Some(upper)
-    }
+    merged_median_quality(sorted, &[])
 }
 
 fn n50(sorted_lengths: &[u64], total_yield: u64) -> Option<u64> {
+    n50_descending(sorted_lengths.iter().rev().copied(), total_yield)
+}
+
+// Merge already sorted partitions using only two lookahead values, never a
+// combined per-read buffer. Used for exact global middle values and N50.
+fn merge_sorted<T>(
+    a: impl Iterator<Item = T>,
+    b: impl Iterator<Item = T>,
+    compare: impl Fn(&T, &T) -> Ordering,
+) -> impl Iterator<Item = T> {
+    let (mut a, mut b) = (a.peekable(), b.peekable());
+    std::iter::from_fn(move || match (a.peek(), b.peek()) {
+        (Some(left), Some(right)) if compare(left, right) != Ordering::Greater => a.next(),
+        (Some(_), Some(_)) => b.next(),
+        (Some(_), None) => a.next(),
+        (None, Some(_)) => b.next(),
+        (None, None) => None,
+    })
+}
+
+fn middle_pair<T: Copy>(mut sorted: impl Iterator<Item = T>, len: usize) -> Option<(T, T)> {
+    if len == 0 {
+        return None;
+    }
+    let lower = sorted.nth((len - 1) / 2)?;
+    let upper = if len % 2 == 0 { sorted.next()? } else { lower };
+    Some((lower, upper))
+}
+
+fn merged_median_lengths(a: &[u64], b: &[u64]) -> Option<f64> {
+    let values = merge_sorted(a.iter().copied(), b.iter().copied(), u64::cmp);
+    let (lower, upper) = middle_pair(values, a.len() + b.len())?;
+    // Widen before adding so even u64::MAX lengths cannot overflow.
+    Some((u128::from(lower) + u128::from(upper)) as f64 / 2.0)
+}
+
+fn merged_median_quality(a: &[f64], b: &[f64]) -> Option<f64> {
+    let values = merge_sorted(a.iter().copied(), b.iter().copied(), f64::total_cmp);
+    let (lower, upper) = middle_pair(values, a.len() + b.len())?;
+    Some(if (a.len() + b.len()) % 2 == 0 {
+        lower + (upper - lower) / 2.0
+    } else {
+        lower
+    })
+}
+
+fn n50_descending(lengths: impl Iterator<Item = u64>, total_yield: u64) -> Option<u64> {
     let target = total_yield.div_ceil(2);
     let mut cumulative = 0_u64;
-    for &length in sorted_lengths.iter().rev() {
+    for length in lengths {
         cumulative += length;
         if cumulative >= target {
             return Some(length);
@@ -581,5 +794,117 @@ mod tests {
         update_mean(&mut mean, f64::MAX, 2);
         assert_eq!(mean, f64::MAX);
         assert_eq!(median_quality(&[]), None);
+    }
+
+    #[test]
+    fn exact_partitions_match_an_independently_sorted_reference_for_every_split() {
+        let lengths = [9, 1, 4, 1, 100, 7, 2];
+        for mask in 0..1_u32 << lengths.len() {
+            let mut aggregator = Aggregator::default();
+            let mut passed = Vec::new();
+            let mut passed_q = Vec::new();
+            let mut all_q = Vec::new();
+            for (i, length) in lengths.into_iter().enumerate() {
+                let qscore = i as f64 * 2.5;
+                let passed_flag = mask & (1 << i) != 0;
+                aggregator
+                    .add(&Record {
+                        line: i as u64 + 2,
+                        run_id: "fictional",
+                        channel: 1,
+                        mux: 1,
+                        start_time: 0.0,
+                        template_duration: None,
+                        passed: passed_flag,
+                        length,
+                        qscore,
+                        end_reason: "normal",
+                    })
+                    .unwrap();
+                if passed_flag {
+                    passed.push(length);
+                    passed_q.push(qscore);
+                }
+                all_q.push(qscore);
+            }
+            let report = aggregator.finish(None);
+            let mut all = lengths.to_vec();
+            all.sort_unstable();
+            passed.sort_unstable();
+            let reference_median = |values: &[u64]| {
+                (!values.is_empty()).then(|| {
+                    let n = values.len();
+                    (values[(n - 1) / 2] + values[n / 2]) as f64 / 2.0
+                })
+            };
+            let reference_n50 = |values: &[u64]| {
+                let total: u64 = values.iter().sum();
+                let mut bases = 0;
+                values.iter().rev().copied().find(|length| {
+                    bases += length;
+                    bases * 2 >= total
+                })
+            };
+            let reference_quality = |values: &[f64]| {
+                (!values.is_empty()).then(|| {
+                    let n = values.len();
+                    (values[(n - 1) / 2] + values[n / 2]) / 2.0
+                })
+            };
+            assert_eq!(report.metrics.median_read_length_bp, reference_median(&all));
+            assert_eq!(report.metrics.n50_bp, reference_n50(&all));
+            assert_eq!(report.quality.median_qscore, reference_quality(&all_q));
+            let subset = &report.diagnostics.passed_read_statistics;
+            assert_eq!(subset.read_count, passed.len() as u64);
+            assert_eq!(subset.total_yield_bp, passed.iter().sum::<u64>());
+            assert_eq!(subset.median_read_length_bp, reference_median(&passed));
+            assert_eq!(subset.n50_bp, reference_n50(&passed));
+            assert_eq!(subset.median_qscore, reference_quality(&passed_q));
+        }
+    }
+
+    #[test]
+    fn partition_buffers_store_each_observation_once_with_bounded_spare_capacity() {
+        let mut aggregator = Aggregator::default();
+        let observations = 2 * RESERVE_ELEMENTS + 3;
+        for i in 0..observations {
+            aggregator
+                .add(&Record {
+                    line: i as u64 + 2,
+                    run_id: "fictional",
+                    channel: 1,
+                    mux: 1,
+                    start_time: 0.0,
+                    template_duration: None,
+                    passed: i % 2 == 0,
+                    length: 100,
+                    qscore: 12.0,
+                    end_reason: "normal",
+                })
+                .unwrap();
+        }
+        assert_eq!(
+            aggregator.passed_lengths.len() + aggregator.failed_lengths.len(),
+            observations
+        );
+        assert_eq!(
+            aggregator.passed_qscores.len() + aggregator.failed_qscores.len(),
+            observations
+        );
+        let capacity_bytes = 8
+            * (aggregator.passed_lengths.capacity()
+                + aggregator.failed_lengths.capacity()
+                + aggregator.passed_qscores.capacity()
+                + aggregator.failed_qscores.capacity());
+        assert!(capacity_bytes <= 16 * observations + 4 * RESERVE_ELEMENTS * 8);
+        assert_eq!(
+            std::mem::size_of_val(&aggregator.joint_counts)
+                + std::mem::size_of_val(&aggregator.joint_passed_counts),
+            8736
+        );
+        assert_eq!(
+            aggregator.joint_counts.iter().flatten().sum::<u64>(),
+            observations as u64
+        );
     }
 }
