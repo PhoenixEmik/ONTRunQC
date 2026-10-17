@@ -30,8 +30,10 @@ Linux (x86-64 and ARM64) and macOS (Intel and Apple Silicon), plus `SHA256SUMS`.
 When available, download the matching archive from
 [GitHub Releases](https://github.com/PhoenixEmik/PoreGauge/releases), verify its
 checksum, extract it, and run the included `poregauge` binary. The Linux release
-workflow builds static musl binaries (`x86_64-unknown-linux-musl` and
-`aarch64-unknown-linux-musl`) with no system glibc dependency. Rocky Linux 8 is the
+workflow builds static musl binaries with no system glibc dependency. Download
+`poregauge-v0.3.0-linux-x86_64.tar.gz` for Intel/AMD systems or
+`poregauge-v0.3.0-linux-arm64.tar.gz` for ARM64 systems. The extracted directory
+uses the same name without `.tar.gz`. Rocky Linux 8 is the
 minimum Linux compatibility test environment: each Linux archive must pass a
 version check and synthetic JSON/HTML analysis in its native Rocky Linux 8
 container before upload. Containers share the CI host kernel; this does not
@@ -41,9 +43,9 @@ The archives include the license, README, and metric definitions.
 
 The original v0.3.0 `*-linux-gnu` downloads were built against newer glibc and do
 not run on Rocky Linux 8. A `GLIBC_2.xx not found` error occurs before PoreGauge
-starts. Use the `*-linux-musl` build for these systems. The manual build-by-tag
-procedure below can rebuild `v0.3.0` with this workflow; maintainers can explicitly
-replace the old release assets after the compatibility checks pass.
+starts. Use the `linux-x86_64` or `linux-arm64` build for these systems. The manual
+build-by-tag procedure below can rebuild `v0.3.0` with this workflow; maintainers
+can explicitly replace the old release assets after the compatibility checks pass.
 
 Install Rust 1.85 or newer, including Cargo. Build this checkout from the repository root:
 
@@ -241,8 +243,8 @@ A failed upload leaves a draft that can be retried. Published release assets are
 protected by default. To republish a mutable release, enable both **Publish a
 GitHub Release after building** and **Replace assets of an existing published
 release**. After all builds and compatibility tests pass, the workflow temporarily
-returns the release to draft, replaces archives/checksums, removes obsolete GNU
-Linux archives, updates the release notes, and publishes again. The original
+returns the release to draft, replaces archives/checksums, removes old Linux
+archive names, updates the release notes, and publishes again. The original
 source tag is preserved. Immutable releases cannot be updated this way.
 Prereleases and Windows binaries are not currently automated. Adding the workflow
 does not publish existing tags automatically.

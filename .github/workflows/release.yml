@@ -79,7 +79,7 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
   build:
-    name: Build ${{ matrix.target }}
+    name: Build ${{ matrix.asset }}
     needs: validate
     strategy:
       fail-fast: false
@@ -87,12 +87,16 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-musl
+            asset: linux-x86_64
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-musl
+            asset: linux-arm64
           - os: macos-15-intel
             target: x86_64-apple-darwin
+            asset: x86_64-apple-darwin
           - os: macos-14
             target: aarch64-apple-darwin
+            asset: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
@@ -160,6 +164,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           TARGET: ${{ matrix.target }}
+          PACKAGE_PLATFORM: ${{ matrix.asset }}
         run: |
           binary="target/$TARGET/release/poregauge"
           test "$("$binary" --version)" = "poregauge ${RELEASE_TAG#v}"
@@ -167,7 +172,7 @@ jobs:
             --flowcell-layout promethion-3000 --output "$RUNNER_TEMP/release-smoke"
           test -s "$RUNNER_TEMP/release-smoke/report.json"
           test -s "$RUNNER_TEMP/release-smoke/report.html"
-          package="poregauge-$RELEASE_TAG-$TARGET"
+          package="poregauge-$RELEASE_TAG-$PACKAGE_PLATFORM"
           mkdir -p "dist/$package/docs"
           cp "$binary" README.md LICENSE "dist/$package/"
           cp docs/metrics.md "dist/$package/docs/"
@@ -177,9 +182,9 @@ jobs:
         if: runner.os == 'Linux'
         env:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
-          TARGET: ${{ matrix.target }}
+          PACKAGE_PLATFORM: ${{ matrix.asset }}
         run: |
-          package="poregauge-$RELEASE_TAG-$TARGET"
+          package="poregauge-$RELEASE_TAG-$PACKAGE_PLATFORM"
           mkdir -p "$RUNNER_TEMP/rocky8-package"
           tar -xzf "dist/$package.tar.gz" -C "$RUNNER_TEMP/rocky8-package"
           docker run --rm --network none \
@@ -200,7 +205,7 @@ jobs:
       - name: Upload release archive
         uses: actions/upload-artifact@v7
         with:
-          name: release-${{ matrix.target }}
+          name: release-${{ matrix.asset }}
           path: dist/*.tar.gz
           if-no-files-found: error
           compression-level: 0
@@ -278,7 +283,7 @@ jobs:
             gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/release-assets"
             while IFS= read -r asset; do
               case "$asset" in
-                "poregauge-$RELEASE_TAG-x86_64-unknown-linux-gnu.tar.gz"|"poregauge-$RELEASE_TAG-aarch64-unknown-linux-gnu.tar.gz")
+                "poregauge-$RELEASE_TAG-x86_64-unknown-linux-gnu.tar.gz"|"poregauge-$RELEASE_TAG-aarch64-unknown-linux-gnu.tar.gz"|"poregauge-$RELEASE_TAG-x86_64-unknown-linux-musl.tar.gz"|"poregauge-$RELEASE_TAG-aarch64-unknown-linux-musl.tar.gz")
                   gh release delete-asset "$RELEASE_TAG" "$asset" --yes ;;
               esac
             done < "$RUNNER_TEMP/release-assets"
@@ -291,11 +296,15 @@ jobs:
           Linux archives use statically linked musl with no system glibc dependency.
           Both Linux architectures passed static-link checks and synthetic JSON/HTML
           analysis in Rocky Linux 8 containers. For Intel/AMD Linux and HPC systems,
-          use the `x86_64-unknown-linux-musl` archive. ARM64 systems use
-          `aarch64-unknown-linux-musl`. These replace the original GNU Linux archives.
+          use the `linux-x86_64` archive. ARM64 systems use `linux-arm64`.
+          These replace the original GNU Linux archives.
           The application source tag is unchanged. Verify downloads with `SHA256SUMS`.
           NOTES
             fi
-            gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+            sed \
+              -e 's/x86_64-unknown-linux-musl/linux-x86_64/g' \
+              -e 's/aarch64-unknown-linux-musl/linux-arm64/g' \
+              "$RUNNER_TEMP/release-notes.md" > "$RUNNER_TEMP/release-notes-renamed.md"
+            gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes-renamed.md"
           fi
           gh release edit "$RELEASE_TAG" --draft=false
