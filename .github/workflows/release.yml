@@ -96,10 +96,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C target-feature=+crt-static
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C target-feature=+crt-static
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C target-feature=+crt-static -C link-self-contained=yes
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C target-feature=+crt-static -C link-self-contained=yes
     steps:
       - name: Check out validated commit
         uses: actions/checkout@v7
@@ -107,16 +107,24 @@ jobs:
           ref: ${{ needs.validate.outputs.commit }}
           persist-credentials: false
 
-      - name: Install Linux static-linking tools
+      - name: Install Linux binary inspection tools
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes musl-tools binutils
+          sudo apt-get install --yes binutils
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Use the Rust toolchain's bundled Linux linker and runtime
+        if: runner.os == 'Linux'
+        run: |
+          host="$(rustc --version --verbose | sed -n 's/^host: //p')"
+          linker_dir="$(rustc --print sysroot)/lib/rustlib/$host/bin"
+          test -x "$linker_dir/rust-lld"
+          echo "$linker_dir" >> "$GITHUB_PATH"
 
       - name: Run native tests
         run: cargo test --locked --target "$TARGET"
