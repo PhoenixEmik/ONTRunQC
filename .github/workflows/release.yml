@@ -14,6 +14,10 @@ on:
         description: Publish a GitHub Release after building
         default: false
         type: boolean
+      replace_assets:
+        description: Replace assets of an existing published release
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -82,21 +86,32 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-musl
           - os: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-gnu
+            target: aarch64-unknown-linux-musl
           - os: macos-15-intel
             target: x86_64-apple-darwin
           - os: macos-14
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    env:
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C target-feature=+crt-static
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C target-feature=+crt-static
     steps:
       - name: Check out validated commit
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate.outputs.commit }}
           persist-credentials: false
+
+      - name: Install Linux static-linking tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools binutils
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -112,6 +127,26 @@ jobs:
         run: cargo build --release --locked --target "$TARGET"
         env:
           TARGET: ${{ matrix.target }}
+
+      - name: Verify Linux binary has no dynamic runtime dependencies
+        if: runner.os == 'Linux'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+
+          binary = f"target/{os.environ['TARGET']}/release/poregauge"
+          checks = [('--program-headers', 'INTERP'),
+                    ('--dynamic', '(NEEDED)'),
+                    ('--version-info', 'GLIBC_')]
+          for option, forbidden in checks:
+              output = subprocess.check_output(['readelf', option, binary], text=True)
+              if forbidden in output:
+                  raise SystemExit(f'{binary} is not self-contained: {forbidden} found by readelf {option}.')
+          print('Verified static Linux executable: no loader, shared libraries, or GLIBC symbol requirements.')
+          PY
 
       - name: Smoke-test and package binary
         env:
@@ -129,6 +164,30 @@ jobs:
           cp "$binary" README.md LICENSE "dist/$package/"
           cp docs/metrics.md "dist/$package/docs/"
           COPYFILE_DISABLE=1 tar -czf "dist/$package.tar.gz" -C dist "$package"
+
+      - name: Test packaged binary on Rocky Linux 8
+        if: runner.os == 'Linux'
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          package="poregauge-$RELEASE_TAG-$TARGET"
+          mkdir -p "$RUNNER_TEMP/rocky8-package"
+          tar -xzf "dist/$package.tar.gz" -C "$RUNNER_TEMP/rocky8-package"
+          docker run --rm --network none \
+            --mount "type=bind,src=$RUNNER_TEMP/rocky8-package/$package,dst=/package,readonly" \
+            --mount "type=bind,src=$PWD/tests/fixtures,dst=/fixtures,readonly" \
+            --env RELEASE_TAG rockylinux:8 bash -euo pipefail -c '
+              source /etc/os-release
+              test "$ID" = rocky
+              case "$VERSION_ID" in 8|8.*) ;; *) exit 1 ;; esac
+              cat /etc/os-release
+              test "$(/package/poregauge --version)" = "poregauge ${RELEASE_TAG#v}"
+              /package/poregauge analyze /fixtures/deep_qc.tsv \
+                --flowcell-layout promethion-3000 --output /tmp/qc_results
+              test -s /tmp/qc_results/report.json
+              test -s /tmp/qc_results/report.html
+            '
 
       - name: Upload release archive
         uses: actions/upload-artifact@v7
@@ -180,6 +239,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      REPLACE_ASSETS: ${{ inputs.replace_assets && 'true' || 'false' }}
     steps:
       - name: Download archives and checksums
         uses: actions/download-artifact@v8
@@ -195,12 +255,39 @@ jobs:
         run: |
           if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft > "$RUNNER_TEMP/release-state"; then
             if [ "$(cat "$RUNNER_TEMP/release-state")" != true ]; then
-              echo "Release $RELEASE_TAG is already published; refusing to replace its assets." >&2
-              exit 1
+              if [ "$REPLACE_ASSETS" != true ]; then
+                echo "Release $RELEASE_TAG is already published; enable replace_assets to rebuild it explicitly." >&2
+                exit 1
+              fi
+              gh release edit "$RELEASE_TAG" --draft=true
             fi
           else
             gh release create "$RELEASE_TAG" --verify-tag --draft \
               --title "PoreGauge $RELEASE_TAG" --generate-notes
           fi
           gh release upload "$RELEASE_TAG" dist/*.tar.gz dist/SHA256SUMS --clobber
+          if [ "$REPLACE_ASSETS" = true ]; then
+            gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/release-assets"
+            while IFS= read -r asset; do
+              case "$asset" in
+                "poregauge-$RELEASE_TAG-x86_64-unknown-linux-gnu.tar.gz"|"poregauge-$RELEASE_TAG-aarch64-unknown-linux-gnu.tar.gz")
+                  gh release delete-asset "$RELEASE_TAG" "$asset" --yes ;;
+              esac
+            done < "$RUNNER_TEMP/release-assets"
+            gh release view "$RELEASE_TAG" --json body --jq '.body // ""' > "$RUNNER_TEMP/release-notes.md"
+            if ! grep -q '^### Linux compatibility rebuild$' "$RUNNER_TEMP/release-notes.md"; then
+              cat >> "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+
+          ### Linux compatibility rebuild
+
+          Linux archives use statically linked musl with no system glibc dependency.
+          Both Linux architectures passed static-link checks and synthetic JSON/HTML
+          analysis in Rocky Linux 8 containers. For Intel/AMD Linux and HPC systems,
+          use the `x86_64-unknown-linux-musl` archive. ARM64 systems use
+          `aarch64-unknown-linux-musl`. These replace the original GNU Linux archives.
+          The application source tag is unchanged. Verify downloads with `SHA256SUMS`.
+          NOTES
+            fi
+            gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
           gh release edit "$RELEASE_TAG" --draft=false

@@ -29,10 +29,21 @@ It does not analyze FASTQ, BAM, or POD5 files.
 Linux (x86-64 and ARM64) and macOS (Intel and Apple Silicon), plus `SHA256SUMS`.
 When available, download the matching archive from
 [GitHub Releases](https://github.com/PhoenixEmik/PoreGauge/releases), verify its
-checksum, extract it, and run the included `poregauge` binary. Linux binaries are
-built on Ubuntu 22.04 and require glibc 2.35 or newer; build from source for older
-systems. macOS builds are tested on macOS 15 (Intel) and macOS 14 (Apple Silicon).
+checksum, extract it, and run the included `poregauge` binary. The Linux release
+workflow builds static musl binaries (`x86_64-unknown-linux-musl` and
+`aarch64-unknown-linux-musl`) with no system glibc dependency. Rocky Linux 8 is the
+minimum Linux compatibility test environment: each Linux archive must pass a
+version check and synthetic JSON/HTML analysis in its native Rocky Linux 8
+container before upload. Containers share the CI host kernel; this does not
+verify every HPC kernel, CPU, or site policy. macOS builds are tested on macOS 15
+(Intel) and macOS 14 (Apple Silicon).
 The archives include the license, README, and metric definitions.
+
+The original v0.3.0 `*-linux-gnu` downloads were built against newer glibc and do
+not run on Rocky Linux 8. A `GLIBC_2.xx not found` error occurs before PoreGauge
+starts. Use the `*-linux-musl` build for these systems. The manual build-by-tag
+procedure below can rebuild `v0.3.0` with this workflow; maintainers can explicitly
+replace the old release assets after the compatibility checks pass.
 
 Install Rust 1.85 or newer, including Cargo. Build this checkout from the repository root:
 
@@ -226,9 +237,15 @@ gh workflow run release.yml --ref main -f tag=v0.3.0 -F publish=false
 
 Enable the publish option to release an existing tag; this also works for tags
 that predate automation. Pushing a new matching version tag publishes automatically.
-A failed upload leaves a draft that can be retried; published release assets are
-never overwritten by this workflow. Prereleases and Windows binaries are not
-currently automated. Adding the workflow does not publish existing tags automatically.
+A failed upload leaves a draft that can be retried. Published release assets are
+protected by default. To republish a mutable release, enable both **Publish a
+GitHub Release after building** and **Replace assets of an existing published
+release**. After all builds and compatibility tests pass, the workflow temporarily
+returns the release to draft, replaces archives/checksums, removes obsolete GNU
+Linux archives, updates the release notes, and publishes again. The original
+source tag is preserved. Immutable releases cannot be updated this way.
+Prereleases and Windows binaries are not currently automated. Adding the workflow
+does not publish existing tags automatically.
 
 `src/input.rs` validates borrowed records; `src/metrics.rs` owns all statistical
 calculations; `src/report.rs` serializes JSON and stages both outputs.
