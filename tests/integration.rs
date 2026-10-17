@@ -2749,3 +2749,68 @@ fn explicitly_grouped_empty_chunks_do_not_invent_an_extra_run() {
     );
     assert_eq!(yaml["All reads"]["total.reads"], 1);
 }
+
+#[test]
+fn optional_fits_keep_raw_metrics_and_populations_separate() {
+    let directory = TestDirectory::new();
+    let mut data =
+        "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n".to_owned();
+    for i in (0..99).rev() {
+        data += &format!(
+            "1\t{}\t{}\t{}\n",
+            i * 71,
+            if i == 0 { 0 } else { 100 + i * i },
+            if i % 3 == 0 { 6 } else { 9 }
+        );
+    }
+    let previous = directory.analyze(&data);
+    assert!(previous.get("fitted_trends").is_none());
+    let fitted = directory.analyze_with_args(&data, &["--minionqc-trends", "--muxes", "1"]);
+    for key in [
+        "metrics",
+        "quality",
+        "comparison",
+        "time_bins",
+        "diagnostics",
+    ] {
+        assert_eq!(previous[key], fitted[key]);
+    }
+    let curves = fitted["fitted_trends"]["single"].as_array().unwrap();
+    assert_eq!(curves[0]["observations"], 99); // includes the zero-length record
+    assert_eq!(curves[0]["points"].as_array().unwrap().len(), 80);
+    assert_eq!(curves[2]["observations"], 66);
+    assert!(curves[0]["method"].as_str().unwrap().starts_with("loess"));
+    assert!(curves[0]["confidence_interval"].is_null());
+    let html = directory.html();
+    assert!(html.contains("Provisional MinIONQC-style fit"));
+    assert!(html.contains("class=\"mux-marker\""));
+    assert!(!html.contains("NaN"));
+    let same = directory.analyze_with_args(&data, &["--minionqc-trends", "--muxes", "1"]);
+    assert_eq!(fitted, same);
+    assert_eq!(html, directory.html());
+}
+
+#[test]
+fn optional_gam_and_sparse_fits_are_bounded_and_unavailable_when_required() {
+    let directory = TestDirectory::new();
+    let mut data =
+        "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n".to_owned();
+    for i in 0..1200 {
+        data += &format!("1\t{}\t{}\t{}\n", i * 10, 1000 + i % 100, 10 + i % 4);
+    }
+    let report = directory.analyze_with_args(&data, &["--minionqc-trends"]);
+    for curve in report["fitted_trends"]["single"].as_array().unwrap() {
+        assert!(curve["method"].as_str().unwrap().contains("REML"));
+        assert_eq!(curve["points"].as_array().unwrap().len(), 80);
+    }
+    let empty = directory.analyze_with_args(HEADER, &["--minionqc-trends"]);
+    assert!(
+        empty["fitted_trends"]["single"][0]["points"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let sparse =
+        directory.analyze_with_args(&format!("{HEADER}{ROW}{ROW}"), &["--minionqc-trends"]);
+    assert!(sparse["fitted_trends"]["single"][0]["unavailable_reason"].is_string());
+}

@@ -446,3 +446,10 @@ table rows still ship in HTML for no-JS access and must initially be parsed;
 pagination reduces mounted DOM and subsequent updates, not retained row memory.
 
 Licensed under the [MIT License](LICENSE).
+
+For provisional individual-read trend fits, add `--minionqc-trends`. This performs
+an extra streaming pass and adds clearly labeled curves alongside the unchanged
+15-minute means. Fits follow the LOESS/GAM method-selection boundary, but R
+numerical equivalence and confidence bands remain unverified. See
+[the scientific parity audit](docs/minionqc-parity.md#fitted-time-trends-12-partial)
+before treating these curves as interchangeable with MinIONQC.

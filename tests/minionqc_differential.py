@@ -144,6 +144,42 @@ def metrics(reference, pg, rows, cutoff):
     return results
 
 
+def fitted_comparisons(reference, probe):
+    checks=[]
+    sources={s["source_id"]:s for s in probe.get("reference_sources",[])}
+    def array(x): return x if isinstance(x,list) else [x] if x is not None else []
+    for plot in reference.get("plots",[]):
+        family=plot["file"].rsplit(".",1)[0]
+        if family not in ("length_by_hour","q_by_hour"): continue
+        quality=family=="q_by_hour"
+        combined=plot["directory"]=="combinedQC"
+        panels={str(p["PANEL"]):p for p in array(plot["panels"])}
+        legends=dict(zip(array(plot.get("colours")),array(plot.get("colour_labels"))))
+        for layer in plot["layers"]:
+            if layer["stat"]!="StatSmooth": continue
+            by_group={}
+            for row in array(layer.get("data")):
+                by_group.setdefault((str(row["PANEL"]),row["group"]),[]).append(row)
+            for (panel,group),rows in by_group.items():
+                label=legends.get(rows[0].get("colour"))
+                source=label if combined else plot["directory"]
+                population=panels[panel].get("Q_cutoff") if combined else label
+                selected=population!="All reads"
+                fitting=sources.get(source,{}).get("fitted_trends",{}).get("combined" if combined else "single",[])
+                curve=next((c for c in fitting if (c["metric"]=="qscore")==quality and c["population"].startswith("qscore")==selected),None)
+                key=f"fit.{plot['directory']}.{family}.{population}"
+                if curve is None:
+                    checks.append(unverified(key,"No matching file-scoped Rust fit; inspect panel/legend metadata."));continue
+                expected="loess" if curve["method"].startswith("loess") else "gam"
+                checks.append(comparison(key+".method",layer.get("method"),expected))
+                checks.append(comparison(key+".points",len(rows),len(curve["points"])))
+                for i,(r,p) in enumerate(zip(rows,curve["points"])):
+                    checks.append(comparison(f"{key}.{i}.hours",r.get("x"),p["hours"],1e-10))
+                    checks.append(comparison(f"{key}.{i}.fitted",r.get("y"),p["value"],1e-6,1e-6))
+                checks.append(unverified(key+".confidence_interval","Rust confidence intervals are deliberately unavailable until R verification."))
+    return checks
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("upstream",type=Path)
@@ -171,7 +207,7 @@ def main(argv=None):
         if result.returncode: raise RuntimeError(result.stderr)
         pg=json.loads((pgdir/"combined/report.json").read_text())
         probe=directory/"source-population.json"
-        probe_env=dict(__import__('os').environ,PG_PROBE_INPUTS=json.dumps(list(map(str,paths))),PG_PROBE_CUTOFF=str(cutoff),PG_PROBE_OUTPUT=str(probe))
+        probe_env=dict(__import__('os').environ,PG_PROBE_INPUTS=json.dumps(list(map(str,paths))),PG_PROBE_CUTOFF=str(cutoff),PG_PROBE_OUTPUT=str(probe),PG_PROBE_CURVES="1" if available else "0")
         checked=subprocess.run(["cargo","test","reference_probe::export_report","--","--ignored","--exact"],env=probe_env,capture_output=True,text=True,cwd=Path(__file__).resolve().parents[1])
         if checked.returncode: raise RuntimeError(checked.stderr)
         source_population=json.loads(probe.read_text())
@@ -200,6 +236,7 @@ def main(argv=None):
         if reference:
             channel_checks=metrics(reference,source_population,rows,cutoff)
             checks.extend(c for c in channel_checks if c["metric"].startswith("channel."))
+            checks.extend(fitted_comparisons(reference,source_population))
         if reference and reference.get("error"):
             checks.append(unverified("reference_completion",reference["error"]))
         if reference:

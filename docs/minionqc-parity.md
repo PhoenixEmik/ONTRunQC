@@ -126,3 +126,17 @@ installation, stopped Docker daemon, restricted environment-download/network
 access. Saved YAML/Python checks remain valid but are not actual R execution.
 No scientific parity status was promoted, and issue #11 remains open pending a
 successful reference run. The command returns 2 rather than falsely passing.
+
+## Fitted time trends (#12): Partial
+
+`--minionqc-trends` now renders separate individual-read fits in single and
+comparative reports without replacing interval means. The implementation follows
+[ggplot2 3.5.1 method selection](https://github.com/tidyverse/ggplot2/blob/v3.5.1/R/stat-smooth.R):
+largest group across panels, LOESS for <1,000, otherwise mgcv-style `cs`/REML.
+Bounded unique-time knots and a second streaming pass avoid unbounded paired-read
+retention. R's interpolated LOESS surface, exact large-group knots/null-space
+orientation and confidence bands are **not** claimed equivalent. Algorithm and
+population details are in metrics.md. Polynomial/spline/constant-model unit tests
+and CLI regressions passed; no actual R numerical tolerance has been measured.
+The executable harness compares methods, all 80 X/Y points and explicitly records
+unverified confidence intervals. Issue #12 remains open.

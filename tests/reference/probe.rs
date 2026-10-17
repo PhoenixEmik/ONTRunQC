@@ -14,7 +14,10 @@ fn export_report() {
     let cutoff: f64 = std::env::var("PG_PROBE_CUTOFF").unwrap().parse().unwrap();
     let mut aggregator = Aggregator::new(None, false);
     aggregator.set_qscore_cutoff(cutoff, true);
-    for path in paths {
+    let curves = std::env::var("PG_PROBE_CURVES").as_deref() == Ok("1");
+    let mut trackers = Vec::new();
+    for path in &paths {
+        let mut tracker = crate::trends::Tracker::default();
         let mut reader = SummaryReader::with_options(
             File::open(path).unwrap(),
             InputSchema::Auto,
@@ -31,9 +34,37 @@ fn export_report() {
             .unwrap();
         while let Some(record) = reader.next_record().unwrap() {
             aggregator.add(&record).unwrap();
+            if curves {
+                tracker.add(&record, cutoff);
+            }
         }
+        trackers.push(tracker);
     }
     let report = aggregator.finish(None).unwrap();
+    let mut report = serde_json::to_value(report).unwrap();
+    let mut sources = Vec::new();
+    let largest = trackers
+        .iter()
+        .map(crate::trends::Tracker::count)
+        .max()
+        .unwrap_or(0);
+    if curves {
+        for (i, (path, tracker)) in paths.iter().zip(trackers).enumerate() {
+            let mut plan = tracker.prepare(largest >= 1000);
+            let mut reader = SummaryReader::with_options(
+                File::open(path).unwrap(),
+                InputSchema::Auto,
+                ReadRepresentation::Auto,
+            )
+            .unwrap();
+            reader.allow_multiple_runs();
+            while let Some(record) = reader.next_record().unwrap() {
+                plan.add(&record, cutoff);
+            }
+            sources.push(serde_json::json!({"source_id":format!("source_{:03}",i+1),"fitted_trends":plan.finish()}));
+        }
+    }
+    report["reference_sources"] = serde_json::json!(sources);
     serde_json::to_writer_pretty(
         File::create(std::env::var("PG_PROBE_OUTPUT").unwrap()).unwrap(),
         &report,

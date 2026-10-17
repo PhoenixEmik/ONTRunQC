@@ -48,6 +48,9 @@ pub enum Command {
         /// Choose one complete read representation; auto prefers the 2D pair.
         #[arg(long, value_enum, default_value = "auto")]
         read_representation: ReadRepresentation,
+        /// Add provisional raw-read fits (extra streaming pass; R parity unverified).
+        #[arg(long)]
+        minionqc_trends: bool,
         /// Also emit a MinIONQC-shaped summary.yaml.
         #[arg(long)]
         yaml: bool,

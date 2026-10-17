@@ -7,6 +7,7 @@ mod layout;
 mod metrics;
 mod record;
 mod report;
+mod trends;
 
 use anyhow::Result;
 use clap::Parser;
@@ -41,6 +42,7 @@ fn run(cli: Cli) -> Result<()> {
             add_stat,
             muxes,
             processors: _,
+            minionqc_trends,
         } => {
             input.extend(input_paths);
             batch::analyze(
@@ -49,6 +51,7 @@ fn run(cli: Cli) -> Result<()> {
                 &batch::AnalysisOptions {
                     layout: flowcell_layout,
                     cutoff: qscore_cutoff,
+                    minionqc_trends,
                     combined_only,
                     group_inputs,
                     split_runs,

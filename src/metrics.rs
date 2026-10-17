@@ -1347,6 +1347,7 @@ impl Aggregator {
                 distributions,
                 input: self.input,
                 presentation: crate::report::PresentationOptions::default(),
+                fitted_trends: None,
                 source: None,
                 collection: None,
             },

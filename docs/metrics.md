@@ -587,3 +587,41 @@ there is no atomic transaction across outputs or runs. Predictable failures clea
 staged files and preserve prior valid reports. PNG/PDF/PS/JPEG/TIFF/BMP conversions
 are not implemented. Browser printing does not establish figure-format parity.
 See [the parity matrix](minionqc-parity.md) for the full audit and tests.
+
+## Provisional individual-read fits (#12)
+
+`--minionqc-trends` adds optional `fitted_trends` (schema 1, additive). Existing
+interval means and all prior metrics remain unchanged. This costs an additional
+streaming input pass. Separate single-run and combined-context curves retain 80
+uniform evaluation times over each population's observed start-time range (hours).
+All summary records include zero lengths; the inclusive Q-selected summary subset
+can also include zero lengths. These are upstream comparison populations, not
+basecalled-read quality statistics or native passing. RNA controls remain excluded.
+Single-run Q fits exclude negative Q values to model upstream's pre-fit y scale
+limit; combined Q plots have no such limit.
+
+The largest All group selects LOESS below 1,000 observations, otherwise a cubic
+shrinkage regression spline (`cs`, k=10) with profiled Gaussian REML. Combined
+selection uses the largest run/source across panels, so a small run can use LOESS
+alone and GAM in a collection. LOESS uses degree 2, span .75, tricube weights and
+a direct local-quadratic surface. R's default interpolated surface is not yet
+matched. GAM uses natural cubic basis functions, integrated second-derivative
+penalty, .1/.01 null-space shrinkage, a centered smooth and unpenalized intercept.
+The eigensolver's null-space orientation may differ from mgcv/LAPACK. Confidence
+intervals are intentionally null rather than invented.
+
+Knot locations are type-7 quantiles of unique start times. At most 4,096 unique
+times are retained by deterministic bottom-hash selection, with exact endpoints;
+`exact_knots=false` explicitly identifies approximation beyond this bound. Every
+raw observation contributes to the second-pass sufficient statistics: no fit uses
+interval means or downsampled responses. Up to 999 observations/population are
+retained only for small LOESS groups; larger groups discard that buffer. Empty,
+constant-time, rank-deficient and nonrepresentable fits have a reason and no points.
+Fits can bridge unobserved intervals; observed-bin plots still retain their gaps.
+All fit calculations live in `trends.rs`; HTML renders the final model only.
+
+Unit/CLI tests exercise polynomial reproduction, natural knot interpolation,
+constant GAM intercepts, method selection, exact populations, unchanged existing
+metrics, sparse inputs and bounded storage. Actual R curve comparisons remain
+unverified here; the harness's provisional target is 1e-10 hours and fitted-value
+absolute 1e-6 + relative 1e-6. These are acceptance targets, not measured accuracy.

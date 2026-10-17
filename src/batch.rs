@@ -15,6 +15,7 @@ use std::{
 pub struct AnalysisOptions {
     pub layout: Option<FlowcellLayout>,
     pub cutoff: f64,
+    pub minionqc_trends: bool,
     pub combined_only: bool,
     pub group_inputs: bool,
     pub split_runs: bool,
@@ -29,6 +30,7 @@ struct Group {
     flow_cell_id: Option<String>,
     grouping: &'static str,
     aggregator: Aggregator,
+    trends: Option<crate::trends::Tracker>,
 }
 
 pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> Result<()> {
@@ -81,6 +83,9 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
                 aggregator.set_qscore_cutoff(options.cutoff, true);
                 aggregator.set_sampling_enabled(!options.combined_only);
                 groups.push(Group {
+                    trends: options
+                        .minionqc_trends
+                        .then(crate::trends::Tracker::default),
                     files: BTreeSet::new(),
                     run_id: run_id.map(str::to_owned),
                     flow_cell_id: None,
@@ -129,6 +134,9 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
                 .aggregator
                 .add(&record)
                 .with_context(|| format!("input {} line {}", path.display(), record.line))?;
+            if let Some(tracker) = &mut group.trends {
+                tracker.add(&record, options.cutoff);
+            }
         }
         if !had_record && options.group_inputs && !groups.is_empty() {
             let group = &mut groups[0];
@@ -143,6 +151,9 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             aggregator.set_sampling_enabled(!options.combined_only);
             aggregator.include_input_format(schema, representation)?;
             groups.push(Group {
+                trends: options
+                    .minionqc_trends
+                    .then(crate::trends::Tracker::default),
                 files: BTreeSet::from([file_index]),
                 run_id: None,
                 flow_cell_id: None,
@@ -155,11 +166,53 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         collection || groups.len() == 1,
         "ambiguous run identity in input; use --split-runs or explicit --group-inputs"
     );
+    let mut plans = Vec::new();
+    if options.minionqc_trends {
+        let largest = groups
+            .iter()
+            .filter_map(|g| g.trends.as_ref())
+            .map(crate::trends::Tracker::count)
+            .max()
+            .unwrap_or(0);
+        plans = groups
+            .iter_mut()
+            .map(|g| g.trends.take().unwrap().prepare(largest >= 1000))
+            .collect();
+        // Fit sufficient statistics on every raw observation, not bin means.
+        for (file_index, path) in files.iter().enumerate() {
+            let mut reader = SummaryReader::with_options(
+                File::open(path)?,
+                options.input_schema,
+                options.read_representation,
+            )?;
+            reader.allow_multiple_runs();
+            while let Some(record) = reader.next_record()? {
+                let index = if options.group_inputs {
+                    Some(0)
+                } else if let Some(id) = record.run_id {
+                    known.get(id).copied()
+                } else {
+                    groups
+                        .iter()
+                        .position(|g| g.run_id.is_none() && g.files.contains(&file_index))
+                }
+                .with_context(|| {
+                    format!(
+                        "input {} changed identity during fitted-trend pass",
+                        path.display()
+                    )
+                })?;
+                plans[index].add(&record, options.cutoff);
+            }
+        }
+    }
+    let mut fits = plans.into_iter();
     let mut pooled = Aggregator::new(None, false);
     pooled.set_qscore_cutoff(options.cutoff, true);
     let mut runs = Vec::new();
     for (index, group) in groups.into_iter().enumerate() {
         let (mut report, observations) = group.aggregator.finish_retaining(group.run_id)?;
+        report.fitted_trends = fits.next().map(crate::trends::Plan::finish);
         if !collection {
             drop(observations);
             report.presentation = options.presentation.clone();

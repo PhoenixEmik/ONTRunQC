@@ -17,7 +17,8 @@ ggsave <- function(filename, plot, ...) {
     list(stat=class(layer$stat)[1],
          method=if (is.function(method)) "gam" else method,
          formula=paste(deparse(layer$computed_stat_params$formula), collapse=" "),
-         data=as.data.frame(built$data[[i]]))
+         data=if(class(layer$stat)[1] %in% c("StatSmooth","StatDensity")) as.data.frame(built$data[[i]]) else NULL,
+         rows=nrow(built$data[[i]]), groups=unique(built$data[[i]]$group))
   })
   colour <- built$plot$scales$get_scales("colour")
   labels <- if (is.null(colour)) NULL else colour$get_labels()

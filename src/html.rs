@@ -144,6 +144,10 @@ fn combined_comparisons(out: &mut String, report: &Report) {
         }
         comparison_yield_length(out, report, selected, &population);
     }
+    fitted_trend_plot(out, report, false, false);
+    fitted_trend_plot(out, report, false, true);
+    fitted_trend_plot(out, report, true, false);
+    fitted_trend_plot(out, report, true, true);
     out.push_str("<p class=\"annotation\">Distribution curves use Gaussian KDE with R-compatible bw.nrd0 bandwidth and bounded linear binning, normalized within each population. Length density uses log10(bp). Means retain unsmoothed 15-minute bins; gaps are not connected. Cumulative points attribute the entire bin's yield to its read-start interval. Color assignments are consistent across charts (palette repeats after eight sources). Exact histogram counts, thresholds and interval denominators remain in JSON.</p></section>");
 }
 
@@ -674,6 +678,7 @@ fn lengths(out: &mut String, report: &Report) {
     out.push_str("</tbody></table></div></details>");
     if report.collection.is_none() {
         read_time_plot(out, report, false);
+        fitted_trend_plot(out, report, false, false);
     }
     out.push_str("</section>");
 }
@@ -755,6 +760,7 @@ fn quality(out: &mut String, report: &Report) {
     out.push_str("</tbody></table></div></details>");
     if report.collection.is_none() {
         read_time_plot(out, report, true);
+        fitted_trend_plot(out, report, true, false);
     }
     length_quality_heatmaps(out, report);
     out.push_str("</section>");
@@ -2095,6 +2101,152 @@ fn time_series_plot(
 }
 
 // Configured reference lines share the plotted relative-time coordinate system.
+fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected: bool) {
+    let metric = if quality { "qscore" } else { "length_bp" };
+    let mut curves = Vec::new();
+    if let Some(collection) = &report.collection {
+        for (i, run) in collection.runs.iter().enumerate() {
+            if let Some(trends) = &run.fitted_trends {
+                for curve in &trends.combined {
+                    if curve.metric == metric && curve.population.starts_with("qscore") == selected
+                    {
+                        curves.push((run.source.source_id.as_str(), run_color(i), curve));
+                    }
+                }
+            }
+        }
+    } else if let Some(trends) = &report.fitted_trends {
+        for curve in &trends.single {
+            if curve.metric == metric {
+                curves.push((
+                    if curve.population.starts_with("qscore") {
+                        "Q-cutoff summary records"
+                    } else {
+                        "All summary records"
+                    },
+                    if curve.population.starts_with("qscore") {
+                        "qselected"
+                    } else {
+                        "primary"
+                    },
+                    curve,
+                ));
+            }
+        }
+    }
+    if curves.is_empty() {
+        return;
+    }
+    let id = format!("fitted-{quality}-{selected}");
+    figure(
+        out,
+        &id,
+        &format!(
+            "Fitted {} from individual summary records{}",
+            if quality { "Q-score" } else { "read length" },
+            if report.collection.is_some() {
+                if selected { " · Q-cutoff" } else { " · All" }
+            } else {
+                ""
+            }
+        ),
+    );
+    let allowed = |v: f64| v >= 0.0 || quality && report.collection.is_some();
+    let values: Vec<_> = curves
+        .iter()
+        .flat_map(|(_, _, c)| &c.points)
+        .filter(|p| allowed(p.value))
+        .collect();
+    if values.is_empty() {
+        empty_chart(
+            out,
+            "Fitted curve unavailable: insufficient distinct times or a singular model. Raw interval charts remain available.",
+        );
+        return;
+    }
+    let end = values
+        .iter()
+        .map(|p| p.hours)
+        .reduce(f64::max)
+        .unwrap()
+        .max(f64::MIN_POSITIVE);
+    let scale = if quality { 1.0 } else { 1000.0 };
+    let minimum = values
+        .iter()
+        .map(|p| p.value / scale)
+        .reduce(f64::min)
+        .unwrap()
+        .min(0.0);
+    let maximum = values
+        .iter()
+        .map(|p| p.value / scale)
+        .reduce(f64::max)
+        .unwrap()
+        .max(1.0);
+    svg_start(
+        out,
+        &id,
+        "Provisional raw-observation fit; numerical equivalence to R has not been verified. Confidence intervals unavailable.",
+        294,
+    );
+    axes_range(
+        out,
+        minimum,
+        maximum,
+        4,
+        if quality {
+            "Fitted mean Q-score"
+        } else {
+            "Fitted mean length (kb)"
+        },
+    );
+    for i in 0..=4 {
+        x_tick(
+            out,
+            LEFT + (RIGHT - LEFT) * i as f64 / 4.0,
+            &compact(end * i as f64 / 4.0),
+        );
+    }
+    time_markers(out, report, end * 3600.0);
+    for (label, color, curve) in &curves {
+        let mut path = String::new();
+        let mut connected = false;
+        for p in &curve.points {
+            if !allowed(p.value) {
+                connected = false;
+                continue;
+            }
+            write!(
+                path,
+                " {} {:.2} {:.2}",
+                if connected { 'L' } else { 'M' },
+                LEFT + p.hours / end * (RIGHT - LEFT),
+                BOTTOM - plot_fraction(p.value / scale, minimum, maximum) * (BOTTOM - TOP)
+            )
+            .unwrap();
+            connected = true;
+        }
+        write!(out,"<path class=\"cumulative-line {color}\" d=\"{path}\"><title>{}: {}; {} observations; exact knots: {}</title></path>",escape(label),curve.method,curve.observations,curve.exact_knots).unwrap();
+    }
+    out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Time from run start (h)</text></svg></div><p class=\"annotation\">");
+    for (label, color, _) in curves {
+        write!(
+            out,
+            "<span class=\"legend {}\">{}</span>",
+            if color == "primary" {
+                "all"
+            } else if color == "qselected" {
+                "qselected-key"
+            } else {
+                color
+            },
+            escape(label)
+        )
+        .unwrap();
+    }
+    out.push_str("</p><p class=\"annotation\">Provisional MinIONQC-style fit of individual records, including zero lengths. All/Q populations are distinct from native passing. LOESS uses degree 2, span 0.75 and a direct surface; GAM uses a 10-knot cubic shrinkage spline and REML. Large groups use deterministic bounded unique-time knot selection. Combined method selection uses the largest group across panels. Confidence intervals and R numerical equivalence are not yet verified. Fits may cross missing intervals; the separate observed-bin charts retain gaps.</p></figure>");
+}
+
 fn time_markers(out: &mut String, report: &Report, end: f64) {
     for &seconds in &report.presentation.mux_markers_seconds {
         if seconds <= end {
