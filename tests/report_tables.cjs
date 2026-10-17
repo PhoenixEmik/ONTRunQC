@@ -22,6 +22,9 @@ function exercise(empty = false) {
           reads: String(channel % 9), qscore: channel % 11 ? String(channel % 5 + 0.5) : '',
           meanlength: channel % 11 ? String(channel % 13 + 0.25) : '',
           passedlength: channel % 11 ? String(channel % 17 + 0.75) : '',
+          medianlength: channel % 11 ? String(channel % 13 + 0.5) : '',
+          qreads: String(channel % 19), qyield: String(9007199254740992n + BigInt(channel % 11)),
+          qmedian: channel % 7 ? String(channel % 17 + 0.5) : '',
         } });
       }
     }
@@ -64,13 +67,13 @@ function exercise(empty = false) {
       while (!get('next').disabled) { get('next').fire('click'); check(++page); }
       if (page) { get('previous').fire('click'); check(page - 1); }
     }
-    const sortKeys = prefix === 'channel' ? ['yield', 'reads', 'qscore', 'meanlength', 'passedlength', 'channel'] : ['yield', 'reads', 'mux', 'channel'];
+    const sortKeys = prefix === 'channel' ? ['yield', 'reads', 'qscore', 'meanlength', 'passedlength', 'medianlength', 'qreads', 'qyield', 'qmedian', 'channel'] : ['yield', 'reads', 'mux', 'channel'];
     for (const sort of sortKeys) {
       // Independent reference ordering, including integers differing by one above 2^53.
       expected.sort((a, b) => {
         const av = a.dataset[sort], bv = b.dataset[sort];
         if (av === '' || bv === '') return av === bv ? 0 : av === '' ? 1 : -1;
-        const floating = ['qscore', 'meanlength', 'passedlength'].includes(sort);
+        const floating = ['qscore', 'meanlength', 'passedlength', 'medianlength', 'qmedian'].includes(sort);
         const left = floating ? Number(av) : BigInt(av), right = floating ? Number(bv) : BigInt(bv);
         const difference = left === right ? 0 : left > right ? 1 : -1;
         return difference * (['channel', 'mux'].includes(sort) ? 1 : -1)

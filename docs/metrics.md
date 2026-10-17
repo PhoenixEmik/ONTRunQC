@@ -27,7 +27,7 @@ middle values, with its result represented as `f64`; exceptionally large lengths
 above the exact integer range of `f64` (2^53) can round in floating outputs.
 For lengths 10, 20, 30, 40: yield = 100 bp, N50 = 30 bp, median = 25 bp.
 
-Required invariants:
+Required invariants when `passes_filtering` is present:
 
 ```text
 total_records = basecalled_reads + zero_length_records
@@ -38,8 +38,9 @@ total_yield_bp = passed_yield_bp + failed_yield_bp
 Zero-length rows contribute to record counts and grouped record counts, including
 time bins. They contribute neither basecalled/pass/fail read counts nor quality
 observations. A positive-length read with Q0 is a valid quality observation.
-Filtering is taken solely from `passes_filtering`, without a Q7/Q10/Q20 cutoff or
-an inference from `end_reason`.
+Native filtering is taken solely from `passes_filtering`, without a Q7/Q10/Q20
+cutoff or an inference from `end_reason`. Independent Q-cutoff results are in
+`comparison` and never change native fields.
 
 ## Quality
 
@@ -267,20 +268,11 @@ to the corresponding overall statistics, restricted to positive-length native
 passed reads. Empty subsets have zero counts/yield and null statistics. Medians
 and N50 use exact observations, never histogram interpolation.
 
-Lengths/Q-scores are partitioned by native pass/fail status, sorted in place,
-and merged with constant lookahead for global medians/N50. Each read still
-contributes one `u64` length and one `f64` Q-score: 16 bytes of elements, not
-multiple independent copies for all/passed. Four fixed-growth buffers reserve
-at most 4 × 65,536 × 8 bytes (2 MiB) spare element capacity. This is up to 1 MiB
-more than the former two-buffer bound, independent of record count. A synthetic
-131,075-read test checks retained counts/capacity; this does not measure RSS.
-Existing streaming global Q-score means keep their input-order arithmetic.
-
-Per-channel exact medians are deliberately deferred: a straightforward additional
-per-channel length collection costs 8 bytes/read (about 233 MiB for 30.55 million
-reads), in addition to the roughly 466 MiB retained core elements. Retaining
-channel identity through ordering also needs extra storage or complexity.
-No approximate per-channel median is substituted.
+Each read contributes one `u64` length and one `f64` Q-score (16 bytes of
+elements), with no duplicate observations for all/native/Q subsets. Existing
+streaming Q-score means retain input-order arithmetic. The current partition
+layout, exact channel medians, capacity bounds and measured synthetic memory
+check are described under [MinIONQC comparisons](#public-reference-validation-and-memory).
 
 ### Read length × Q-score histogram
 
@@ -324,3 +316,149 @@ native passing. The maintainer's real-run reference matched these subset totals
 for that run only. Different zero-length denominators and rounded external Gb
 outputs must be reconciled before comparing means, medians, and yields. No
 original records or private identifiers are used in public regression fixtures.
+
+## MinIONQC parity comparisons
+
+The additive top-level `comparison` object retains schema version **1**. Existing
+fields are unchanged for previously accepted inputs. Consumers must tolerate new
+fields; strict consumers that reject unknown properties must update. No per-read
+records are serialized. Source behavior was reviewed in [MinIONQC.R at
+54485d5](https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R)
+(`add_cols`, `summary.stats`, `binSearch`, `channel.summary`, plotting functions),
+its README/options, public YAML summaries and example plots.
+
+### Populations and cutoff
+
+- Summary records: all valid input rows, including 0 bp.
+- Basecalled reads: length >0, unchanged throughout existing fields.
+- Native passed: basecalled reads with `passes_filtering=TRUE`; FALSE is native
+  failed. No Q threshold is inferred from these flags.
+- Q-score selected: basecalled reads with `mean_qscore_template >= qscore_cutoff`.
+  CLI `-q/--qscore-cutoff` defaults to **7**, must be finite and nonnegative, and
+  includes exact boundary matches. Zero lengths are excluded even at cutoff 0.
+
+`comparison.qscore_selected` has the same exact length/quality statistic fields
+as `diagnostics.passed_read_statistics`: `read_count`, `total_yield_bp`, mean/median
+length, N50, minimum/maximum length, mean/median Q-score. These use the established
+PoreGauge N50 (cumulative bases **>= half**) and arithmetic per-read Q-score.
+Missing statistics are null; empty counts/yields are real zeros.
+`length_histogram` and `quality_histogram` reuse the existing documented boundaries.
+`time_bins` has one entry per occupied original 900-second interval, with
+`start_seconds`, selected `basecalled_reads`, `yield_bp`, `cumulative_yield_bp`,
+`mean_read_length_bp`, `mean_qscore`. Means use selected read counts and are null
+in zero-observation bins; omitted intervals contain no records. No smoothing or
+basecalling-completion time is inferred.
+
+`passes_filtering` is now optional as a small prerequisite for #5; other required
+columns remain required. If absent, `native_filtering_available=false` and
+`native_unclassified_reads` counts basecalled reads without a flag. Native count
+and yield fields count only observed TRUE/FALSE values (both zero in this case),
+not inferred outcomes. Native means/medians and termination pass fractions are
+null; HTML labels native outcomes unavailable. The general count invariant is
+`basecalled_reads = passed_reads + failed_reads + native_unclassified_reads`.
+This is not complete legacy-format support (#9).
+
+### Exact retained yield and ultralong
+
+`yield_by_minimum_length.thresholds` stores ascending `minimum_length_bp`,
+`all_read_count`, `all_yield_bp`, `qscore_selected_read_count`, and
+`qscore_selected_yield_bp` at **10,000; 20,000; 50,000; 100,000; 200,000; 500,000;
+1,000,000 bp**. Selection is inclusive, matching upstream code despite its “>”
+labels. Length ties are included together. Results come from exact sorted lengths.
+
+`curve` has the same fields at at most 520 deterministic queries: deduplicated
+integer positions `1 + floor((end-1)*i/512)`, i=0..512, plus requested thresholds
+inside the displayed domain. `end=max_length+1`, saturating at u64::MAX; an empty
+population uses 1. Every returned point is exact; connecting segments are a
+bounded display summary, not values at every unique length. All thresholds remain
+available even outside the observed domain. Unlike upstream's 99%-yield crop,
+the graph displays the full range; no longest reads are silently dropped.
+
+`ultralong_all` and `ultralong_qscore_selected` contain `target_n50_bp=100000`,
+`read_count`, `total_yield_bp`, `minimum_read_length_bp`. Sort lengths descending;
+choose the largest prefix whose N50 under upstream's **strict >half** convention
+is >=100,000 bp. Equivalently, its total yield is strictly less than twice the
+yield of all reads >=100,000 bp. Shorter reads can enter this subset; ties at the
+prefix endpoint can be partially included (all tied lengths are identical, so
+aggregate results are deterministic). No long reads gives an empty subset/null
+minimum. Eligible entire sets stay entire, fixing upstream `binSearch`'s
+`max-1` endpoint loss, including singleton inputs. Established global/native/Q
+N50 remains >=half: e.g. 100,50,50 yields N50=100; upstream's strict-half N50=50.
+Tests cover this deliberate difference and ultralong exact-half boundaries.
+
+### Exact channel summaries
+
+`comparison.channels` is sorted by channel ID. Every entry has three populations:
+`all_summary_records`, `all_basecalled_reads`, `qscore_selected_reads`. Each has
+`read_count`, `total_yield_bp`, `mean_read_length_bp`, `median_read_length_bp`.
+Summary means/medians include zero lengths, making the upstream denominator
+available without changing existing basecalled metrics. A zero-only observed
+channel has summary mean/median 0 and unavailable basecalled/selected means and
+medians. Unobserved channels are absent. Positive-length channel medians are exact,
+including even-count half-integer results. Counts/yields conserve run totals.
+
+`channel_distributions` has four families (`metric`): `total_yield_bp`, `read_count`,
+`mean_read_length_bp`, `median_read_length_bp`, each with `axis_maximum` and 30
+shared equal-width `bins` for All-summary/Q-selected channels. Lower bounds are
+inclusive; upper bounds exclusive; final upper bound is null and includes the
+observed maximum. Empty/all-zero families use axis maximum 1. Counts are
+`all_summary_channels` and `qscore_selected_channels`; channels absent from a
+population do not count. These are distributions across channels, not reads.
+Counts are true row counts: upstream's `sum(which(length>=0))` incorrectly gives
+n(n+1)/2. That implementation bug is deliberately not copied. Existing channel
+native-passed means remain unchanged. Chart bin placement is deterministic and
+explicit, rather than ggplot2's automatically placed 30 bins. Read histograms
+retain PoreGauge's existing fixed bins rather than upstream's automatic 300 bins.
+Time means remain unsmoothed 15-minute observations rather than ggplot smoothing.
+Unrounded values are retained in JSON, unlike upstream's one-decimal summaries.
+
+### Public reference validation and memory
+
+Run the optional standard-library check outside normal CI:
+
+```sh
+git clone https://github.com/roblanf/minion_qc /tmp/minion-qc-reference
+git -C /tmp/minion-qc-reference checkout 54485d586038d8ee36f168dd94f31c423f52f581
+python3 tests/minionqc_reference.py /tmp/minion-qc-reference
+python3 tests/parity_memory.py  # 1 million fictional reads, 3,000 channels
+```
+
+Executed against the pinned public examples: short-run **99 records / 1,089,633
+bp** and PromethION **75,160 / 623,196,506 bp**. Exact threshold counts and
+ultralong counts agree with upstream YAML; rounded Gb values agree within 50.1 bp
+(the precision of stored decimal Gb). Channel medians and subset statistics also
+pass independent Python reference calculations. R itself was **not executed**.
+No upstream read records or identifying reports are committed; the optional
+adapter replaces run IDs and supplies neutral missing mux/reason fields.
+
+Two upstream fixture caveats are explicit: short-run's YAML says Q>=7 but its
+values match **Q>=8** (upstream `tests.R` calls `single.flowcell(...,8)` while the
+global title remains Q>=7). The checker runs Q8 for that comparison. PromethION
+contains three negative Q-score values (-0.100058, -0.106873, -0.122276), all on
+5 bp reads. Production parsing still rejects negative Q-scores. Only the
+validation adapter replaces these with Q0, preserving length/yield/channel values
+and Q>=7 membership; adapted all-read Q statistics are **not** claimed to match.
+These cases do not justify weakening input validation or silently copying labels.
+
+Lengths and Q-scores still consume **16 bytes per basecalled read** in elements.
+Lengths are stored once in four disjoint native/Q partitions per channel; Q-scores
+once in four global partitions, without per-channel Q arrays or full read objects.
+Channel medians are calculated before buffers are moved/reused for run statistics.
+Spare channel length capacity is <4×256×8 bytes per channel (~23.4 MiB/3,000
+channels), global Q spare capacity <=2 MiB; final global length spare capacity
+<=2 MiB. Moving a channel partition can transiently duplicate that partition;
+very skewed channels can increase the peak. Aggregated maps/output also consume
+memory. No <512 MiB claim is made for 30 million records.
+
+On this macOS environment the focused 1,000,000-record / 3,000-channel synthetic
+check (48,520,325 input bytes, all four partitions exercised) measured **59,310,080
+bytes / 56.56 MiB peak child RSS**. This is an actual small synthetic measurement,
+not a full-run benchmark or a performance guarantee. The private PBM95914 summary
+was not rerun. Its previously supplied record/yield/native-pass/N50 values remain
+historical validation evidence, not newly measured results.
+
+Supplied historical PBM95914 baseline (original summary unavailable here):
+28,202,608 records; 28,201,298 basecalled reads; 170,083,038,417 bp total yield;
+8,860 bp all-basecalled N50; 26,900,272 native passed reads;
+163,423,869,988 bp native passed yield; 8,867 bp native passed N50. Matching
+Q>=9 totals for that run do not establish universal or per-read filter equivalence.

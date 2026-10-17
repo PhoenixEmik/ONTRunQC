@@ -9,8 +9,8 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 
 use crate::metrics::{
-    ChannelMetrics, Diagnostics, EndReasonMetrics, LengthBin, MuxMetrics, OverallMetrics,
-    QualityMetrics, TimeBin,
+    ChannelMetrics, ComparisonMetrics, Diagnostics, EndReasonMetrics, LengthBin, MuxMetrics,
+    OverallMetrics, QualityMetrics, TimeBin,
 };
 
 #[derive(Debug, Serialize)]
@@ -26,6 +26,7 @@ pub struct Report {
     pub time_bins: Vec<TimeBin>,
     pub end_reasons: Vec<EndReasonMetrics>,
     pub diagnostics: Diagnostics,
+    pub comparison: ComparisonMetrics,
 }
 
 #[derive(Debug, Serialize)]

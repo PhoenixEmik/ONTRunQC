@@ -23,8 +23,19 @@ pub enum Command {
         /// Explicit physical channel map; requires channel IDs 1–3000.
         #[arg(long, value_enum)]
         flowcell_layout: Option<FlowcellLayout>,
+        /// Independent inclusive mean read Q-score cutoff for MinIONQC comparisons.
+        #[arg(short = 'q', long, default_value = "7", allow_hyphen_values = true, value_parser = qscore_cutoff)]
+        qscore_cutoff: f64,
         /// Directory for report.json and report.html (replaces existing reports).
         #[arg(short, long, value_name = "DIRECTORY")]
         output: PathBuf,
     },
+}
+
+fn qscore_cutoff(value: &str) -> Result<f64, String> {
+    value
+        .parse::<f64>()
+        .ok()
+        .filter(|q| q.is_finite() && *q >= 0.0)
+        .ok_or_else(|| "Q-score cutoff must be finite and nonnegative".to_owned())
 }

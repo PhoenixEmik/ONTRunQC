@@ -6,7 +6,7 @@ modern MinKNOW/Dorado output. It streams TSV records, validates them, calculates
 run metrics, and writes deterministic JSON and standalone HTML reports.
 
 Current release: **[v0.4.0 — Advanced Read Quality Diagnostics](https://github.com/PhoenixEmik/PoreGauge/tree/v0.4.0)**.
-Development version: **0.4.1 — HTML Report Performance Optimization**.
+Unreleased development: **MinIONQC parity, issues #5–#7** (on the 0.4.1 codebase).
 
 PoreGauge is not a basecaller or a replacement for MinKNOW instrument monitoring.
 It does not analyze FASTQ, BAM, or POD5 files.
@@ -26,7 +26,10 @@ It does not analyze FASTQ, BAM, or POD5 files.
 - Exact passed-read length median/N50 and Q-score median, with all/passed comparison.
 - All/passed mean read length and arithmetic Q-score in 15-minute read-start bins.
 - Bounded length × Q-score heatmaps, including open-ended length/quality tails.
-- Per-channel all/passed mean length and a compact distribution of channel means.
+- Per-channel all/native-passed mean length and exact all/Q-cutoff medians.
+- Independent inclusive `--qscore-cutoff` comparisons (default 7), preserving native pass/fail.
+- Exact retained yield/counts at minimum lengths and MinIONQC-style ultralong subsets.
+- Four channel-summary distribution families with All-summary/Q-cutoff comparisons.
 
 ## Installation
 
@@ -65,6 +68,7 @@ executable path with `cargo install --path . --locked` to use `poregauge` direct
 
 ```sh
 target/release/poregauge analyze sequencing_summary.txt --output qc_results/
+target/release/poregauge analyze sequencing_summary.txt --qscore-cutoff 9 --output qc_results/q9/
 target/release/poregauge analyze --help
 ```
 
@@ -124,14 +128,15 @@ characters; CSV-style quoting and multiline fields are not supported.
 Required columns:
 
 ```text
-run_id  channel  mux  start_time  duration  passes_filtering
+run_id  channel  mux  start_time  duration
 sequence_length_template  mean_qscore_template  end_reason
 ```
 
 Columns are separated by tabs, not spaces. Numeric fields must be valid and
 nonnegative; floating values must be finite. Channel and mux identifiers must be
-positive `u32` integers, without a device-specific upper limit. Filtering accepts
-`TRUE`/`FALSE`, case-insensitively. Run IDs and termination reasons must be
+positive `u32` integers, without a device-specific upper limit. The optional
+`passes_filtering` column accepts `TRUE`/`FALSE`, case-insensitively; when absent,
+native filtering is unavailable and cutoff analysis still works. Run IDs and termination reasons must be
 nonempty UTF-8 strings. Blank lines, duplicate/empty headers, mismatched field
 counts, and malformed required fields are errors, including on zero-length rows.
 The optional `template_duration` column enables sequencing speed analysis.
@@ -148,10 +153,11 @@ file produces zero counts and `null` statistics; an empty file is rejected.
 | Sequencing yield | Cumulative/interval yield, basecalled reads, distinct basecalled-producing channels, exact interval values. |
 | Read length | All/passed comparison table, exact subset median/N50, length/yield histograms, mean length over time. |
 | Read quality | Q-score histogram, mean Q-score over time, all/passed length × Q-score heatmaps, native pass/fail counts and yields. |
-| Channel performance | Ranked yield, distribution of channel mean lengths, all/passed mean lengths in the existing sortable table, optional spatial maps and channel × mux table. |
+| Channel performance | Four All-summary/Q-cutoff channel distributions (bases, counts, mean and exact median length); searchable exact medians/means; existing native pass metrics, spatial maps and channel × mux table. |
 | Mux performance | Basecalled read counts, total/passed yield by observed mux, exact totals. |
 | Termination reasons | Counts, yield, record/yield shares, zero-length/basecalled fractions, and native pass fraction, sorted by record count. |
 | Sequencing speed | Fixed-bin speed distribution and mean per-read speed over time, when eligible template durations exist. |
+| Q-cutoff comparison | Separate cutoff histograms, temporal comparisons, exact yield by minimum length, seven thresholds and ultralong subsets. |
 
 Tables use right-aligned numerical headers and values with tabular numerals;
 descriptive labels remain left-aligned. Termination-reason bars sit beneath their
@@ -180,7 +186,7 @@ quality metrics, and ordered arrays of distributions and grouped statistics.
 Unavailable values are `null`; integer yields are in base pairs. No individual
 read records, sample IDs, filenames, or experiment IDs appear in reports.
 The run ID and unknown termination-reason strings are preserved. Schema version 1
-is retained: v0.4.1 changes no QC fields, definitions, or array ordering.
+is retained: the new `comparison` section is additive; existing fields, definitions and ordering are preserved for previously accepted inputs.
 The v0.4.0 additions remain available.
 New fields extend time bins/channels and `diagnostics`; consumers must tolerate
 unknown fields. Strict consumers that reject additional fields need updating.
@@ -190,8 +196,7 @@ or unavailable when that denominator is zero. Input-derived HTML text is escaped
 no input data is interpolated into scripts.
 
 See [metric definitions and schema](docs/metrics.md). Zero-length records do not
-contribute to read-length or quality statistics. No implicit Q-score threshold
-is applied. Time-bin yield is attributed to read start time, rather than an exact
+contribute to read-length or quality statistics. Native results have no implicit Q-score threshold; the separately named comparison population uses the configured cutoff (default 7). Time-bin yield is attributed to read start time, rather than an exact
 reconstruction of instrument throughput.
 Missing time intervals contribute no new yield; cumulative steps occur at bin
 ends. Histogram bins are categorical and do not reconstruct individual reads.
@@ -239,7 +244,8 @@ cause of spatial or temporal variation. Instrument telemetry is not analyzed.
   Q-score boundaries 0, 2, …, 50. Final bins are unbounded; no reads are discarded
   above the displayed range. Both heatmaps share a log-count color scale.
 - Channel means are channel yield / channel basecalled count (likewise for passed
-  reads). Exact per-channel medians are deferred to avoid additional per-read storage.
+  reads). Exact per-channel medians now reuse the stored length partitions. The new
+  All-summary channel comparison additionally includes zero lengths explicitly.
 
 In the maintainer-supplied v0.3.0 validation baseline, 28,202,608 summary records
 include 1,310 zero lengths, leaving 28,201,298 basecalled reads. MinIONQC's
@@ -247,6 +253,35 @@ all-record denominator can therefore produce different means/medians. The matchi
 native passed and Q ≥ 9 totals in that run do **not** make these filters universally
 equivalent. v0.4.0 regression tests use fictional inputs; that real summary has
 not been reprocessed for this milestone.
+
+## MinIONQC comparisons
+
+`--qscore-cutoff 7` selects **positive-length reads with mean Q ≥ 7**, independently
+of native `passes_filtering`. Zero lengths remain summary records, even at cutoff 0.
+A missing native flag is supported without inferring pass/fail; availability and
+unclassified counts are explicit in JSON. Other legacy column adaptations remain
+out of scope. Existing native/all-basecalled metrics keep their definitions.
+
+The report compares exact subset statistics, length/quality histograms, yield/read
+counts over time, and length/quality means over time. The retained-yield curve uses
+exact lengths at bounded display queries; exact counts and bp yields are reported
+at **≥10, 20, 50, 100, 200, 500 kb and ≥1 Mb**. Ultralong means the largest
+longest-first prefix with strict-half N50 ≥100 kb, which can include shorter reads.
+For upstream channel comparisons, All-summary counts/means/medians include zero
+lengths; all-basecalled channel statistics remain separately available.
+
+The [metric definitions](docs/metrics.md#minionqc-parity-comparisons) explain
+intentional differences: N50 half-yield ties, zero-length denominators, histogram
+bins, rounding, and corrected upstream endpoint/read-count bugs. Public example
+validation is reproducible with `tests/minionqc_reference.py`; its adapters and
+upstream fixture inconsistencies are documented there. No private sequencing
+summary was rerun. The supplied PBM95914 totals remain historical reference values.
+
+Issues #5–#7 are implemented here. Outstanding parity includes #8 multi-flowcell
+combined QC, #9 full legacy MinION/1D2/direct-RNA compatibility, and #10 YAML/export
+controls and the complete parity checklist. This is not a claim of full MinIONQC
+parity; event-per-base coloring and individual-channel temporal overview plots
+also remain to be assessed in that checklist.
 
 ## Development
 
@@ -300,7 +335,9 @@ Tests cover existing metrics and output reliability plus mapping boundaries and
 uniqueness, layout validation, yield conservation, distinct-channel counting,
 unusual mux values, speed eligibility/boundaries, termination denominators,
 escaping, deterministic output, and offline resources. Review generated reports
-at desktop and mobile widths after presentation changes.
+at desktop and mobile widths after presentation changes. The parity report was
+visually inspected in Chrome at 1440px and 390px; optional table behavior tests
+exercise the added exact median and Q-cutoff sort fields.
 
 A small synthetic 3,000-channel/10,000-pair structural regression runs in
 `cargo test`. If Node.js is available, tests also run the dependency-free
@@ -310,25 +347,30 @@ browser checks using the procedure in [benchmarking](docs/benchmark.md#html-repo
 
 ## Status and limitations
 
-Version 0.4.1 reduces report markup and table interaction overhead, preserving
-v0.4.0 scientific results. There is no
+The unreleased parity additions preserve existing scientific results and the
+v0.4.1 report optimizations. There is no
 automatic QC judgment, gzip support, barcode analysis, multi-run analysis, live
 monitoring, or instrument API integration. Physical maps support only the explicit
 EPI2ME 3000-channel layout; other models/geometries are not verified.
 
 Parsing is streaming, but exact medians require retained lengths (`u64`) and
 Q-scores (`f64`): 16 bytes per basecalled read, approximately 466 MiB of elements
-for 30,549,981 reads, plus allocator overhead and grouped metrics. Pass/fail
-partitions each retain an observation once; global exact statistics merge sorted
-partitions without a combined copy. Four vectors have at most about 2 MiB spare
-element capacity (about 1 MiB more than v0.3.0). Two fixed joint-count matrices
-use 8,736 bytes during aggregation. A synthetic storage regression checks this
-bound; it is not an RSS benchmark. New diagnostics retain channel/mux
+for 30,549,981 reads, plus allocator overhead and grouped metrics. Length observations are partitioned by channel, native status and cutoff status,
+with Q-scores in four global partitions; no observation is duplicated for an
+independent subset. Channel medians are computed first, then length buffers are
+moved and reused for exact run statistics. At 3,000 channels, spare channel length
+capacity is bounded by about 23.4 MiB, plus up to 2 MiB spare Q-score capacity;
+final global length partitions add at most 2 MiB spare capacity. Moving buffers
+can temporarily duplicate the channel partition currently being consumed.
+This is small for balanced channel counts but can be substantial for very skewed
+inputs. No per-channel Q-score vectors or full read objects are retained.
+Two fixed joint-count matrices
+use 8,736 bytes during aggregation. A synthetic storage regression checks one observation per retained length/Q-score; it is not an RSS benchmark. New diagnostics retain channel/mux
 pairs and distinct channel IDs per occupied time bin, not individual reads.
 Memory also grows with reasons and occupied time bins. Sorting is in place. The
 below-512-MiB RSS goal needs validation on the full real run; the supplied fixture
 and historical v0.1.0 engine measurements are documented in [benchmarking](docs/benchmark.md).
-No real-run benchmark was performed for v0.4.1. HTML size depends on grouped
+No private real-run benchmark was performed for these parity additions. HTML size depends on grouped
 observations (channels, muxes, time bins, reasons), not individual reads. All
 table rows still ship in HTML for no-JS access and must initially be parsed;
 pagination reduces mounted DOM and subsequent updates, not retained row memory.

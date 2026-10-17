@@ -28,7 +28,7 @@ Use rustfmt defaults, four-space indentation, `snake_case` functions/modules, an
 
 Use Rust's built-in test framework and descriptive behavior names. Preserve parser/metrics regressions; cover HTML/JSON consistency, unavailable statistics, metadata escaping, offline assets, thousands of channels, and write-failure cleanup. Review generated HTML on desktop and narrow screens. No coverage percentage is mandated. Run all checks above before submitting code changes.
 
-Zero-length records count toward summary totals but not basecalled length/quality statistics. Filtering comes exclusively from `passes_filtering`. Preserve unknown termination reasons, checked integer totals, ordered output, and `null` unavailable statistics. Update metric documentation with behavior/schema changes; increment `schema_version` for incompatible report changes.
+Zero-length records count toward summary totals but not basecalled length/quality statistics. Native filtering comes exclusively from `passes_filtering`; independent `--qscore-cutoff` comparisons must never replace it. Missing native flags mean unavailable, never inferred failure. Exact channel medians reuse disjoint length partitions. Preserve unknown termination reasons, checked integer totals, ordered output, and `null` unavailable statistics. Update metric documentation with behavior/schema changes; increment `schema_version` for incompatible report changes.
 
 Render both formats from the final report model. Escape all input-derived HTML; keep metadata out of scripts and external resources out of reports. Prepare both temporary outputs before replacing files; do not claim atomicity across the pair.
 

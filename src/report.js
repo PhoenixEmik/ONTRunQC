@@ -18,7 +18,7 @@
       const av = a.dataset[key], bv = b.dataset[key];
       if (av === '' || bv === '') return av === bv ? 0 : av === '' ? 1 : -1;
       // Integer counts remain exact above Number.MAX_SAFE_INTEGER.
-      const floating = ['qscore', 'meanlength', 'passedlength'].includes(key);
+      const floating = ['qscore', 'meanlength', 'passedlength', 'medianlength', 'qmedian'].includes(key);
       const an = floating ? Number(av) : BigInt(av);
       const bn = floating ? Number(bv) : BigInt(bv);
       const order = an < bn ? -1 : an > bn ? 1 : 0;

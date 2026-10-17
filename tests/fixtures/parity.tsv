@@ -1,0 +1,9 @@
+run_id	channel	mux	start_time	duration	passes_filtering	sequence_length_template	mean_qscore_template	end_reason
+fictional-parity	1	1	1800	1	FALSE	10000	7	normal
+fictional-parity	1	1	0	1	TRUE	20000	6	normal
+fictional-parity	1	1	0	1	TRUE	0	0	normal
+fictional-parity	2	2	900	1	TRUE	100000	9	unknown
+fictional-parity	2	2	900	1	FALSE	50000	7	unknown
+fictional-parity	2	2	900	1	FALSE	200000	12	unknown
+fictional-parity	3	9	2700	1	FALSE	0	0	future
+fictional-parity	1	1	0	1	FALSE	10	9	normal

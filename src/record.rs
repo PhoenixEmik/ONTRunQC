@@ -7,7 +7,7 @@ pub struct Record<'a> {
     pub mux: u32,
     pub start_time: f64,
     pub template_duration: Option<f64>,
-    pub passed: bool,
+    pub passed: Option<bool>,
     pub length: u64,
     pub qscore: f64,
     pub end_reason: &'a str,

@@ -9,13 +9,12 @@ use csv::{ByteRecord, Reader, ReaderBuilder, StringRecord};
 
 use crate::record::Record;
 
-const REQUIRED: [&str; 9] = [
+const REQUIRED: [&str; 8] = [
     "run_id",
     "channel",
     "mux",
     "start_time",
     "duration",
-    "passes_filtering",
     "sequence_length_template",
     "mean_qscore_template",
     "end_reason",
@@ -24,6 +23,7 @@ const REQUIRED: [&str; 9] = [
 struct Columns {
     required: [usize; REQUIRED.len()],
     template_duration: Option<usize>,
+    passes_filtering: Option<usize>,
 }
 
 impl Columns {
@@ -47,6 +47,7 @@ impl Columns {
         Ok(Self {
             required: positions,
             template_duration: headers.iter().position(|h| h == "template_duration"),
+            passes_filtering: headers.iter().position(|h| h == "passes_filtering"),
         })
     }
 
@@ -67,14 +68,21 @@ impl Columns {
         let start_time = nonnegative_finite(field(3)?, REQUIRED[3])?;
         // Validate duration even though this milestone attributes yield to start time.
         nonnegative_finite(field(4)?, REQUIRED[4])?;
-        let passed = match field(5)? {
-            value if value.eq_ignore_ascii_case("true") => true,
-            value if value.eq_ignore_ascii_case("false") => false,
-            value => bail!("column \"passes_filtering\": expected TRUE or FALSE, found {value:?}"),
-        };
-        let length = number(field(6)?, REQUIRED[6])?;
-        let qscore = nonnegative_finite(field(7)?, REQUIRED[7])?;
-        let end_reason = field(8)?;
+        let passed = self
+            .passes_filtering
+            .map(|i| -> Result<bool> {
+                let value = std::str::from_utf8(&row[i])
+                    .context("column \"passes_filtering\": expected UTF-8")?;
+                match value {
+                    v if v.eq_ignore_ascii_case("true") => Ok(true),
+                    v if v.eq_ignore_ascii_case("false") => Ok(false),
+                    v => bail!("column \"passes_filtering\": expected TRUE or FALSE, found {v:?}"),
+                }
+            })
+            .transpose()?;
+        let length = number(field(5)?, REQUIRED[5])?;
+        let qscore = nonnegative_finite(field(6)?, REQUIRED[6])?;
+        let end_reason = field(7)?;
         ensure!(
             !end_reason.trim().is_empty(),
             "column \"end_reason\": must not be empty"
@@ -194,6 +202,10 @@ impl<R: Read> SummaryReader<R> {
 
     pub fn run_id(&self) -> Option<&str> {
         self.run_id.as_deref()
+    }
+
+    pub fn has_native_filtering(&self) -> bool {
+        self.columns.passes_filtering.is_some()
     }
 
     pub fn has_template_duration(&self) -> bool {

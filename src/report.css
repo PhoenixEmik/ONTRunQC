@@ -688,3 +688,8 @@ footer {
         print-color-adjust:exact;
     }
 }
+
+/* Independent Q-cutoff comparisons are distinct from semantic native pass. */
+.qselected { fill:#70609c; }
+.qselected-line { fill:none; stroke:#70609c; stroke-width:2; stroke-dasharray:3 3; }
+.legend.qselected-key:before { background:#70609c; }
