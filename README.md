@@ -6,6 +6,7 @@ modern MinKNOW/Dorado output. It streams TSV records, validates them, calculates
 run metrics, and writes deterministic JSON and standalone HTML reports.
 
 Current release: **[v0.4.0 — Advanced Read Quality Diagnostics](https://github.com/PhoenixEmik/PoreGauge/tree/v0.4.0)**.
+Development version: **0.4.1 — HTML Report Performance Optimization**.
 
 PoreGauge is not a basecaller or a replacement for MinKNOW instrument monitoring.
 It does not analyze FASTQ, BAM, or POD5 files.
@@ -155,12 +156,19 @@ file produces zero counts and `null` statistics; an empty file is rejected.
 Tables use right-aligned numerical headers and values with tabular numerals;
 descriptive labels remain left-aligned. Termination-reason bars sit beneath their
 record counts in the same cell, with aligned tracks and visible numerical values.
-Long reason names wrap without compressing numerical columns.
+Long reason names wrap without compressing numerical columns. Decorative table
+bars use CSS; scientific charts and physical heatmaps remain SVG.
 
 Charts and wide tables scroll within their own containers on narrow screens to
 retain readable labels and exact values. All charts and all channel rows remain
 available without JavaScript; the script only adds channel search, sorting, and
-pagination. Unavailable statistics display **Not available**. Plot labels may be
+pagination. With JavaScript, only the current 25/50/100 rows of each channel
+table are mounted; other rows stay in memory. Printing omits the detailed channel
+and channel × mux tables in both modes and displays an omission notice. Complete
+values remain available in JSON and the offline HTML. Other collapsed detail
+sections remain omitted from print until opened.
+
+Unavailable statistics display **Not available**. Plot labels may be
 rounded for readability; tables and SVG tooltips provide counts in exact integers.
 Units use decimal prefixes:
 1 kb = 1,000 bp, 1 Mb = 1,000,000 bp, 1 Gb = 1,000,000,000 bp.
@@ -172,7 +180,8 @@ quality metrics, and ordered arrays of distributions and grouped statistics.
 Unavailable values are `null`; integer yields are in base pairs. No individual
 read records, sample IDs, filenames, or experiment IDs appear in reports.
 The run ID and unknown termination-reason strings are preserved. Schema version 1
-is retained in v0.4.0: previous fields, definitions, and array ordering are preserved.
+is retained: v0.4.1 changes no QC fields, definitions, or array ordering.
+The v0.4.0 additions remain available.
 New fields extend time bins/channels and `diagnostics`; consumers must tolerate
 unknown fields. Strict consumers that reject additional fields need updating.
 Both renderers use the same final metrics model.
@@ -293,9 +302,16 @@ unusual mux values, speed eligibility/boundaries, termination denominators,
 escaping, deterministic output, and offline resources. Review generated reports
 at desktop and mobile widths after presentation changes.
 
+A small synthetic 3,000-channel/10,000-pair structural regression runs in
+`cargo test`. If Node.js is available, tests also run the dependency-free
+`tests/report_tables.cjs` behavior checks; Node is optional and is never needed
+to build or use PoreGauge. Reproduce HTML size/DOM comparisons and optional
+browser checks using the procedure in [benchmarking](docs/benchmark.md#html-report-maintenance-v041).
+
 ## Status and limitations
 
-Version 0.4.0 extends the existing QC engine and offline reports. There is no
+Version 0.4.1 reduces report markup and table interaction overhead, preserving
+v0.4.0 scientific results. There is no
 automatic QC judgment, gzip support, barcode analysis, multi-run analysis, live
 monitoring, or instrument API integration. Physical maps support only the explicit
 EPI2ME 3000-channel layout; other models/geometries are not verified.
@@ -312,7 +328,9 @@ pairs and distinct channel IDs per occupied time bin, not individual reads.
 Memory also grows with reasons and occupied time bins. Sorting is in place. The
 below-512-MiB RSS goal needs validation on the full real run; the supplied fixture
 and historical v0.1.0 engine measurements are documented in [benchmarking](docs/benchmark.md).
-No real-run benchmark was performed for v0.4.0. HTML size depends on grouped
-observations (channels, muxes, time bins, reasons), not individual reads.
+No real-run benchmark was performed for v0.4.1. HTML size depends on grouped
+observations (channels, muxes, time bins, reasons), not individual reads. All
+table rows still ship in HTML for no-JS access and must initially be parsed;
+pagination reduces mounted DOM and subsequent updates, not retained row memory.
 
 Licensed under the [MIT License](LICENSE).

@@ -1,0 +1,136 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PoreGauge synthetic browser checks</title>
+<style>
+body{font:14px system-ui;margin:20px;color:#263248;background:#f4f6fa}button{padding:8px 16px;margin-right:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:16px}.frame-scroll{overflow:auto;max-width:100%}iframe{border:1px solid #bbc3d0;height:760px;background:white} .print-note{font-weight:bold}
+</style>
+<h1>Synthetic report browser checks</h1>
+<p>Offline, optional checks. Load timings include parsing, script initialization, layout and two animation frames. Handler timings exclude frame waits. Detached rows remain retained in JavaScript memory.</p>
+<button id="run">Run checks</button><button id="print-check">Check print media</button>
+<p id="state" role="status">Ready. Each report is loaded sequentially.</p>
+<div id="summary"></div><pre id="result">No measurements yet.</pre><div class="frame-scroll" id="frame"></div>
+<script>
+const data = /* REPORT_DATA */;
+const result = document.getElementById('result'), state = document.getElementById('state');
+let frame, results;
+const assert = (condition, message) => { if (!condition) throw new Error(message); };
+const frames = window => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+const key = row => `${row.channel}/${row.mux || 0}`;
+function order(rows, field) {
+  return rows.slice().sort((a, b) => {
+    const left = a[field], right = b[field];
+    if (left == null || right == null) return left === right ? 0 : left == null ? 1 : -1;
+    const av = ['yield', 'reads', 'channel', 'mux'].includes(field) ? BigInt(left) : left;
+    const bv = ['yield', 'reads', 'channel', 'mux'].includes(field) ? BigInt(right) : right;
+    const sign = av < bv ? -1 : av > bv ? 1 : 0;
+    return sign * (['channel', 'mux'].includes(field) ? 1 : -1) || Number(a.channel) - Number(b.channel) || Number(a.mux) - Number(b.mux);
+  });
+}
+async function load(html, js, width) {
+  if (frame) frame.remove();
+  frame = document.createElement('iframe');
+  frame.setAttribute('sandbox', js ? 'allow-scripts allow-same-origin' : 'allow-same-origin');
+  frame.style.width = `${width}px`;
+  const loaded = new Promise(resolve => { frame.onload = resolve; });
+  const start = performance.now();
+  frame.srcdoc = html;
+  document.getElementById('frame').append(frame);
+  await loaded; await frames(frame.contentWindow);
+  return performance.now() - start;
+}
+async function measure(spec, js, width) {
+  state.textContent = `Checking ${spec.label}, JavaScript ${js ? 'enabled' : 'disabled'}, ${width}px…`;
+  const loadMs = await load(spec.html, js, width);
+  const doc = frame.contentDocument;
+  const entry = { report: spec.label, javascript: js, width, load_to_two_frames_ms: +loadMs.toFixed(2),
+    elements: doc.querySelectorAll('*').length, svg: doc.querySelectorAll('svg').length, rect: doc.querySelectorAll('rect').length,
+    tr: doc.querySelectorAll('tr').length, mounted_rows: {}, handlers: [] };
+  assert(doc.documentElement.scrollWidth <= doc.documentElement.clientWidth, 'Page overflows outside scroll containers');
+  assert(doc.querySelectorAll('.heatmap-cell').length === 6000, 'Physical heatmaps lost cells');
+  for (const prefix of ['channel', 'channel-mux']) {
+    const table = doc.getElementById(`${prefix}-table`), body = table.tBodies[0];
+    entry.mounted_rows[prefix] = body.rows.length;
+    if (!js) {
+      assert(body.rows.length === data.expected[prefix].length, `${prefix}: no-JS lost rows`);
+      assert(doc.getElementById(`${prefix}-controls`).hidden, 'No-JS controls must remain hidden');
+      continue;
+    }
+    let sorted = data.expected[prefix].slice(), filtered = sorted, page = 0, size = 25;
+    const get = id => doc.getElementById(`${prefix}-${id}`);
+    const visible = () => [...body.rows].filter(row => !row.hidden);
+    function check() {
+      const expected = filtered.slice(page * size, (page + 1) * size).map(key);
+      assert(JSON.stringify(visible().map(row => key(row.dataset))) === JSON.stringify(expected), `${prefix}: wrong page values`);
+      if (spec.label === 'after') assert(body.rows.length === expected.length, `${prefix}: detached rows are still mounted`);
+      assert(get('previous').disabled === (page === 0), 'Previous state');
+      assert(get('next').disabled === ((page + 1) * size >= filtered.length), 'Next state');
+      const suffix = prefix === 'channel' ? 'channels' : 'channel/mux pairs';
+      const status = filtered.length ? `${page * size + 1}–${Math.min((page + 1) * size, filtered.length)} of ${filtered.length.toLocaleString('en-US')} ${suffix}` : 'No matching channels';
+      assert(get('status').textContent === status, `${prefix}: status mismatch`);
+    }
+    async function action(name, update, expected) {
+      expected();
+      const start = performance.now(); update();
+      const handler = performance.now() - start;
+      check(); await frames(frame.contentWindow);
+      entry.handlers.push({table: prefix, action: name, handler_ms: +handler.toFixed(3)});
+    }
+    const event = (id, value, type) => { get(id).value = value; get(id).dispatchEvent(new frame.contentWindow.Event(type, {bubbles: true})); };
+    check();
+    for (const limit of [50, 100]) await action(`size-${limit}`, () => event('page-size', String(limit), 'change'), () => { size = limit; page = 0; });
+    await action('next-page', () => get('next').click(), () => { page++; });
+    await action('previous-page', () => get('previous').click(), () => { page--; });
+    await action('size-25', () => event('page-size', '25', 'change'), () => { size = 25; page = 0; });
+    for (const field of prefix === 'channel' ? ['yield', 'reads', 'qscore', 'meanlength', 'passedlength', 'channel'] : ['yield', 'reads', 'mux', 'channel']) {
+      await action(`sort-${field}`, () => event('sort', field, 'change'), () => { sorted = order(sorted, field); filtered = sorted; page = 0; });
+    }
+    await action('substring-search', () => event('search', ' 299 ', 'input'), () => { filtered = sorted.filter(row => row.channel.includes('299')); page = 0; });
+    if (!get('next').disabled) await action('last-page', () => get('next').click(), () => { page++; });
+    await action('empty-search', () => event('search', 'not-a-channel', 'input'), () => { filtered = []; page = 0; });
+    await action('clear-search', () => event('search', '', 'input'), () => { filtered = sorted; page = 0; });
+    assert(body.rows.length === entry.mounted_rows[prefix], `${prefix}: mounted count grew`);
+  }
+  const times = entry.handlers.map(x => x.handler_ms).sort((a, b) => a - b);
+  entry.median_handler_ms = times.length ? times[Math.floor(times.length / 2)] : null;
+  entry.max_handler_ms = times.length ? times[times.length - 1] : null;
+  entry.passed = true;
+  return entry;
+}
+function showResults() {
+  result.textContent = JSON.stringify(results, null, 2);
+  const summary = document.getElementById('summary');
+  summary.replaceChildren();
+  for (const run of results.runs) {
+    const p = document.createElement('p');
+    p.textContent = `${run.report} · JS ${run.javascript} · ${run.width}px: elements ${run.elements}; SVG ${run.svg}; rect ${run.rect}; tr ${run.tr}; mounted ${JSON.stringify(run.mounted_rows)}; load+two frames ${run.load_to_two_frames_ms} ms; median handler ${run.median_handler_ms} ms; max handler ${run.max_handler_ms} ms; passed ${run.passed}`;
+    summary.append(p);
+  }
+  if (results.print) {
+    const p = document.createElement('p'); p.textContent = `Print: ${JSON.stringify(results.print)}`; summary.append(p);
+  }
+}
+document.getElementById('run').onclick = async () => {
+  document.getElementById('run').disabled = true;
+  results = {user_agent: navigator.userAgent, runs: []};
+  try {
+    for (const spec of data.cases) results.runs.push(await measure(spec, true, 1440));
+    const after = data.cases.find(spec => spec.label === 'after');
+    results.runs.push(await measure(after, true, 390));
+    results.runs.push(await measure(after, false, 1440));
+    results.runs.push(await measure(after, false, 390));
+    state.textContent = 'PASS: desktop/mobile, JS/no-JS, sorting, page sizes, partial pages, search and statuses. Enable print media emulation to check print CSS.';
+  } catch (error) { results.error = error.message; state.textContent = `FAIL: ${error.message}`; }
+  showResults();
+  document.getElementById('run').disabled = false;
+};
+document.getElementById('print-check').onclick = () => {
+  try {
+    assert(frame && frame.contentWindow.matchMedia('print').matches, 'Enable print media emulation in browser developer tools first');
+    const doc = frame.contentDocument, css = frame.contentWindow.getComputedStyle;
+    for (const element of doc.querySelectorAll('.detail-table')) assert(css(element).display === 'none', 'Detailed table visible in print');
+    const note = doc.querySelector('.print-only');
+    assert(css(note).display !== 'none' && note.textContent.includes('omitted from print'), 'Print omission note missing');
+    results.print = {passed: true, detailed_tables: doc.querySelectorAll('.detail-table').length, data_rows_retained: doc.querySelectorAll('tr[data-channel]').length, note: note.textContent};
+    showResults(); state.textContent = 'PASS: print omits both full detail tables and shows the omission note, including no-JS mode.';
+  } catch (error) { state.textContent = `Print check: ${error.message}`; }
+};
+</script></html>

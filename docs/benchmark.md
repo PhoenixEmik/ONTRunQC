@@ -124,3 +124,103 @@ PY
 Time the CLI with that path as input. Use a fresh timing process; exclude input
 generation and compilation. The expected record count is 30,549,981, input size
 is 1,599,749,860 bytes, and zero-length count is zero.
+
+## HTML report maintenance (v0.4.1)
+
+This measurement uses **fictional** data, not the private 28.2-million-record run.
+`tests/fixtures/large_tables.rs` generates 20,000 unsorted records, 3,000 channels,
+10,000 channel/mux pairs, 96 occupied time bins, three reasons, a zero-length-only
+channel, and optional speed observations. Spatial maps are explicitly enabled.
+Input: 1,542,325 bytes; SHA-256
+`0dd41c69536062e895fdbafc528489b5e32a7e49fefd1bc81859503b99abba39`.
+
+### Reproduction
+
+Build v0.4.0 separately, for example in a temporary checkout, and retain its binary:
+
+```sh
+git worktree add --detach /tmp/poregauge-v040 v0.4.0
+cargo build --manifest-path /tmp/poregauge-v040/Cargo.toml --release --locked
+cargo build --release --locked
+python3 tests/report_performance.py \
+  --baseline-binary /tmp/poregauge-v040/target/release/poregauge --browser
+```
+
+The helper uses Python's standard library and `rustc` to run the **same generator**
+as the Rust integration test. It writes ignored files under
+`benchmark-results/html-performance/`: the TSV, before/after reports,
+`measurements.json`, and optional `browser.html`. Omit `--baseline-binary` to
+measure only the current build, or omit `--browser` for structural checks only.
+JSON objects are compared after removing **only** `tool.version`; any other
+change fails. The helper overwrites its own generated files, so preserve previous
+measurements separately if needed.
+
+Open `browser.html` directly via `file://`, press **Run checks**, and retain the
+onscreen JSON/summary. It sequentially loads synthetic reports in `srcdoc` frames;
+checks actual mounted rows, 25/50/100 sizes, sorting, substring search, empty
+results, partial last pages, statuses, no-JS access, all 6,000 spatial cells, and
+page overflow at 1440px/390px. After completion, enable **Emulate CSS print media**
+in Chrome DevTools and press **Check print media**. Both detail-table containers
+must be hidden and the omission notice visible, even with all 13,000 no-JS data
+rows retained. Restore screen media afterward. This validates print CSS, not
+printer-specific PDF pagination. No external resources or browser packages are
+required. Sandbox script-blocking console messages in the no-JS cases are expected.
+
+`cargo test` includes the small large-aggregation structural check (no table SVGs,
+no external resources, all source rows preserved, bounded HTML size). When Node.js
+is installed it also executes `tests/report_tables.cjs`, a dependency-free behavior
+test including integer ordering above 2^53 and unavailable statistics. This can
+also be run directly with `node tests/report_tables.cjs`; it uses a minimal DOM
+stand-in, not a browser. Node is optional. Browser timings are manual and are not
+CI performance gates; no full-run benchmark was added.
+
+### Executed comparison
+
+Measured on 2026-10-17, macOS arm64, release builds of v0.4.0 (`df78888`) and the
+v0.4.1 maintenance implementation, Chrome 155.0.0.0. Values below come from one
+final sequential browser pass with DevTools closed during timing; they are not
+statistical throughput guarantees. The generator and both binaries were local.
+
+| Structural measure | v0.4.0 | v0.4.1 |
+| --- | ---: | ---: |
+| HTML bytes | 8,258,004 | 7,098,116 |
+| JSON bytes | 3,771,602 | 3,771,602 |
+| Source elements (HTMLParser) | 185,760 | 165,755 |
+| SVG roots | 10,026 | 23 |
+| SVG rectangles | 27,491 | 7,485 |
+| SVG table microbars | 10,003 | 0 |
+| Source table rows, including headers/details | 13,468 | 13,468 |
+| Mounted data rows: channel / channel × mux, JS default | 3,000 / 10,000 | 25 / 25 |
+| All DOM elements after JS initialization (1440px) | 185,759 | 26,279 |
+| All DOM table rows after JS initialization (1440px) | 13,468 | 518 |
+
+HTML decreased **14.05%** on this fixture. All scientific JSON values/schema and
+histogram definitions are identical; only the tool version differs. SVG roots
+remaining after optimization are scientific charts/maps. Source row counts stay
+unchanged for no-JS access. Source-parser and browser element counts differ
+because JavaScript-enabled parsing treats `noscript` contents as text.
+
+| Browser scenario | Load + two animation frames (ms) | Median synchronous handler (ms) | Maximum handler (ms) |
+| --- | ---: | ---: | ---: |
+| v0.4.0, JS, 1440px | 1,622.3 | 33.7 | 189.8 |
+| v0.4.1, JS, 1440px | 1,435.6 | 1.5 | 59.5 |
+| v0.4.1, JS, 390px | 995.8 | 1.4 | 60.2 |
+| v0.4.1, no JS, 1440px | 2,307.6 | — | — |
+| v0.4.1, no JS, 390px | 3,299.3 | — | — |
+
+The median is the middle recorded duration across the scripted search/sort/page
+operations in both tables; handler timing excludes assertions and animation-frame
+waits. Load timing includes frame creation, parsing, script initialization, layout
+and two frames, not just parsing. Caches, GC, frame placement and competing work
+can change timings substantially; no universal load-time claim is made. At both
+widths the JS report mounted 26,279 elements/518 table rows, with 25 data rows per
+large table. No-JS retained 165,755 elements/13,468 table rows and all channel/pair
+values. Print-media checks passed with those 13,000 data rows retained but both
+detailed table containers omitted and the explicit notice visible.
+
+All rows still arrive in HTML and are initially parsed; detached rows remain in
+JavaScript memory. The improvement bounds mounted DOM and per-page updates, not
+initial parsing or retained row storage. Full-list sorting and substring search
+still scale with aggregated row count. These measurements do not remeasure or
+predict the supplied real-report baseline of 9,052,704 HTML bytes; that private
+report was not regenerated for this comparison.

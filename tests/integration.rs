@@ -7,6 +7,9 @@ use std::{
 
 use serde_json::{Value, json};
 
+#[path = "fixtures/large_tables.rs"]
+mod large_tables;
+
 const HEADER: &str = "run_id\tchannel\tmux\tstart_time\tduration\tpasses_filtering\tsequence_length_template\tmean_qscore_template\tend_reason\n";
 const ROW: &str = "synthetic-run\t1\t1\t0\t1\tTRUE\t10\t12.5\tunknown\n";
 
@@ -1491,6 +1494,16 @@ fn print_omission_is_explicit_and_both_large_tables_keep_complete_noscript_data(
     directory.analyze(&format!("{HEADER}{ROW}"));
     let html = directory.html();
     assert!(html.contains("class=\"print-only notice\">Detailed channel and channel × mux tables are omitted from print."));
+    let print_css = html
+        .split("@media print")
+        .nth(1)
+        .unwrap()
+        .split("</style>")
+        .next()
+        .unwrap();
+    assert!(print_css.contains(".detail-table {\n        display:none!important;"));
+    assert!(print_css.contains(".print-only {\n        display:block;"));
+    assert!(!print_css.contains("display:table-row!important"));
     for prefix in ["channel", "channel-mux"] {
         let before_table = html
             .split(&format!("<table id=\"{prefix}-table\""))
@@ -1512,5 +1525,53 @@ fn print_omission_is_explicit_and_both_large_tables_keep_complete_noscript_data(
             .unwrap();
         assert_eq!(table.matches("<tr data-channel=").count(), 1);
         assert!(!table.contains("<tr hidden"));
+    }
+}
+
+#[test]
+fn large_synthetic_report_retains_all_source_rows_and_no_table_svg_microbars() {
+    let directory = TestDirectory::new();
+    let mut data = Vec::new();
+    large_tables::write(&mut data).unwrap();
+    let report = directory.analyze_with_args(
+        std::str::from_utf8(&data).unwrap(),
+        &["--flowcell-layout", "promethion-3000"],
+    );
+    assert_eq!(report["metrics"]["total_records"], 20000);
+    assert_eq!(report["channels"].as_array().unwrap().len(), 3000);
+    assert_eq!(
+        report["diagnostics"]["channel_mux"]
+            .as_array()
+            .unwrap()
+            .len(),
+        10000
+    );
+    let html = directory.html();
+    for (prefix, expected) in [("channel", 3000), ("channel-mux", 10000)] {
+        let table = html
+            .split(&format!("id=\"{prefix}-table\""))
+            .nth(1)
+            .unwrap()
+            .split("</table>")
+            .next()
+            .unwrap();
+        assert_eq!(table.matches("<tr data-channel=").count(), expected);
+        assert!(!table.contains("<svg"));
+    }
+    assert!(!html.contains("class=\"inline-bar\""));
+    assert_eq!(html.matches("class=\"heatmap-cell\"").count(), 6000);
+    assert!(
+        html.matches("<svg ").count() <= 30,
+        "SVG count must follow scientific charts, not table rows"
+    );
+    assert!(
+        html.len() < 7_500_000,
+        "unexpected synthetic HTML growth: {} bytes",
+        html.len()
+    );
+    for resource in [
+        "https://", "http://", "fetch(", "@import", "<link", "<iframe",
+    ] {
+        assert!(!html.contains(resource), "external resource: {resource}");
     }
 }
