@@ -39,7 +39,8 @@ and axis labels. `--capture-only` skips figure rendering but still runs upstream
 summary/plot calculations. `--case short` selects a case. Full runs include
 MinION, PromethION, two MinION inputs/combined QC, short, 1D2, RNA and synthetic
 zero/cutoff/N50/ultralong edge cases, small/large/irregular/sparse fits and
-multimodal/skewed/constant/near-constant/outlier densities with unequal source sizes. Nothing uses private sequencing data.
+multimodal/skewed/constant/near-constant/outlier densities and singleton groups
+with unequal source sizes (18 cases). Nothing uses private sequencing data.
 
 Each case saves original R YAML/PDF, capture JSON, PoreGauge JSON/YAML, plot
 inventory and logs. `comparison.json` includes source/input hashes, Q cutoffs,
@@ -71,14 +72,25 @@ retains all `StatSmooth`/`StatDensity` points; other layers keep metadata/row co
 not complete read point arrays. Comparison targets: hours absolute 1e-10, fitted
 values absolute 1e-6 + relative 1e-6; densities absolute max(peak×1e-7,1e-12) +
 relative 1e-6, plotted-domain integrals absolute 1e-7 + relative 1e-6, peaks within
-one grid interval. These are **provisional targets, not measured R accuracy**.
+one grid interval. Actual bandwidths/domains/kernel/grid size are captured inside
+ggplot2's `compute_density()` without changing its returned values. Bandwidth
+tolerance is absolute 1e-12 + relative 1e-10. The density targets have now been
+met on all executed public/synthetic density groups; fitting remains Partial.
 Unsupported confidence intervals remain explicitly Not yet verified. Density
 integrals are over the plotted domain; unplotted Gaussian tails are not silently
-renormalized to force area one. Constant-domain scaling remains pending actual R
-verification. Failed point/method comparisons are never automatically accepted.
+renormalized to force area one. Constant-domain evaluation is at the unchanged
+single coordinate. Censored/nonfinite R layer predictions stay Not yet verified
+even when Rust predicts a tiny positive value: null is not numerical evidence.
+Failed point/method comparisons are never automatically accepted.
 
 `trends-golden.json` is a small, synthetic-only numerical snapshot of the actual
 `StatSmooth` layers from `fit-small`, `fit-large` and `zero-cutoff`, including
 their exact TSV bytes, reference versions and capture SHA-256. The Rust unit test
 re-runs parsing/fitting and compares every uncensored prediction at the same
 tolerance. It is not evidence that the other paired cases pass.
+
+`density-golden.json` contains 24 synthetic series (22 finite curves and two
+singleton unavailable states), exact observations, actual layer coordinates and
+traced bandwidths, reference versions and capture hashes. Identical All/Q curves
+are stored once. Rust tests check all 11,264 density points, domains, bandwidths,
+integrals and peaks. Full paired results still include the distinct All/Q series.

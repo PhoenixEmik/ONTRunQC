@@ -1,0 +1,886 @@
+{
+  "reference_commit": "54485d586038d8ee36f168dd94f31c423f52f581",
+  "reference_source_sha256": "841253a28a785b9efdc09c855c163646882e01152e26eda509adae2732c6651d",
+  "capture_script_sha256": "e1da9e9aaa32bf645f8771f858f4010524d533bf41a5cd7568811522d9cdc11f",
+  "poregauge_binary_sha256": "978d295e09ed5f16b6304924e529ff323074a3bea4e5081e36f6e822216e6bf9",
+  "comparison_sha256": "2eaeeb47879578a1a5e808c23ea111ec7bf4c5aee8e0f77ea0decbf76d9a721d",
+  "environment": {
+    "r": "4.4.1",
+    "ggplot2": "3.5.1",
+    "mgcv": "1.9.1",
+    "session": [
+      "R version 4.4.1 (2024-06-14)",
+      "Platform: aarch64-apple-darwin20.0.0",
+      "Running under: macOS 27.0.1",
+      "",
+      "Matrix products: default",
+      "BLAS/LAPACK: /private/tmp/poregauge-r441/lib/libopenblas.0.dylib;  LAPACK version 3.12.0",
+      "",
+      "locale:",
+      "[1] C",
+      "",
+      "time zone: UTC",
+      "tzcode source: system (macOS)",
+      "",
+      "attached base packages:",
+      "[1] stats     graphics  grDevices utils     datasets  methods   base     ",
+      "",
+      "other attached packages:",
+      "[1] yaml_2.3.12    jsonlite_1.8.8 ggplot2_3.5.1 ",
+      "",
+      "loaded via a namespace (and not attached):",
+      " [1] R6_2.6.1         magrittr_2.0.5   gtable_0.3.6     glue_1.8.1      ",
+      " [5] tibble_3.3.1     pkgconfig_2.0.3  lifecycle_1.0.5  cli_3.6.6       ",
+      " [9] scales_1.3.0     grid_4.4.1       vctrs_0.7.3      withr_3.0.3     ",
+      "[13] compiler_4.4.1   tools_4.4.1      munsell_0.5.1    pillar_1.11.1   ",
+      "[17] colorspace_2.1-3 rlang_1.3.0     "
+    ],
+    "packages": [
+      {
+        "Package": "MASS",
+        "Version": "7.3-66",
+        "_row": "MASS"
+      },
+      {
+        "Package": "Matrix",
+        "Version": "1.7-6",
+        "_row": "Matrix"
+      },
+      {
+        "Package": "R6",
+        "Version": "2.6.1",
+        "_row": "R6"
+      },
+      {
+        "Package": "RColorBrewer",
+        "Version": "1.1-3",
+        "_row": "RColorBrewer"
+      },
+      {
+        "Package": "Rcpp",
+        "Version": "1.1.2",
+        "_row": "Rcpp"
+      },
+      {
+        "Package": "assertthat",
+        "Version": "0.2.1",
+        "_row": "assertthat"
+      },
+      {
+        "Package": "base",
+        "Version": "4.4.1",
+        "_row": "base"
+      },
+      {
+        "Package": "bit",
+        "Version": "4.6.0",
+        "_row": "bit"
+      },
+      {
+        "Package": "bit64",
+        "Version": "4.8.6",
+        "_row": "bit64"
+      },
+      {
+        "Package": "cli",
+        "Version": "3.6.6",
+        "_row": "cli"
+      },
+      {
+        "Package": "clipr",
+        "Version": "0.8.1",
+        "_row": "clipr"
+      },
+      {
+        "Package": "colorspace",
+        "Version": "2.1-3",
+        "_row": "colorspace"
+      },
+      {
+        "Package": "compiler",
+        "Version": "4.4.1",
+        "_row": "compiler"
+      },
+      {
+        "Package": "cpp11",
+        "Version": "0.5.5",
+        "_row": "cpp11"
+      },
+      {
+        "Package": "crayon",
+        "Version": "1.5.3",
+        "_row": "crayon"
+      },
+      {
+        "Package": "data.table",
+        "Version": "1.15.4",
+        "_row": "data.table"
+      },
+      {
+        "Package": "datasets",
+        "Version": "4.4.1",
+        "_row": "datasets"
+      },
+      {
+        "Package": "ellipsis",
+        "Version": "0.3.3",
+        "_row": "ellipsis"
+      },
+      {
+        "Package": "fansi",
+        "Version": "1.0.7",
+        "_row": "fansi"
+      },
+      {
+        "Package": "farver",
+        "Version": "2.1.2",
+        "_row": "farver"
+      },
+      {
+        "Package": "formatR",
+        "Version": "1.14",
+        "_row": "formatR"
+      },
+      {
+        "Package": "futile.logger",
+        "Version": "1.4.9",
+        "_row": "futile.logger"
+      },
+      {
+        "Package": "futile.options",
+        "Version": "1.0.1",
+        "_row": "futile.options"
+      },
+      {
+        "Package": "getopt",
+        "Version": "1.21.1",
+        "_row": "getopt"
+      },
+      {
+        "Package": "ggplot2",
+        "Version": "3.5.1",
+        "_row": "ggplot2"
+      },
+      {
+        "Package": "glue",
+        "Version": "1.8.1",
+        "_row": "glue"
+      },
+      {
+        "Package": "grDevices",
+        "Version": "4.4.1",
+        "_row": "grDevices"
+      },
+      {
+        "Package": "graphics",
+        "Version": "4.4.1",
+        "_row": "graphics"
+      },
+      {
+        "Package": "grid",
+        "Version": "4.4.1",
+        "_row": "grid"
+      },
+      {
+        "Package": "gridExtra",
+        "Version": "2.3.1",
+        "_row": "gridExtra"
+      },
+      {
+        "Package": "gtable",
+        "Version": "0.3.6",
+        "_row": "gtable"
+      },
+      {
+        "Package": "hms",
+        "Version": "1.1.4",
+        "_row": "hms"
+      },
+      {
+        "Package": "isoband",
+        "Version": "0.3.0",
+        "_row": "isoband"
+      },
+      {
+        "Package": "jsonlite",
+        "Version": "1.8.8",
+        "_row": "jsonlite"
+      },
+      {
+        "Package": "labeling",
+        "Version": "0.4.3",
+        "_row": "labeling"
+      },
+      {
+        "Package": "lambda.r",
+        "Version": "1.2.4",
+        "_row": "lambda.r"
+      },
+      {
+        "Package": "lattice",
+        "Version": "0.23-1",
+        "_row": "lattice"
+      },
+      {
+        "Package": "lifecycle",
+        "Version": "1.0.5",
+        "_row": "lifecycle"
+      },
+      {
+        "Package": "magrittr",
+        "Version": "2.0.5",
+        "_row": "magrittr"
+      },
+      {
+        "Package": "methods",
+        "Version": "4.4.1",
+        "_row": "methods"
+      },
+      {
+        "Package": "mgcv",
+        "Version": "1.9-1",
+        "_row": "mgcv"
+      },
+      {
+        "Package": "munsell",
+        "Version": "0.5.1",
+        "_row": "munsell"
+      },
+      {
+        "Package": "nlme",
+        "Version": "3.1-170",
+        "_row": "nlme"
+      },
+      {
+        "Package": "optparse",
+        "Version": "1.8.2",
+        "_row": "optparse"
+      },
+      {
+        "Package": "parallel",
+        "Version": "4.4.1",
+        "_row": "parallel"
+      },
+      {
+        "Package": "pillar",
+        "Version": "1.11.1",
+        "_row": "pillar"
+      },
+      {
+        "Package": "pkgconfig",
+        "Version": "2.0.3",
+        "_row": "pkgconfig"
+      },
+      {
+        "Package": "plyr",
+        "Version": "1.8.9",
+        "_row": "plyr"
+      },
+      {
+        "Package": "prettyunits",
+        "Version": "1.2.0",
+        "_row": "prettyunits"
+      },
+      {
+        "Package": "progress",
+        "Version": "1.2.3",
+        "_row": "progress"
+      },
+      {
+        "Package": "readr",
+        "Version": "2.1.5",
+        "_row": "readr"
+      },
+      {
+        "Package": "reshape2",
+        "Version": "1.4.4",
+        "_row": "reshape2"
+      },
+      {
+        "Package": "rlang",
+        "Version": "1.3.0",
+        "_row": "rlang"
+      },
+      {
+        "Package": "scales",
+        "Version": "1.3.0",
+        "_row": "scales"
+      },
+      {
+        "Package": "splines",
+        "Version": "4.4.1",
+        "_row": "splines"
+      },
+      {
+        "Package": "stats",
+        "Version": "4.4.1",
+        "_row": "stats"
+      },
+      {
+        "Package": "stats4",
+        "Version": "4.4.1",
+        "_row": "stats4"
+      },
+      {
+        "Package": "stringi",
+        "Version": "1.8.7",
+        "_row": "stringi"
+      },
+      {
+        "Package": "stringr",
+        "Version": "1.6.0",
+        "_row": "stringr"
+      },
+      {
+        "Package": "tcltk",
+        "Version": "4.4.1",
+        "_row": "tcltk"
+      },
+      {
+        "Package": "tibble",
+        "Version": "3.3.1",
+        "_row": "tibble"
+      },
+      {
+        "Package": "tidyselect",
+        "Version": "1.2.1",
+        "_row": "tidyselect"
+      },
+      {
+        "Package": "tools",
+        "Version": "4.4.1",
+        "_row": "tools"
+      },
+      {
+        "Package": "tzdb",
+        "Version": "0.5.0",
+        "_row": "tzdb"
+      },
+      {
+        "Package": "utf8",
+        "Version": "1.2.6",
+        "_row": "utf8"
+      },
+      {
+        "Package": "utils",
+        "Version": "4.4.1",
+        "_row": "utils"
+      },
+      {
+        "Package": "vctrs",
+        "Version": "0.7.3",
+        "_row": "vctrs"
+      },
+      {
+        "Package": "viridis",
+        "Version": "0.6.5",
+        "_row": "viridis"
+      },
+      {
+        "Package": "viridisLite",
+        "Version": "0.4.3",
+        "_row": "viridisLite"
+      },
+      {
+        "Package": "vroom",
+        "Version": "1.7.1",
+        "_row": "vroom"
+      },
+      {
+        "Package": "withr",
+        "Version": "3.0.3",
+        "_row": "withr"
+      },
+      {
+        "Package": "yaml",
+        "Version": "2.3.12",
+        "_row": "yaml"
+      }
+    ]
+  },
+  "command": "python3 tests/minionqc_reference.py /path/to/pinned/minion_qc --execute-r --rscript /path/to/Rscript --output benchmark-results/minionqc-final --capture-only",
+  "case_count": 18,
+  "reference_completed": 18,
+  "suite_exit_code": 1,
+  "status_counts": {
+    "intentional_semantic_difference": 36,
+    "exact_match": 58185,
+    "rounding_tolerance": 45656,
+    "upstream_minionqc_defect": 8954,
+    "suspected_poregauge_defect": 2400,
+    "not_yet_verified": 604
+  },
+  "unverified_reasons": {
+    "R layer prediction is censored or nonfinite; uncensored reference prediction is unavailable. A null cannot establish a Rust numerical defect or a match.": 460,
+    "Rust confidence intervals are deliberately unavailable until R verification.": 144
+  },
+  "density": {
+    "status_counts": {
+      "rounding_tolerance": 30537,
+      "exact_match": 23183
+    },
+    "curves": 52,
+    "point_pairs": 26624,
+    "maximum_bandwidth_absolute_error": 6.821210263296962e-13,
+    "maximum_x_absolute_error": 1.8189894035458565e-12,
+    "maximum_plotted_integral_absolute_error": 6.687583820053078e-11,
+    "maximum_error_divided_by_reference_peak": 9.212027642994249e-08
+  },
+  "cases": [
+    {
+      "name": "minion",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06",
+          "bytes": 62885923
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "6fbf81ea2b70fbbda7559cb0397df0e833f6cac5b8be658160884eeb59d63c84",
+      "status_counts": {
+        "intentional_semantic_difference": 3,
+        "exact_match": 2581,
+        "rounding_tolerance": 730,
+        "upstream_minionqc_defect": 976,
+        "suspected_poregauge_defect": 304,
+        "not_yet_verified": 20
+      },
+      "failures_by_family": {
+        "fit": 304
+      },
+      "maximum_fit_absolute_error": 1465.2745860456926
+    },
+    {
+      "name": "promethion",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "dd508d9dc645519e1c677fad2e29cc08be372c809bf56d26857e15f8ca20f4ef",
+          "bytes": 20005787
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "a34c1631bc8181e52a9c89375c834a412e8384a9a063f2717db4ffd9c68b8c00",
+      "status_counts": {
+        "exact_match": 15706,
+        "rounding_tolerance": 1750,
+        "upstream_minionqc_defect": 5610,
+        "suspected_poregauge_defect": 320,
+        "not_yet_verified": 4
+      },
+      "failures_by_family": {
+        "fit": 320
+      },
+      "maximum_fit_absolute_error": 70.14415086886675
+    },
+    {
+      "name": "short",
+      "qscore_cutoff": 8,
+      "inputs": [
+        {
+          "sha256": "60a070e325b0c2e3e102b9e7d27c10e1abbe6c5f4e3a18fadba304dabb1cc571",
+          "bytes": 25369
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "1c3e5fb10c0bc5c8ba7882ec57cc2edfef17c8819a2ccd8ad85d4fcc52dfddab",
+      "status_counts": {
+        "intentional_semantic_difference": 4,
+        "exact_match": 899,
+        "rounding_tolerance": 391,
+        "upstream_minionqc_defect": 20,
+        "not_yet_verified": 4
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 2.7284841053187847e-11
+    },
+    {
+      "name": "1d2",
+      "qscore_cutoff": 8,
+      "inputs": [
+        {
+          "sha256": "c71245ad265ed1a1bdd51954928207bef540e376df3961f86b8053c4ce771638",
+          "bytes": 62666661
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "a377ec0a3d0c6a4192faf2c5ea86e720e796a0aab250c4230ef409691dcecdff",
+      "status_counts": {
+        "intentional_semantic_difference": 4,
+        "exact_match": 2514,
+        "rounding_tolerance": 720,
+        "upstream_minionqc_defect": 948,
+        "suspected_poregauge_defect": 320,
+        "not_yet_verified": 4
+      },
+      "failures_by_family": {
+        "fit": 320
+      },
+      "maximum_fit_absolute_error": 63.11121586025911
+    },
+    {
+      "name": "rna",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "1d1860dabc15ed6931028e03d4af3a45cb18a23677c8ee233ae6d6766ed24000",
+          "bytes": 93877
+        }
+      ],
+      "excluded_controls": 37,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "ad87f2921588c741281a687be2af2281632e7c13f2f6c19c4397540bbf26f833",
+      "status_counts": {
+        "intentional_semantic_difference": 5,
+        "exact_match": 2087,
+        "rounding_tolerance": 416,
+        "upstream_minionqc_defect": 306,
+        "not_yet_verified": 4
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 8.810729923425242e-13
+    },
+    {
+      "name": "combined",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06",
+          "bytes": 62885923
+        },
+        {
+          "sha256": "1c77d6b888e496414f88db321c783cf3579f84c551ed25a6e56670afdcca274f",
+          "bytes": 102483106
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "30221b0d0f702042075082bb3fe85a5babc01e5031f50e36e6035c58a6088308",
+      "status_counts": {
+        "intentional_semantic_difference": 5,
+        "exact_match": 6371,
+        "rounding_tolerance": 6317,
+        "upstream_minionqc_defect": 1014,
+        "suspected_poregauge_defect": 1248,
+        "not_yet_verified": 48
+      },
+      "failures_by_family": {
+        "fit": 1248
+      },
+      "maximum_fit_absolute_error": 1465.2745860456926
+    },
+    {
+      "name": "zero-cutoff",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "06955b1fed8cc0b46c5b2fd875178a12acfe98208a16ba20848f7b3253578837",
+          "bytes": 172
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "0d2b2f69b78e8d3782ff283c41ff1bfdea2fd4d9fe1250750732f5fcbb04fe0d",
+      "status_counts": {
+        "intentional_semantic_difference": 11,
+        "exact_match": 312,
+        "upstream_minionqc_defect": 4,
+        "not_yet_verified": 6,
+        "rounding_tolerance": 405
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 2.842170943040401e-14
+    },
+    {
+      "name": "n50-tie",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "aa1403ea76dc683e4700b736232c2322b1bc0dc7881684b1d3d7c3507302c7da",
+          "bytes": 141
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "8452d72a3034bbd0ee8b190216d9328e5e5e3a5a417960f42d0f42b69c62b2a7",
+      "status_counts": {
+        "exact_match": 482,
+        "intentional_semantic_difference": 2,
+        "rounding_tolerance": 150,
+        "suspected_poregauge_defect": 104,
+        "not_yet_verified": 4
+      },
+      "failures_by_family": {
+        "fit": 104
+      },
+      "maximum_fit_absolute_error": 1.8516283701695002
+    },
+    {
+      "name": "ultralong-endpoint",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "16c9eb5bdaa3b2a8730bfacc103fd0fe268aefc325041d00e4a49c59f475e35a",
+          "bytes": 170
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "bec526bb107169426b781e8de723fd37b94a1337b5a9ae46203c100d761f1a17",
+      "status_counts": {
+        "exact_match": 480,
+        "upstream_minionqc_defect": 4,
+        "rounding_tolerance": 150,
+        "suspected_poregauge_defect": 104,
+        "not_yet_verified": 4
+      },
+      "failures_by_family": {
+        "fit": 104
+      },
+      "maximum_fit_absolute_error": 3703.2567403389985
+    },
+    {
+      "name": "fit-small",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "98e715ded9e4f16be42946b65871e7feed021c61249f1d61147e38a17c931e90",
+          "bytes": 3582
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "a9aa83d9b280c167c678b5293e6dd5be2f098a24d5b665666ff9fc0e1aa0e890",
+      "status_counts": {
+        "exact_match": 326,
+        "rounding_tolerance": 404,
+        "upstream_minionqc_defect": 8,
+        "not_yet_verified": 4
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 1.5916157281026244e-12
+    },
+    {
+      "name": "fit-large",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "968f9946facdde24fced2390cdb9045144c529f7a29fa3274646ce4bc291f16d",
+          "bytes": 53467
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "1ebf337cfa5e8017957b8da1a922fefffbdaad50159215ec44a98178831a1c7c",
+      "status_counts": {
+        "exact_match": 275,
+        "rounding_tolerance": 455,
+        "upstream_minionqc_defect": 8,
+        "not_yet_verified": 4
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 6.697515573250712e-06
+    },
+    {
+      "name": "fit-sparse",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "729b945c03dbb52c0d60e15446b382dd5a89b41943f6d024fbebaa7c651cc4a3",
+          "bytes": 32828
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "cc2db87805602b140e1b1387acb7f3435710436ca71cf3c819d400ca735e3b92",
+      "status_counts": {
+        "exact_match": 76,
+        "rounding_tolerance": 6,
+        "upstream_minionqc_defect": 8
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": null
+    },
+    {
+      "name": "density-multimodal",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "2f1b14590e3192033d15158bd643dcba0ccb214eee0cce7d171685d15593a72d",
+          "bytes": 1357
+        },
+        {
+          "sha256": "4d60629052c453e390136e5ec8f2c47613a1c5eb8cf93614b04adfb879f6000b",
+          "bytes": 298
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "4d69b09441bc6e6754b03ea935bed97490a039e1a6f03af0d581182795c5c0ab",
+      "status_counts": {
+        "exact_match": 4639,
+        "rounding_tolerance": 6224,
+        "upstream_minionqc_defect": 8,
+        "not_yet_verified": 100
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 1.0913936421275139e-11
+    },
+    {
+      "name": "density-skewed",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "f1e2f711a6c0741c04afc93c8bfc17a8ff8b81941cff24eef0b5878b75a983cf",
+          "bytes": 626
+        },
+        {
+          "sha256": "712568e53d715460a6d0f16ed141a5c3f58c5bb0a6bade7891c74898a60ba0f4",
+          "bytes": 289
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "5c29919df788a21013edd01bd9094f6ccd7f37ddc4aa870369e4265c435ce272",
+      "status_counts": {
+        "exact_match": 4391,
+        "rounding_tolerance": 6302,
+        "upstream_minionqc_defect": 10,
+        "not_yet_verified": 268
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 1.30385160446167e-08
+    },
+    {
+      "name": "density-constant",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "67b067cb3135cfefa967d29235d5541cae08e2a2d1bb9995e47f8b388d4a33a4",
+          "bytes": 867
+        },
+        {
+          "sha256": "d6820ce44683b029c73b3e108f55b0a81390f323a6ad04631f6d0bce3249612a",
+          "bytes": 310
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "6ebbefded417371499e132b940895b3ec416d7cfc627ab53828544c2db2216e4",
+      "status_counts": {
+        "exact_match": 5429,
+        "upstream_minionqc_defect": 8,
+        "rounding_tolerance": 5518,
+        "not_yet_verified": 16
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 1.4210854715202004e-13
+    },
+    {
+      "name": "density-near",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "a99baf8607a8ffb3e0e641d114ab4bd6b836dd467d95455e1685efc02d0c2a50",
+          "bytes": 1137
+        },
+        {
+          "sha256": "e1f28cb7b155258869937d00a97a523506771d1f355d067f3a2c64a0ef8acdc4",
+          "bytes": 386
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "1017d867c3b9f85c7dc16ebb675cdccda7ef1e554743b723e4e922cccdeb3595",
+      "status_counts": {
+        "exact_match": 4505,
+        "rounding_tolerance": 6442,
+        "upstream_minionqc_defect": 8,
+        "not_yet_verified": 16
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 2.5579538487363607e-13
+    },
+    {
+      "name": "density-outliers",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "2710b620efe09dd0d8c31618a327d136614e3cc83b86e93e10e070c49d943925",
+          "bytes": 860
+        },
+        {
+          "sha256": "3573933e566f9a637b58bbc1c041e2db510d007e63ce06298b2053ee4c61aef8",
+          "bytes": 298
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "8f2400931d9b3529077264d97abd5b4454b53da07ba1b0ca7df4169f76c77cb2",
+      "status_counts": {
+        "exact_match": 4359,
+        "rounding_tolerance": 6510,
+        "upstream_minionqc_defect": 12,
+        "not_yet_verified": 90
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 5.587935447692871e-09
+    },
+    {
+      "name": "density-singleton",
+      "qscore_cutoff": 7,
+      "inputs": [
+        {
+          "sha256": "7953c5d1670002b90b32da3f22c281d7e1b5a2bca6945f042a40cbb94b8dc74b",
+          "bytes": 136
+        },
+        {
+          "sha256": "e30533cbd10c72fa30bda026dc714cdf59b6f189083ff605f48bae07e1bddc66",
+          "bytes": 101
+        }
+      ],
+      "excluded_controls": 0,
+      "reference_completed": true,
+      "reference_returncode": 0,
+      "reference_capture_sha256": "b8e5ae15db8737cddff0c1f481d4bbb5e52c30d24065192647b7c55ca9ad1b02",
+      "status_counts": {
+        "exact_match": 2753,
+        "rounding_tolerance": 2766,
+        "intentional_semantic_difference": 2,
+        "upstream_minionqc_defect": 2,
+        "not_yet_verified": 8
+      },
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 1.7053025658242404e-13
+    }
+  ],
+  "limitations": [
+    "Full suite does not pass: all 2400 suspected defects are fitted predictions (#12).",
+    "GAM uses bounded approximate unique-time knots above 4096; singular four-read LOESS differs; confidence intervals unavailable.",
+    "Capture-only executes actual upstream YAML and ggplot layers without PDF files; a separate short case generated 11 PDFs.",
+    "No private PBM95914 raw summary was reprocessed.",
+    "Native transitive packages are recorded, not claimed identical to the dated optional Docker snapshot."
+  ]
+}

@@ -648,8 +648,10 @@ reference comparison populations, separate from basecalled Q-score statistics.
 
 Bandwidth is Gaussian `bw.nrd0`, sample SD and type-7 IQR/1.34, adjust 1. All groups
 share the plot's observed scale domain (`trim=false`); selected groups do not
-silently acquire independent X grids. Degenerate domains provisionally use width
-1, pending real ggplot validation. R 4.4 corrected coordinates (`old.coords=false`)
+silently acquire independent X grids. For constant domains, all 512 evaluations
+use the single unchanged coordinate, matching actual ggplot2 `scale$dimension()`.
+HTML expands only the display axis and shows evaluated points, with an explicit
+constant-domain note. It never invents a statistical range. R 4.4 corrected coordinates (`old.coords=false`)
 use 512 linear mass bins, an internal domain extended by four bandwidths and a
 zero-padded discrete Gaussian convolution, then linear interpolation to 512 plot
 points. Direct convolution replaces FFT computation, without another dependency;
@@ -668,6 +670,12 @@ single-observation fallback behavior remains unchanged in legacy distributions.
 Tests cover known bandwidths, integral mass on a sufficiently wide domain,
 symmetry/peaks, close/constant observations, long tails, shared domains, unequal
 source sizes, zero-Q population distinctions, determinism and unchanged old QC.
-The executable harness compares every density point, plotted-domain integral and
-peak position to actual ggplot layers when R is available. No R results were
-measured in this environment; all tolerances remain provisional acceptance targets.
+The executable harness now captures actual ggplot2 bandwidths as well as every
+density point, plotted-domain integral and peak position. Pinned R 4.4.1 / ggplot2
+3.5.1 comparisons passed on public combined inputs and six synthetic density
+cases, including singleton groups. Checked-in synthetic-only golden data cover
+11,264 points plus unavailable singletons. Tolerances and measured errors are in
+`minionqc-parity.md`; direct convolution is not claimed bit-identical to FFT.
+The optional estimator's descriptive `method` now omits the obsolete
+`unverified` suffix; report fields, legacy distributions and core metrics retain
+their definitions.

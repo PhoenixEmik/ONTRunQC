@@ -1125,7 +1125,7 @@ impl Aggregator {
                 .zero_qscores
                 .partition_point(|q| *q < self.comparison.cutoff)..];
             Some(DistributionEstimates {
-                method: "R4.4_gaussian_nrd0_grid512_ext4_discrete_convolution_unverified",
+                method: "R4.4.1_gaussian_nrd0_grid512_ext4_discrete_convolution",
                 length_log10: crate::density::estimate(
                     || ascending_lengths(all_lengths).map(|n| (n as f64).log10()),
                     self.reference_domain.length,

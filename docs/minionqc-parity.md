@@ -56,7 +56,7 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 | PromethION physical read-level overview | Not applicable | Upstream omits the per-read channel panels for PromethION. |
 | PromethION `length_vs_q` | Complete | Bounded logarithmic-length/Q count heatmaps, matching the upstream bin2d analysis family; fixed documented bins, no individual read points; U joint count conservation, V. |
 | `combined_length_histogram`, `combined_q_histogram`, `combined_yield_by_length` | Complete | Pooled All/Q observations and exact yield queries; U pooled conservation/exact median/N50, P multiple inputs, V. |
-| Per-source `length_distributions`, `q_distributions` | Partial | Legacy KDE retained; opt-in shared-domain R-grid estimates, including summary Q observations. U kernel/bandwidth/mass tests; actual R differential accuracy pending. |
+| Per-source `length_distributions`, `q_distributions` | Complete | Opt-in shared-domain R-grid estimator, including summary Q observations; actual pinned-R comparison of 52 curves meets documented tolerances. U synthetic R goldens; executable evidence below. Legacy KDE remains separately labeled. |
 | Per-source `yield_over_time`, `yield_by_length` | Complete | Absolute yields, common units/colors; U combined report/curve tests, P pooled totals, V. Run/source labels never invent flowcell identity. |
 | Per-source `length_by_hour`, `q_by_hour` | Partial | All/Q unsmoothed means plus opt-in raw-read fits with global method selection; U collection/time and fit tests. Exact R fits/ribbons remain Partial. |
 
@@ -110,102 +110,104 @@ export's 89 SVG files passed XML parsing; Ruby Psych independently parsed a YAML
 summary and confirmed its integer yield against JSON. These are validation
 checks, not full-run performance benchmarks. No Rust dependencies were added.
 
-## Executable reference validation (#11)
+## Executable reference validation (#11): Complete
 
-The optional [paired R harness](../tests/reference/README.md) runs the exact pinned
-script and actual `ggplot_build()` layers, with R 4.4.1 / ggplot2 3.5.1 / mgcv
-1.9-1 and a dated CRAN snapshot. It records source/input hashes, environment,
-actual YAML, plot metadata and machine-readable differences. Statuses distinguish
-exact, rounding-tolerance, intentional semantic, suspected PoreGauge defect,
-proved upstream defect and unverified results. The validation-only Rust probe
-preserves upstream file-scoped populations without changing CLI run grouping.
+Actual execution on 2026-10-18 used the unchanged pinned MinIONQC script, native
+macOS arm64 **R 4.4.1 / ggplot2 3.5.1 / mgcv 1.9-1**. Installed versions are
+checked before analysis, not inferred from an environment name. Full package
+versions/sessionInfo are recorded; native transitive versions are not claimed
+identical to the optional dated Docker snapshot. Normal PoreGauge never needs R.
 
-Actual execution (2026-10-18): all **17 cases executed the unmodified R script to
-completion**, including MinION, PromethION, short, 1D2, RNA, two-flowcell pooled
-QC and the synthetic boundary/fit/density cases. Native macOS arm64 versions were
-checked: R 4.4.1, ggplot2 3.5.1, mgcv 1.9-1. Complete transitive package versions
-are captured; these are not claimed identical to the optional CRAN snapshot.
-The first full `--capture-only` run saved actual YAML and numerical ggplot layers
-in `benchmark-results/minionqc-closure/`. It returned **1**, with 50,254 exact,
-38,165 tolerance, 34 intentional differences, 8,946 upstream defects, **10,425
-suspected defects** and 592 unverified checks. The suspected differences were
-GAM/singular LOESS, constant-domain densities, and six ultralong endpoint checks
-whose proof was too narrow (now extended to every full-prefix strict-half N50
->=100 kb, with the reference count/yield checked independently). They are not
-accepted as equivalent. Subsequent corrections/results are recorded below.
-A separate preflight-enabled short run also generated **11 actual PDF figures**;
-its four confidence-band comparisons remain unverified (exit 2).
+All original **17 cases plus a singleton case (18 total)** completed the R side
+with exit 0: MinION, PromethION, short, 1D2, RNA, two-flowcell pooled QC, zero/cutoff/
+N50/ultralong boundaries, small/large/sparse fits and six density scenarios.
+The final paired run used `--capture-only`: actual YAML and `ggplot_build()` layer
+values, metadata, panels, axes and legends were generated without PDF rendering.
+A separate short run generated **11 actual PDF figures**. The file-population
+probe preserves upstream grouping without changing production run identity.
 
-The harness now checks installed versions before analysis, checkpoints every
-case, and records execution/completion/exit status and capture hashes. Six Python
-harness tests pass. Use an existing R installation as documented; automatic R CI
-builds remain removed. #11 execution evidence does not establish #12/#13 parity.
+The full comparison is `benchmark-results/minionqc-final/comparison.json`.
+The committed [machine-readable summary](../tests/reference/validation-summary.json)
+records input/source/capture/binary hashes, checked versions, per-case completion,
+counts and maximum errors. Run instructions are in the
+[reference README](../tests/reference/README.md). Cases checkpoint independently;
+wrong versions fail preflight and unavailable/partial R output never fabricates
+comparisons. Seven Python harness tests pass.
+
+| Final check classification | Count |
+| --- | ---: |
+| Exact match | 58,185 |
+| Within declared tolerance | 45,656 |
+| Intentional semantic difference | 36 |
+| Proved upstream defect | 8,954 |
+| Suspected PoreGauge defect | **2,400** |
+| Not yet verified | **604** |
+
+**The suite returns 1, not success.** Every suspected defect is a fitted prediction
+tracked by #12; none is a core scalar/channel/density mismatch. The 604 unverified
+checks are 460 censored/nonfinite R predictions and 144 unavailable Rust confidence
+bands. A null R layer value is not a zero or evidence of agreement. Upstream count
+and ultralong endpoint bugs are classified only with independent numerical proof.
+Execution/harness completion is not a claim that scientific parity is complete.
 
 ## Fitted time trends (#12): Partial
 
-`--minionqc-trends` now renders separate individual-read fits in single and
-comparative reports without replacing interval means. The implementation follows
-[ggplot2 3.5.1 method selection](https://github.com/tidyverse/ggplot2/blob/v3.5.1/R/stat-smooth.R):
-largest group across panels, LOESS for <1,000, otherwise mgcv-style `cs`/REML.
-Bounded unique-time knots and a second streaming pass avoid unbounded paired-read
-retention. LOESS now uses padded boundaries, median-split cells and Hermite
-interpolation of fitted vertex values/derivatives (cell .2). R's pseudoinverse
-for some singular local fits, exact large-group GAM knots/null-space orientation
-and confidence bands are **not** claimed equivalent. Algorithm and population details
-are in metrics.md. Polynomial/spline/constant-model unit tests and CLI regressions
-passed.
+Existing unsmoothed 15-minute means are unchanged. Optional individual-read fits
+follow pinned ggplot2 method selection: largest group across panels, LOESS below
+1,000, otherwise cubic-shrinkage `cs` (k=10) with REML. Single Q plots model the
+upstream pre-fit nonnegative y limit; combined Q plots retain signed observations.
 
-Limited actual R comparison: the unchanged public short fixture at Q8, pinned
-upstream `54485d5`, ran to completion under native macOS arm64 R 4.4.1, ggplot2
-3.5.1, mgcv 1.9-1, data.table 1.15.4, readr 2.1.5 and scales 1.3.0. All four
-80-point fits (length/Q, All/Q8) met the stated tolerances: 320 fitted values,
-maximum absolute error **1.274e-10**, maximum relative error **1.855e-14**; maximum
-X error **1.388e-17 h**. The harness recorded 888 exact, 402 within tolerance,
-four intentional population differences, 20 proved upstream channel-count bugs
-and four unverified confidence-band comparisons. This is one fixture, not proof
-of GAM, density or complete-suite parity. Native transitive packages differ from
-the dated container snapshot; full package versions/sessionInfo are in the local
-capture. No private input or derived report was committed.
-The executable harness compares methods, all 80 X/Y points and explicitly records
-unverified confidence intervals. Issue #12 remains open.
+The focused correction uses equilibrated Householder QR and three-column Jacobi
+SVD local solves with R's 100-epsilon pseudoinverse cutoff, plus singleton splits
+in zero-cell interpolation trees. It recovers the zero/cutoff subset and retains
+bounded storage. [Synthetic R goldens](../tests/reference/trends-golden.json)
+verify **958 uncensored fitted values** across small/irregular LOESS, 1,500-read
+GAM and zero/cutoff inputs: max absolute error **6.698e-6**, within absolute 1e-6
++ relative 1e-6. Their exact synthetic TSV bytes and capture hashes are retained.
+Short and RNA public fits also meet the target for available R values.
 
-Actual full-suite follow-up: the GAM cases with >4,096 unique start times fail
-the fitted-value target with approximate knots; these are reported as suspected
-defects, not rounded away. The 1,500-read synthetic GAM meets the target. A focused
-LOESS correction now uses equilibrated QR/SVD local solves and singleton cell
-splits, recovering the zero/cutoff subset. `tests/reference/trends-golden.json`
-contains only synthetic inputs and actual pinned-R layer values, with capture
-hashes. Its small/large/zero-cutoff test compares **958 uncensored fitted values**:
-maximum absolute error **6.698e-6**, within absolute 1e-6 + relative 1e-6.
-Two reference-negative length predictions are scale-censored, not invented zeros.
-Four-read N50/ultralong fixtures remain roundoff-sensitive in rank-deficient
-neighborhoods; confidence intervals remain unavailable. These limitations keep
-#12 **Partial/open**. No raw time-bin or core QC metric changed.
+Remaining failed comparisons are explicit: large-group GAM with >4,096 unique
+times uses bounded approximate knots (max length-fit error **1,465.27 bp** MinION,
+**70.14 bp** PromethION, **63.11 bp** 1D2). Exact unique-time knots would require
+additional storage or selection passes; neither is silently substituted here.
+Four-read N50/ultralong fixtures remain roundoff-sensitive in singular LOESS
+neighborhoods (104 failures each). Null-space orientation and confidence bands
+are not claimed equivalent; `confidence_interval` stays null. #12 remains open.
 
-## R-grid densities (#13): Partial
+## R-grid densities (#13): Complete within declared tolerances
 
-`--minionqc-density` adds a separate R 4.4-style Gaussian estimator and uses it in
-combined distribution charts. Legacy density values remain available unchanged.
-The estimator uses shared scale domains, transformed log lengths, `bw.nrd0`,
-512 mass/evaluation bins, four-bandwidth extension and direct discrete convolution
-of the same padded-grid kernel. Summary-Q density explicitly includes zero-length
-rows; ordinary basecalled quality metrics still exclude them. Details and extra
-optional zero-Q storage are documented in metrics.md.
+The opt-in estimator now matches actual constant-domain behavior: all 512
+coordinates remain at the single observed value, rather than inventing a width.
+HTML expands only its display axis and shows evaluated points with an explanatory
+note. Other domains, bin definitions and legacy distributions are unchanged.
 
-Tests passed for bandwidth, area/symmetry/peaks, near-identical/constant values,
-long tails, unequal sizes and shared axes. The expanded optional harness covers
-17 public/synthetic cases and compares 512 X/density values per series, domain
-integrals and peak locations. It does not confuse an observed-domain integral
-with full Gaussian mass or auto-accept mismatches. **Actual R verification remains
-unavailable**; constant-domain expansion, FFT rounding and fitted confidence bands
-are not verified. Neither #12 nor #13 is promoted to Complete or closed.
+Actual `compute_density()` instrumentation captures bandwidth, n, domain, kernel
+and grid size without modifying returned estimates. **52 curves / 26,624 point
+pairs**, including public combined inputs, All/Q subsets, unequal sizes,
+multimodal/skewed/constant/near-constant/outlier data and singleton unavailability,
+passed all 53,720 density checks. Measured maxima:
 
-Current closure checks: rustfmt, warning-free Clippy, **25 unit +81 integration
-tests**, four Python harness tests and the locked release build passed. The
-optional Rust file-population probe also executed on the public short fixture
-and produced 80-point fits and 512-point densities; this is not an R comparison.
-Chrome inspection covered the new combined views at 1440/390 px; all 87 exported
-synthetic SVG files passed XML parsing. No private-data rerun or performance
-benchmark was performed. No Rust dependencies were added. Fits require an extra
-streaming pass; optional summary-Q densities retain eight bytes per zero-length
-Q observation in addition to existing buffers.
+- Bandwidth absolute error **6.821e-13**; X error **1.819e-12**.
+- Curve error divided by its reference peak **9.212e-8**.
+- Plotted-domain integral error **6.688e-11**; peaks within one grid interval.
+
+Bandwidth tolerance: absolute 1e-12 + relative 1e-10. X: absolute 1e-10 + relative
+1e-12. Density: absolute max(reference peak × 1e-7, 1e-12) + relative 1e-6.
+Integral: absolute 1e-7 + relative 1e-6. Tiny tail-relative errors are not useful;
+the stated absolute/peak criterion applies. This is not bit-identical FFT output.
+The observed-domain integral is not forced to one; constant-domain area is zero.
+Lengths are transformed with log10 before estimation (density per log10(bp)),
+with no raw-length Jacobian or boundary reflection. Summary Q includes zero lengths.
+
+[Synthetic-only density goldens](../tests/reference/density-golden.json) test all
+11,264 points in 22 distinct curves plus two unavailable singleton states, exact
+bandwidths/domains, integrals and peaks. Duplicate identical All/Q snapshots are
+stored once; the paired suite still checks both. Scientific details and optional
+zero-Q storage costs are in [metrics](metrics.md#optional-r-grid-density-estimates-13).
+
+Final checks: rustfmt, warning-free Clippy, **28 unit +82 integration tests**, seven
+Python harness tests and the locked release build passed; one optional probe is
+ignored by routine tests and executed by the paired suite. Chrome `file://`
+inspection verified the constant-domain points/axes/legend; no new mobile rendering
+check was performed. No private PBM95914 raw summary or large benchmark was run.
+No runtime dependencies were added; fits and KDE remain bounded as documented.

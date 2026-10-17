@@ -2903,6 +2903,41 @@ fn reference_densities_share_domains_across_unequal_sources_and_are_deterministi
 }
 
 #[test]
+fn constant_reference_density_keeps_r_grid_and_displays_evaluated_points() {
+    let directory = TestDirectory::new();
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv");
+    fs::write(&a, format!("{HEADER}{ROW}{ROW}")).unwrap();
+    fs::write(
+        &b,
+        format!(
+            "{HEADER}{}{}",
+            ROW.replace("synthetic-run", "second"),
+            ROW.replace("synthetic-run", "second")
+        ),
+    )
+    .unwrap();
+    let report = run_collection(&directory, &[&a, &b], &["--minionqc-density"]);
+    for run in report["collection"]["runs"].as_array().unwrap() {
+        for field in [
+            "length_log10",
+            "qscore",
+            "selected_length_log10",
+            "selected_qscore",
+        ] {
+            let points = run["minionqc_density"][field]["points"].as_array().unwrap();
+            assert_eq!(points.len(), 512);
+            assert!(points.iter().all(|p| p["x"] == points[0]["x"]));
+        }
+    }
+    let html = fs::read_to_string(directory.0.join("output/combined/report.html")).unwrap();
+    assert!(html.contains("constant-density-point"));
+    assert!(html.contains("Constant observed domain"));
+    assert!(!html.contains("NaN"));
+    assert!(!html.contains("src=\"https://"));
+}
+
+#[test]
 fn optional_reference_views_keep_untrusted_metadata_escaped_and_offline() {
     let directory = TestDirectory::new();
     let data = format!(

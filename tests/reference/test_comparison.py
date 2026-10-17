@@ -47,14 +47,29 @@ class Classification(unittest.TestCase):
 
 
 class NumericalLayers(unittest.TestCase):
+    def test_censored_reference_prediction_is_not_a_false_match_or_defect(self):
+        from minionqc_differential import fitted_comparisons
+        reference={"plots":[dict(file="length_by_hour.pdf",directory="source_001",
+            panels=[{"PANEL":"1"}],colours=["indigo"],colour_labels=["All reads"],
+            layers=[dict(stat="StatSmooth",method="loess",data=[dict(PANEL="1",group=1,colour="indigo",x=0,y=None)])])]}
+        probe={"reference_sources":[dict(source_id="source_001",fitted_trends={"single":[dict(
+            population="all_summary_records",metric="length_bp",method="loess",points=[dict(hours=0,value=1e-14)])]})]}
+        checks=fitted_comparisons(reference,probe)
+        self.assertEqual(next(c["status"] for c in checks if c["metric"].endswith(".fitted")),"not_yet_verified")
+
     def test_density_comparison_checks_coordinates_values_and_integral(self):
         from minionqc_differential import density_comparisons
         reference={"plots":[{"file":"q_distributions.pdf","panels":[{"PANEL":"1","Q_cutoff":"All reads"}],"colours":["indigo"],"colour_labels":["source_001"],"layers":[{"stat":"StatDensity","data":[{"PANEL":"1","group":1,"colour":"indigo","x":0,"density":0.5},{"PANEL":"1","group":1,"colour":"indigo","x":1,"density":0.5}]}]}]}
         probe={"reference_sources":[{"source_id":"source_001","density":{"qscore":{"points":[{"x":0,"density":0.5},{"x":1,"density":0.5}]}}}]}
+        reference["plots"][0]["density_parameters"]=[dict(bandwidth=.25,observations=4,
+            **{"from":0,"to":1,"kernel":"gaussian","grid_points":2})]
+        probe["reference_sources"][0]["density"]["qscore"].update(bandwidth=.25,observations=4)
         checks=density_comparisons(reference,probe)
         self.assertTrue(all(c["status"]=="exact_match" for c in checks))
         self.assertEqual(next(c["reference"] for c in checks if c["metric"].endswith("integral_on_plotted_domain")),0.5)
         probe["reference_sources"][0]["density"]["qscore"]["points"][0]["density"]=0.8
         self.assertTrue(any(c["status"]=="suspected_poregauge_defect" for c in density_comparisons(reference,probe)))
+        reference["plots"][0].pop("density_parameters")
+        self.assertTrue(any(c["status"]=="not_yet_verified" for c in density_comparisons(reference,probe)))
 
 if __name__=="__main__": unittest.main()

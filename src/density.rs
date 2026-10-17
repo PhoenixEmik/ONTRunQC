@@ -72,11 +72,9 @@ pub fn estimate<I: Iterator<Item = f64>>(
     if !bandwidth.is_finite() || bandwidth <= 0.0 {
         return None;
     }
-    let [mut from, mut to] = domain.unwrap_or([first, last]);
-    if from == to {
-        from -= 0.5;
-        to += 0.5;
-    } // ggplot's degenerate continuous scale width
+    // StatDensity uses scale$dimension(), before display expansion. For a
+    // constant scale R evaluates all 512 points at the same coordinate.
+    let [from, to] = domain.unwrap_or([first, last]);
     // Compute in bandwidth units for stable nearby/large finite observations.
     let lower = (from - origin) / bandwidth - 4.0;
     let upper = (to - origin) / bandwidth + 4.0;
@@ -105,7 +103,11 @@ pub fn estimate<I: Iterator<Item = f64>>(
     let points: Vec<_> = (0..512)
         .map(|i| {
             let f = i as f64 / 511.0;
-            let x = from * (1.0 - f) + to * f;
+            let x = if from == to {
+                from
+            } else {
+                from * (1.0 - f) + to * f
+            };
             let position = (((x - origin) / bandwidth - lower) / step).clamp(0.0, 511.0);
             let j = (position.floor() as usize).min(510);
             let weight = position - j as f64;
@@ -127,6 +129,84 @@ pub fn estimate<I: Iterator<Item = f64>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn actual_r_density_grids_bandwidths_and_domains() {
+        let golden: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/reference/density-golden.json")).unwrap();
+        for series in golden["series"].as_array().unwrap() {
+            let values: Vec<_> = series["values"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_f64().unwrap())
+                .collect();
+            let parameters = &series["parameters"];
+            let domain = [
+                parameters["from"].as_f64().unwrap(),
+                parameters["to"].as_f64().unwrap(),
+            ];
+            let actual = estimate(|| values.iter().copied(), Some(domain));
+            if values.len() < 2 {
+                assert!(actual.is_none());
+                assert!(series["points"].as_array().unwrap().is_empty());
+                continue;
+            }
+            let actual = actual.unwrap();
+            let bw = parameters["bandwidth"].as_f64().unwrap();
+            assert!((actual.bandwidth - bw).abs() <= 1e-12 + bw.abs() * 1e-10);
+            assert_eq!(
+                actual.observations,
+                parameters["observations"].as_u64().unwrap() as usize
+            );
+            let expected = series["points"].as_array().unwrap();
+            assert_eq!(actual.points.len(), expected.len());
+            let peak = expected
+                .iter()
+                .map(|p| p[1].as_f64().unwrap())
+                .fold(0.0, f64::max);
+            for (p, r) in actual.points.iter().zip(expected) {
+                let (x, y) = (r[0].as_f64().unwrap(), r[1].as_f64().unwrap());
+                assert!((p.x - x).abs() <= 1e-10 + x.abs() * 1e-12);
+                assert!(
+                    (p.density - y).abs() <= (peak * 1e-7).max(1e-12) + y.abs() * 1e-6,
+                    "{} {} at {x}: {} != {y}",
+                    series["case"],
+                    series["metric"],
+                    p.density
+                );
+            }
+            let actual_area: f64 = actual
+                .points
+                .windows(2)
+                .map(|p| (p[1].x - p[0].x) * (p[0].density + p[1].density) / 2.0)
+                .sum();
+            let reference_area: f64 = expected
+                .windows(2)
+                .map(|p| {
+                    (p[1][0].as_f64().unwrap() - p[0][0].as_f64().unwrap())
+                        * (p[0][1].as_f64().unwrap() + p[1][1].as_f64().unwrap())
+                        / 2.0
+                })
+                .sum();
+            assert!((actual_area - reference_area).abs() <= 1e-7 + reference_area.abs() * 1e-6);
+            let r_peak = expected
+                .iter()
+                .max_by(|a, b| a[1].as_f64().unwrap().total_cmp(&b[1].as_f64().unwrap()))
+                .unwrap()[0]
+                .as_f64()
+                .unwrap();
+            let p_peak = actual
+                .points
+                .iter()
+                .max_by(|a, b| a.density.total_cmp(&b.density))
+                .unwrap()
+                .x;
+            assert!((p_peak - r_peak).abs() <= (domain[1] - domain[0]).abs() / 511.0 + 1e-10);
+            if domain[0] == domain[1] {
+                assert!(actual.points.iter().all(|p| p.x == domain[0]));
+            }
+        }
+    }
     #[test]
     fn gaussian_convolution_preserves_mass_symmetry_and_peaks() {
         let x = [-2.0, -2.0, -1.9, 1.9, 2.0, 2.0];

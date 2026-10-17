@@ -149,7 +149,7 @@ fn combined_comparisons(out: &mut String, report: &Report) {
     fitted_trend_plot(out, report, true, false);
     fitted_trend_plot(out, report, true, true);
     if report.minionqc_density.is_some() {
-        out.push_str("<p class=\"annotation\">R-grid density mode: Gaussian bw.nrd0, shared transformed scale domain, 512 mass/evaluation bins, extension of four bandwidths and direct discrete convolution equivalent to zero-padded FFT convolution. Q-score includes zero-length summary records; log-length density excludes them. Plotted-domain area may be below one because tails lie outside the observed range. Actual R numerical verification remains pending.</p>");
+        out.push_str("<p class=\"annotation\">R-grid density mode: Gaussian bw.nrd0, shared transformed scale domain, 512 mass/evaluation bins, extension of four bandwidths and direct discrete convolution equivalent to zero-padded FFT convolution. Q-score includes zero-length summary records; log-length density excludes them. Plotted-domain area may be below one because tails lie outside the observed range. Numerically validated against pinned R 4.4.1 / ggplot2 3.5.1 on public and synthetic fixtures.</p>");
     }
     out.push_str("<p class=\"annotation\">Legacy distribution estimates retained in JSON use Gaussian KDE with R-compatible bw.nrd0 bandwidth and bounded linear binning, normalized within each population. Length density uses log10(bp). Means retain unsmoothed 15-minute bins; gaps are not connected. Cumulative points attribute the entire bin's yield to its read-start interval. Color assignments are consistent across charts (palette repeats after eight sources). Exact histogram counts, thresholds and interval denominators remain in JSON.</p></section>");
 }
@@ -207,12 +207,25 @@ fn comparison_distribution(
         return;
     };
     let xmax = points.iter().map(|p| p.x).reduce(f64::max).unwrap();
+    let constant = xmax == xmin;
     let maximum = points
         .iter()
         .map(|p| p.density)
         .reduce(f64::max)
         .unwrap_or(0.0);
-    if xmax <= xmin || maximum <= 0.0 {
+    if maximum <= 0.0 {
+        empty_chart(out, "Density unavailable for this plotting range.");
+        return;
+    }
+    // Expand only the display axis for a constant statistical domain. The R
+    // grid stays unchanged; show its evaluated value as a point, not a curve.
+    let padding = (xmin.abs() * 0.05).max(0.5);
+    let (xmin, xmax) = if constant {
+        (xmin - padding, xmax + padding)
+    } else {
+        (xmin, xmax)
+    };
+    if !xmin.is_finite() || !xmax.is_finite() || xmax <= xmin {
         empty_chart(out, "Density unavailable for this plotting range.");
         return;
     }
@@ -220,7 +233,7 @@ fn comparison_distribution(
         out,
         &id,
         if report.minionqc_density.is_some() {
-            "Provisional R 4.4 density: bw.nrd0, 512 mass bins, four-bandwidth extension and discrete convolution on a shared domain. Length is transformed before density estimation; zero lengths are omitted."
+            "R 4.4.1 density: bw.nrd0, 512 mass bins, four-bandwidth extension and discrete convolution on a shared domain. Length is transformed before density estimation; zero lengths are omitted."
         } else {
             "Gaussian KDE: bw.nrd0 bandwidth, type-7 quartiles, 2048 linear bins and 512 display points. Length density uses log10(bp) space."
         },
@@ -257,10 +270,19 @@ fn comparison_distribution(
                 write!(path, " {} {x:.2} {y:.2}", if j == 0 { 'M' } else { 'L' }).unwrap();
             }
             write!(out, "<path class=\"cumulative-line {}\" d=\"{path}\"><title>{}: Gaussian bandwidth {}</title></path>", run_color(i), escape(&run.source.source_id), decimal(estimate.bandwidth)).unwrap();
+            if constant {
+                let point = &estimate.points[0];
+                let x = LEFT + (point.x - xmin) / (xmax - xmin) * (RIGHT - LEFT);
+                let y = BOTTOM - point.density / maximum * (BOTTOM - TOP);
+                write!(out, "<circle class=\"constant-density-point {}\" cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"3\"><title>{}: density {} at {}</title></circle>", run_color(i), escape(&run.source.source_id), decimal(point.density), decimal(point.x)).unwrap();
+            }
         }
     }
     write!(out, "<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">{}</text></svg></div>", if quality { "Mean read Q-score" } else { "Read length (bp; logarithmic axis)" }).unwrap();
     run_legend(out, runs);
+    if constant {
+        out.push_str("<p class=\"annotation\">Constant observed domain: points show density evaluated at the single shared coordinate; no continuous curve is available. Only the display axis is expanded.</p>");
+    }
     out.push_str("</figure>");
 }
 

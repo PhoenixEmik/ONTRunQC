@@ -19,8 +19,19 @@ stopifnot(getRversion() == "4.4.1", packageVersion("ggplot2") == "3.5.1",
 set.seed(1)
 plots <- list()
 problems <- character()
+density_calls <- list()
+record_density <- function(bw, x, from, to, adjust, kernel, n) {
+  density_calls[[length(density_calls)+1L]] <<- list(
+    bandwidth=if (is.numeric(bw)) bw * adjust else NULL,
+    observations=length(x), from=from, to=to, kernel=kernel, grid_points=n)
+}
+# Observe the actual bandwidth/domain inside ggplot2, without substituting an
+# independent estimator or changing any returned statistical values.
+invisible(trace("compute_density", where=asNamespace("ggplot2"), print=FALSE,
+  exit=quote(.GlobalEnv$record_density(bw, x, from, to, adjust, kernel, n))))
 original_save <- ggplot2::ggsave
 ggsave <- function(filename, plot, ...) {
+  density_calls <<- list()
   built <- ggplot2::ggplot_build(plot)
   layers <- lapply(seq_along(plot$layers), function(i) {
     layer <- built$plot$layers[[i]]
@@ -37,7 +48,8 @@ ggsave <- function(filename, plot, ...) {
   plots[[length(plots)+1L]] <<- list(file=basename(filename),
       directory=basename(dirname(filename)), labels=lapply(plot$labels, function(x) paste(as.character(x),collapse=" ")),
       colour_labels=labels, colours=if(is.null(colour)) NULL else colour$map(breaks),
-      panels=as.data.frame(built$layout$layout), layers=layers)
+      panels=as.data.frame(built$layout$layout), layers=layers,
+      density_parameters=density_calls)
   if (Sys.getenv("PG_REFERENCE_RENDER", "true") == "true")
     original_save(filename=filename, plot=plot, ...)
   invisible(filename)

@@ -108,10 +108,12 @@ def cases(upstream, output):
         ("density-constant",[100]*40,[20.0]*40),
         ("density-near",[100+i for i in range(40)],[20.0+i*1e-8 for i in range(40)]),
         ("density-outliers",[100]*40+[10000000],[9.0]*40+[10000.0]),
+        ("density-singleton",[100,200,400],[7.0,8.0,9.0]),
     ]:
         # Two unequal source sizes are needed to exercise real upstream multi.plots.
         a=synthetic(edge/name/"a/sequencing_summary.txt",lengths,qs)
-        b=synthetic(edge/name/"b/sequencing_summary.txt",lengths[:12],qs[:12])
+        size=1 if name=="density-singleton" else 12
+        b=synthetic(edge/name/"b/sequencing_summary.txt",lengths[:size],qs[:size])
         result.append((name,[a,b],7))
     return result
 
@@ -239,8 +241,8 @@ def fitted_comparisons(reference, probe):
                 checks.append(comparison(key+".points",len(rows),len(curve["points"])))
                 for i,(r,p) in enumerate(zip(rows,curve["points"])):
                     checks.append(comparison(f"{key}.{i}.hours",r.get("x"),p["hours"],1e-10))
-                    if r.get("y") is None and p["value"]<0:
-                        checks.append(unverified(f"{key}.{i}.fitted","R scale censored a negative fit; uncensored reference prediction is unavailable."))
+                    if r.get("y") is None:
+                        checks.append(unverified(f"{key}.{i}.fitted","R layer prediction is censored or nonfinite; uncensored reference prediction is unavailable. A null cannot establish a Rust numerical defect or a match."))
                     else:
                         checks.append(comparison(f"{key}.{i}.fitted",r.get("y"),p["value"],1e-6,1e-6))
                 checks.append(unverified(key+".confidence_interval","Rust confidence intervals are deliberately unavailable until R verification."))
@@ -254,6 +256,7 @@ def density_comparisons(reference,probe):
     for plot in reference.get("plots",[]):
         family=plot["file"].rsplit(".",1)[0]
         if family not in ("length_distributions","q_distributions"): continue
+        parameters=iter(array(plot.get("density_parameters")))
         panels={str(p["PANEL"]):p for p in array(plot["panels"])}
         legends=dict(zip(array(plot.get("colours")),array(plot.get("colour_labels"))))
         for layer in plot["layers"]:
@@ -262,6 +265,7 @@ def density_comparisons(reference,probe):
             for row in array(layer.get("data")):
                 groups.setdefault((str(row["PANEL"]),row["group"]),[]).append(row)
             for (panel,group),rows in groups.items():
+                parameter=next(parameters,None)
                 source=legends.get(rows[0].get("colour"));population=panels[panel].get("Q_cutoff")
                 field=("selected_" if population!="All reads" else "")+("length_log10" if family=="length_distributions" else "qscore")
                 actual=(sources.get(source,{}).get("density") or {}).get(field)
@@ -270,6 +274,17 @@ def density_comparisons(reference,probe):
                 if actual is None:
                     checks.append(comparison(key+".unavailable",not bool(finite),True));continue
                 points=[(p["x"],p["density"]) for p in actual["points"]]
+                if parameter is None:
+                    checks.append(unverified(key+".bandwidth", "Capture predates actual ggplot2 bandwidth instrumentation."))
+                else:
+                    checks.extend([
+                        comparison(key+".bandwidth",parameter["bandwidth"],actual["bandwidth"],1e-12,1e-10),
+                        comparison(key+".observations",parameter["observations"],actual["observations"]),
+                        comparison(key+".from",parameter["from"],points[0][0],1e-10,1e-12),
+                        comparison(key+".to",parameter["to"],points[-1][0],1e-10,1e-12),
+                        comparison(key+".kernel",parameter["kernel"],"gaussian"),
+                        comparison(key+".grid_points",parameter["grid_points"],len(points)),
+                    ])
                 checks.append(comparison(key+".points",len(finite),len(points)))
                 if not finite: continue
                 peak=max(y for x,y in finite)
@@ -290,7 +305,7 @@ def main(argv=None):
     parser.add_argument("--output",type=Path,default=Path("benchmark-results/minionqc-reference"))
     parser.add_argument("--rscript",default="Rscript")
     parser.add_argument("--docker",metavar="IMAGE")
-    parser.add_argument("--case",action="append",default=[],choices=["minion","promethion","short","1d2","rna","combined","zero-cutoff","n50-tie","ultralong-endpoint","fit-small","fit-large","fit-sparse","density-multimodal","density-skewed","density-constant","density-near","density-outliers"])
+    parser.add_argument("--case",action="append",default=[],choices=["minion","promethion","short","1d2","rna","combined","zero-cutoff","n50-tie","ultralong-endpoint","fit-small","fit-large","fit-sparse","density-multimodal","density-skewed","density-constant","density-near","density-outliers","density-singleton"])
     parser.add_argument("--capture-only",action="store_true",help="Skip figure files; still execute upstream functions and ggplot_build")
     args=parser.parse_args(argv)
     upstream=args.upstream.resolve();binary=args.binary.resolve();output=args.output.resolve()
