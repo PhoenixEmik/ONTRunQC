@@ -7,9 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to release (for example, v0.3.0)
+        description: Existing version tag to build (for example, v0.3.0)
         required: true
         type: string
+      publish:
+        description: Publish a GitHub Release after building
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -135,17 +139,11 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  publish:
-    name: Publish GitHub Release
+  assemble:
+    name: Assemble tagged build artifacts
     needs: [validate, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
     steps:
       - name: Download release archives
         uses: actions/download-artifact@v8
@@ -160,6 +158,38 @@ jobs:
           test "$(find . -maxdepth 1 -name '*.tar.gz' -type f | wc -l)" -eq 4
           sha256sum *.tar.gz > SHA256SUMS
           sha256sum --check SHA256SUMS
+
+      - name: Upload archives and checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: poregauge-${{ needs.validate.outputs.tag }}
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: [validate, assemble]
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+    steps:
+      - name: Download archives and checksums
+        uses: actions/download-artifact@v8
+        with:
+          name: poregauge-${{ needs.validate.outputs.tag }}
+          path: dist
+
+      - name: Verify checksums before publishing
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
 
       - name: Prepare draft, upload assets, and publish
         run: |

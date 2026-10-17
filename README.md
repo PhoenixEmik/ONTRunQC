@@ -212,9 +212,20 @@ tests on the minimum supported Rust version, 1.85. Both jobs use synthetic fixtu
 To publish a release, update `Cargo.toml` and `Cargo.lock`, commit the changes,
 then push a matching stable `vMAJOR.MINOR.PATCH` tag. The release workflow checks
 the version, formatting, and Clippy, then tests, builds, and smoke-tests each
-platform before publishing assets and generated release notes. It can also be
-started manually from the Actions tab with an existing tag (for example,
-`v0.3.0`); use the workflow on `main` when releasing tags that predate automation.
+platform before publishing assets and generated release notes.
+
+To build an existing tag without publishing, open **Actions → Release → Run workflow**,
+select the workflow on `main`, enter a tag such as `v0.3.0`, and leave **Publish a
+GitHub Release after building** unchecked. Download `poregauge-v0.3.0` from the
+completed run's artifacts for all four platform archives and `SHA256SUMS` (retained
+for seven days). The CLI equivalent is:
+
+```sh
+gh workflow run release.yml --ref main -f tag=v0.3.0 -F publish=false
+```
+
+Enable the publish option to release an existing tag; this also works for tags
+that predate automation. Pushing a new matching version tag publishes automatically.
 A failed upload leaves a draft that can be retried; published release assets are
 never overwritten by this workflow. Prereleases and Windows binaries are not
 currently automated. Adding the workflow does not publish existing tags automatically.
