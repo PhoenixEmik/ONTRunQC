@@ -12,6 +12,7 @@
     const next = document.getElementById(`${prefix}-next`);
     const status = document.getElementById(`${prefix}-status`);
     let page = 0;
+    let matches = rows;
     function compare(a, b) {
       const key = sort.value;
       const av = a.dataset[key], bv = b.dataset[key];
@@ -23,27 +24,31 @@
       const order = an < bn ? -1 : an > bn ? 1 : 0;
       return (['channel', 'mux'].includes(key) ? order : -order) || Number(a.dataset.channel) - Number(b.dataset.channel) || Number(a.dataset.mux || 0) - Number(b.dataset.mux || 0);
     }
-    function update() {
-      rows.sort(compare);
-      const matches = rows.filter(row => row.dataset.channel.includes(search.value.trim()));
+    function render() {
       const limit = Number(size.value);
       const pages = Math.max(1, Math.ceil(matches.length / limit));
-      page = Math.min(page, pages - 1);
-      rows.forEach(row => { row.hidden = true; });
-      matches.slice(page * limit, (page + 1) * limit).forEach(row => { row.hidden = false; });
-      body.replaceChildren(...rows);
+      page = Math.max(0, Math.min(page, pages - 1));
+      // The full collection stays detached; mount only the selected page.
+      body.replaceChildren(...matches.slice(page * limit, (page + 1) * limit));
       previous.disabled = page === 0;
       next.disabled = page === pages - 1;
       status.textContent = matches.length
         ? `${page * limit + 1}–${Math.min((page + 1) * limit, matches.length)} of ${matches.length.toLocaleString('en-US')} ${prefix === 'channel' ? 'channels' : 'channel/mux pairs'}`
         : 'No matching channels';
     }
-    search.addEventListener('input', () => { page = 0; update(); });
-    sort.addEventListener('change', () => { page = 0; update(); });
-    size.addEventListener('change', () => { page = 0; update(); });
-    previous.addEventListener('click', () => { page--; update(); });
-    next.addEventListener('click', () => { page++; update(); });
-    update();
+    function selectRows(sortChanged) {
+      if (sortChanged) rows.sort(compare);
+      const query = search.value.trim();
+      matches = query ? rows.filter(row => row.dataset.channel.includes(query)) : rows;
+      page = 0;
+      render();
+    }
+    search.addEventListener('input', () => selectRows(false));
+    sort.addEventListener('change', () => selectRows(true));
+    size.addEventListener('change', () => { page = 0; render(); });
+    previous.addEventListener('click', () => { page--; render(); });
+    next.addEventListener('click', () => { page++; render(); });
+    selectRows(true);
     document.getElementById(`${prefix}-controls`).hidden = false;
     document.getElementById(`${prefix}-pagination`).hidden = false;
   }

@@ -1467,3 +1467,50 @@ fn tabular_css_bars_preserve_exact_values_and_zero_half_maximum_proportions() {
     empty.analyze(HEADER);
     assert!(!empty.html().contains("<span class=\"table-bar\""));
 }
+
+#[test]
+fn table_controls_preserve_pagination_behavior_when_node_is_available() {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/report_tables.cjs");
+    match Command::new("node").arg(script).output() {
+        Ok(output) => assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("Optional table behavior check skipped: Node.js is unavailable");
+        }
+        Err(error) => panic!("could not run table behavior check: {error}"),
+    }
+}
+
+#[test]
+fn print_omission_is_explicit_and_both_large_tables_keep_complete_noscript_data() {
+    let directory = TestDirectory::new();
+    directory.analyze(&format!("{HEADER}{ROW}"));
+    let html = directory.html();
+    assert!(html.contains("class=\"print-only notice\">Detailed channel and channel × mux tables are omitted from print."));
+    for prefix in ["channel", "channel-mux"] {
+        let before_table = html
+            .split(&format!("<table id=\"{prefix}-table\""))
+            .next()
+            .unwrap();
+        assert!(
+            before_table
+                .rsplit("<div ")
+                .next()
+                .unwrap()
+                .contains("detail-table")
+        );
+        let table = html
+            .split(&format!("<table id=\"{prefix}-table\""))
+            .nth(1)
+            .unwrap()
+            .split("</table>")
+            .next()
+            .unwrap();
+        assert_eq!(table.matches("<tr data-channel=").count(), 1);
+        assert!(!table.contains("<tr hidden"));
+    }
+}

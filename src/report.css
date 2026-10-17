@@ -528,6 +528,9 @@ footer {
     font-size:11px;
     color:var(--muted);
 }
+.print-only {
+    display:none;
+}
 [hidden] {
     display:none!important;
 }
@@ -671,7 +674,10 @@ footer {
     thead th {
         position:static;
     }
-    #channel-table tr[hidden],#channel-mux-table tr[hidden] {
+    #channel-table tr[hidden],#channel-mux-table tr.print-only {
+    display:none;
+}
+[hidden] {
         display:table-row!important;
     }
     details:not([open]) {
