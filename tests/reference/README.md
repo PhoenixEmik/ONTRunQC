@@ -1,12 +1,5 @@
 # Optional executable MinIONQC reference
 
-The optional **MinIONQC reference** GitHub Actions workflow runs the same command
-on an Ubuntu runner, builds the pinned R container and retains actual reference
-reports, numeric captures, logs and comparisons as a 14-day artifact, including
-on failure. It runs manually or on explicitly named `scientific-parity/**`
-branches; ordinary pushes and pull requests do not require R. An unsuccessful
-reference comparison must be investigated, not treated as a passing CI result.
-
 The normal Rust build never needs R. Use the clean upstream checkout at commit
 `54485d586038d8ee36f168dd94f31c423f52f581` (v1.4.1), including its public fixtures:
 
