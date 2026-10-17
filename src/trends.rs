@@ -43,6 +43,10 @@ struct Population {
     max: f64,
     length_scale: f64,
     q_scale: f64,
+    q_min: f64,
+    q_max: f64,
+    length_min: f64,
+    length_max: f64,
     unique: BTreeMap<(u64, u64), f64>,
     truncated: bool,
     small: Vec<Observation>,
@@ -52,7 +56,15 @@ impl Population {
         if self.count == 0 {
             self.min = v.x;
             self.max = v.x;
+            self.q_min = v.q;
+            self.q_max = v.q;
+            self.length_min = v.length;
+            self.length_max = v.length;
         }
+        self.q_min = self.q_min.min(v.q);
+        self.q_max = self.q_max.max(v.q);
+        self.length_min = self.length_min.min(v.length);
+        self.length_max = self.length_max.max(v.length);
         self.count += 1;
         self.min = self.min.min(v.x);
         self.max = self.max.max(v.x);
@@ -159,7 +171,7 @@ impl Plan {
                 continue;
             };
             let b = basis.evaluate(r.start_time / 3600.0);
-            let y = if d.quality { r.qscore } else { r.length as f64 } / d.scale;
+            let y = ((if d.quality { r.qscore } else { r.length as f64 }) - d.offset) / d.scale;
             d.n += 1;
             d.yy += y * y;
             for i in 0..K {
@@ -195,6 +207,7 @@ struct Dataset {
     single: bool,
     basis: Option<Basis>,
     scale: f64,
+    offset: f64,
     n: u64,
     xx: Matrix,
     rhs: [f64; K],
@@ -209,7 +222,13 @@ impl Dataset {
             tracker.length_scale
         }
         .max(1.0);
+        let offset = if quality {
+            tracker.q_min / 2.0 + tracker.q_max / 2.0
+        } else {
+            tracker.length_min / 2.0 + tracker.length_max / 2.0
+        };
         Self {
+            offset,
             population,
             tracker,
             quality,
@@ -251,7 +270,7 @@ impl Dataset {
         for i in 0..80 {
             let x = self.tracker.min + (self.tracker.max - self.tracker.min) * i as f64 / 79.0;
             let value = if let Some(c) = &coefficients {
-                Some(dot(&self.basis.as_ref().unwrap().evaluate(x), c) * self.scale)
+                Some(dot(&self.basis.as_ref().unwrap().evaluate(x), c) * self.scale + self.offset)
             } else {
                 local_quadratic(&self.tracker.small, x, self.quality)
             };
@@ -390,6 +409,9 @@ impl Basis {
             let j = p.floor() as usize;
             (x[j] + (x[p.ceil() as usize] - x[j]) * p.fract() - pop.min) / (pop.max - pop.min)
         });
+        if knots.windows(2).any(|p| !p[0].is_finite() || p[1] <= p[0]) {
+            return None;
+        }
         let mut second = [[0.0; K]; K];
         for column in 0..K {
             let y: [f64; K] = std::array::from_fn(|i| if i == column { 1.0 } else { 0.0 });
@@ -587,7 +609,7 @@ mod tests {
         let mut d = Dataset::new("all_summary_records", p, false, false);
         for i in 0..1500 {
             let b = d.basis.as_ref().unwrap().evaluate(i as f64 / 1499.0);
-            let y = 42.0 / d.scale;
+            let y = (42.0 - d.offset) / d.scale;
             d.n += 1;
             d.yy += y * y;
             for j in 0..K {
@@ -601,6 +623,42 @@ mod tests {
         assert_eq!(curve.points.len(), 80);
         assert!(curve.points.iter().all(|p| (p.value - 42.0).abs() < 1e-7));
         assert!(curve.confidence_interval.is_none());
+    }
+    #[test]
+    fn gam_is_stable_under_large_response_offsets() {
+        let fit = |offset: f64| {
+            let mut pop = Population::default();
+            for i in 0..1200 {
+                let x = i as f64 / 1199.0;
+                pop.add(Observation {
+                    x,
+                    length: 100.0,
+                    q: offset + 8.0 + 2.0 * x,
+                });
+            }
+            let mut d = Dataset::new("all_summary_records", pop, true, false);
+            for i in 0..1200 {
+                let x = i as f64 / 1199.0;
+                let b = d.basis.as_ref().unwrap().evaluate(x);
+                let y = (offset + 8.0 + 2.0 * x - d.offset) / d.scale;
+                d.n += 1;
+                d.yy += y * y;
+                for j in 0..K {
+                    d.rhs[j] += b[j] * y;
+                    for k in 0..K {
+                        d.xx[j][k] += b[j] * b[k];
+                    }
+                }
+            }
+            d.fit(true)
+        };
+        let a = fit(0.0);
+        let b = fit(1e6);
+        assert_eq!(a.points.len(), 80);
+        assert_eq!(b.points.len(), 80);
+        for (a, b) in a.points.iter().zip(&b.points) {
+            assert!((b.value - a.value - 1e6).abs() < 1e-7);
+        }
     }
     #[test]
     fn unique_time_storage_is_bounded_and_method_switch_is_global() {

@@ -12,9 +12,10 @@ fn export_report() {
     let paths: Vec<PathBuf> =
         serde_json::from_str(&std::env::var("PG_PROBE_INPUTS").unwrap()).unwrap();
     let cutoff: f64 = std::env::var("PG_PROBE_CUTOFF").unwrap().parse().unwrap();
+    let curves = std::env::var("PG_PROBE_CURVES").as_deref() == Ok("1");
     let mut aggregator = Aggregator::new(None, false);
     aggregator.set_qscore_cutoff(cutoff, true);
-    let curves = std::env::var("PG_PROBE_CURVES").as_deref() == Ok("1");
+    aggregator.enable_reference_density(curves);
     let mut trackers = Vec::new();
     for path in &paths {
         let mut tracker = crate::trends::Tracker::default();
@@ -40,6 +41,8 @@ fn export_report() {
         }
         trackers.push(tracker);
     }
+    let domain = aggregator.density_bounds();
+    aggregator.set_density_domain(domain);
     let report = aggregator.finish(None).unwrap();
     let mut report = serde_json::to_value(report).unwrap();
     let mut sources = Vec::new();
@@ -51,6 +54,10 @@ fn export_report() {
     if curves {
         for (i, (path, tracker)) in paths.iter().zip(trackers).enumerate() {
             let mut plan = tracker.prepare(largest >= 1000);
+            let mut source = Aggregator::new(None, false);
+            source.set_qscore_cutoff(cutoff, true);
+            source.enable_reference_density(true);
+            source.set_density_domain(domain);
             let mut reader = SummaryReader::with_options(
                 File::open(path).unwrap(),
                 InputSchema::Auto,
@@ -60,8 +67,9 @@ fn export_report() {
             reader.allow_multiple_runs();
             while let Some(record) = reader.next_record().unwrap() {
                 plan.add(&record, cutoff);
+                source.add(&record).unwrap();
             }
-            sources.push(serde_json::json!({"source_id":format!("source_{:03}",i+1),"fitted_trends":plan.finish()}));
+            sources.push(serde_json::json!({"source_id":format!("source_{:03}",i+1),"fitted_trends":plan.finish(), "density":source.finish(None).unwrap().minionqc_density}));
         }
     }
     report["reference_sources"] = serde_json::json!(sources);

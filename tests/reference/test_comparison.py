@@ -1,5 +1,4 @@
 """Fast harness logic tests; no R or public input download needed."""
-import importlib.util
 from pathlib import Path
 import sys
 import unittest
@@ -23,5 +22,17 @@ class Classification(unittest.TestCase):
         self.assertEqual(comparison("ultra",3,4,upstream="proved endpoint bug")["status"],"upstream_minionqc_defect")
         self.assertEqual(unverified("R","not installed")["status"],"not_yet_verified")
 
+
+
+class NumericalLayers(unittest.TestCase):
+    def test_density_comparison_checks_coordinates_values_and_integral(self):
+        from minionqc_differential import density_comparisons
+        reference={"plots":[{"file":"q_distributions.pdf","panels":[{"PANEL":"1","Q_cutoff":"All reads"}],"colours":["indigo"],"colour_labels":["source_001"],"layers":[{"stat":"StatDensity","data":[{"PANEL":"1","group":1,"colour":"indigo","x":0,"density":0.5},{"PANEL":"1","group":1,"colour":"indigo","x":1,"density":0.5}]}]}]}
+        probe={"reference_sources":[{"source_id":"source_001","density":{"qscore":{"points":[{"x":0,"density":0.5},{"x":1,"density":0.5}]}}}]}
+        checks=density_comparisons(reference,probe)
+        self.assertTrue(all(c["status"]=="exact_match" for c in checks))
+        self.assertEqual(next(c["reference"] for c in checks if c["metric"].endswith("integral_on_plotted_domain")),0.5)
+        probe["reference_sources"][0]["density"]["qscore"]["points"][0]["density"]=0.8
+        self.assertTrue(any(c["status"]=="suspected_poregauge_defect" for c in density_comparisons(reference,probe)))
 
 if __name__=="__main__": unittest.main()

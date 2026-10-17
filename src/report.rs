@@ -28,6 +28,8 @@ pub struct Report {
     pub diagnostics: Diagnostics,
     pub comparison: ComparisonMetrics,
     pub distributions: crate::metrics::DistributionEstimates,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minionqc_density: Option<crate::metrics::DistributionEstimates>,
     pub input: crate::metrics::InputSummary,
     pub presentation: PresentationOptions,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -78,6 +80,8 @@ pub struct RunComparison {
     pub selected_time_bins: Vec<crate::metrics::SelectedTimeBin>,
     pub yield_by_minimum_length: crate::metrics::YieldByLength,
     pub distributions: crate::metrics::DistributionEstimates,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minionqc_density: Option<crate::metrics::DistributionEstimates>,
 }
 
 impl RunComparison {
@@ -97,6 +101,7 @@ impl RunComparison {
             selected_time_bins: report.comparison.time_bins.clone(),
             yield_by_minimum_length: report.comparison.yield_by_minimum_length.clone(),
             distributions: report.distributions.clone(),
+            minionqc_density: report.minionqc_density.clone(),
         }
     }
 }

@@ -22,12 +22,13 @@ when archiving results. Native execution supports `--rscript /path/to/Rscript`
 with the same checked versions. Locale/timezone are fixed in the image; seed is 1.
 
 This runs the unmodified script on unchanged source bytes, with matching Q
-cutoffs, one processor and PDF figures. The `ggsave` wrapper also calls
+cutoffs, one processor, explicit 8-hour mux references and PDF figures. The `ggsave` wrapper also calls
 `ggplot_build()` and records numerical layers, method/formula, panels, legends
 and axis labels. `--capture-only` skips figure rendering but still runs upstream
 summary/plot calculations. `--case short` selects a case. Full runs include
 MinION, PromethION, two MinION inputs/combined QC, short, 1D2, RNA and synthetic
-zero/cutoff/N50/ultralong edge cases. Nothing uses private sequencing data.
+zero/cutoff/N50/ultralong edge cases, small/large/irregular/sparse fits and
+multimodal/skewed/constant/near-constant/outlier densities with unequal source sizes. Nothing uses private sequencing data.
 
 Each case saves original R YAML/PDF, capture JSON, PoreGauge JSON/YAML, plot
 inventory and logs. `comparison.json` includes source/input hashes, Q cutoffs,
@@ -52,3 +53,15 @@ aggregator on the upstream file-scoped population for channel/curve comparisons.
 This is necessary because upstream drops run IDs before analysis. Normal CLI
 reports are also generated and checked; production run grouping is never changed.
 Probe artifacts are validation-only and cannot be mistaken for instrument metadata.
+
+For numerical layers, the validation-only probe fits the exact upstream file
+populations and computes reference densities on shared domains. `capture.json`
+retains all `StatSmooth`/`StatDensity` points; other layers keep metadata/row counts,
+not complete read point arrays. Comparison targets: hours absolute 1e-10, fitted
+values absolute 1e-6 + relative 1e-6; densities absolute max(peak×1e-7,1e-12) +
+relative 1e-6, plotted-domain integrals absolute 1e-7 + relative 1e-6, peaks within
+one grid interval. These are **provisional targets, not measured R accuracy**.
+Unsupported confidence intervals remain explicitly Not yet verified. Density
+integrals are over the plotted domain; unplotted Gaussian tails are not silently
+renormalized to force area one. Constant-domain scaling remains pending actual R
+verification. Failed point/method comparisons are never automatically accepted.

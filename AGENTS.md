@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-PoreGauge is a single-package Rust 2024 CLI for post-sequencing QC of PromethION summaries. `src/main.rs` connects the pipeline; `cli.rs` defines arguments; `input.rs` validates streaming TSV records; `record.rs` holds borrowed fields; `batch.rs` discovers inputs and routes run chunks; `metrics.rs` owns QC calculations; `layout.rs` implements the explicit, reference-based PromethION and MinION coordinate maps. `report.rs` stages requested outputs; `export.rs` emits optional YAML and standalone SVG; `html.rs` renders offline HTML using embedded `report.css` and `report.js`.
+PoreGauge is a single-package Rust 2024 CLI for post-sequencing QC of PromethION summaries. `src/main.rs` connects the pipeline; `cli.rs` defines arguments; `input.rs` validates streaming TSV records; `record.rs` holds borrowed fields; `batch.rs` discovers inputs and routes run chunks; `metrics.rs` owns QC calculations; `trends.rs` implements optional bounded raw-read fits; `density.rs` implements the optional reference-grid estimator; `layout.rs` implements the explicit, reference-based PromethION and MinION coordinate maps. `report.rs` stages requested outputs; `export.rs` emits optional YAML and standalone SVG; `html.rs` renders offline HTML using embedded `report.css` and `report.js`.
 
 Unit tests live beside implementations; CLI integration tests are in `tests/integration.rs`, with fictional inputs in `tests/fixtures/`. Consult `docs/metrics.md` for definitions/schema and `docs/benchmark.md` for measurement procedures.
 
@@ -26,7 +26,7 @@ Use rustfmt defaults, four-space indentation, `snake_case` functions/modules, an
 
 ## Testing Guidelines
 
-Use Rust's built-in test framework and descriptive behavior names. Preserve parser/metrics regressions; cover HTML/JSON consistency, unavailable statistics, metadata escaping, offline assets, thousands of channels, and write-failure cleanup. Review generated HTML on desktop and narrow screens. No coverage percentage is mandated. Run all checks above before submitting code changes.
+Use Rust's built-in test framework and descriptive behavior names. Preserve parser/metrics regressions; cover HTML/JSON consistency, unavailable statistics, metadata escaping, offline assets, thousands of channels, and write-failure cleanup. Review generated HTML on desktop and narrow screens. The optional pinned R differential suite is documented in `tests/reference/README.md`; missing R must produce unverified results, never invented parity evidence. No coverage percentage is mandated. Run all checks above before submitting code changes.
 
 Zero-length records count toward summary totals but not basecalled length/quality statistics. Native filtering comes exclusively from `passes_filtering`; independent `--qscore-cutoff` comparisons must never replace it. Missing native flags mean unavailable, never inferred failure. Exact channel medians reuse disjoint length partitions. Preserve unknown termination reasons, checked integer totals, ordered output, and `null` unavailable statistics. Update metric documentation with behavior/schema changes; increment `schema_version` for incompatible report changes.
 

@@ -1,5 +1,6 @@
 mod batch;
 mod cli;
+mod density;
 mod export;
 mod html;
 mod input;
@@ -43,6 +44,7 @@ fn run(cli: Cli) -> Result<()> {
             muxes,
             processors: _,
             minionqc_trends,
+            minionqc_density,
         } => {
             input.extend(input_paths);
             batch::analyze(
@@ -52,6 +54,7 @@ fn run(cli: Cli) -> Result<()> {
                     layout: flowcell_layout,
                     cutoff: qscore_cutoff,
                     minionqc_trends,
+                    minionqc_density,
                     combined_only,
                     group_inputs,
                     split_runs,

@@ -148,7 +148,10 @@ fn combined_comparisons(out: &mut String, report: &Report) {
     fitted_trend_plot(out, report, false, true);
     fitted_trend_plot(out, report, true, false);
     fitted_trend_plot(out, report, true, true);
-    out.push_str("<p class=\"annotation\">Distribution curves use Gaussian KDE with R-compatible bw.nrd0 bandwidth and bounded linear binning, normalized within each population. Length density uses log10(bp). Means retain unsmoothed 15-minute bins; gaps are not connected. Cumulative points attribute the entire bin's yield to its read-start interval. Color assignments are consistent across charts (palette repeats after eight sources). Exact histogram counts, thresholds and interval denominators remain in JSON.</p></section>");
+    if report.minionqc_density.is_some() {
+        out.push_str("<p class=\"annotation\">R-grid density mode: Gaussian bw.nrd0, shared transformed scale domain, 512 mass/evaluation bins, extension of four bandwidths and direct discrete convolution equivalent to zero-padded FFT convolution. Q-score includes zero-length summary records; log-length density excludes them. Plotted-domain area may be below one because tails lie outside the observed range. Actual R numerical verification remains pending.</p>");
+    }
+    out.push_str("<p class=\"annotation\">Legacy distribution estimates retained in JSON use Gaussian KDE with R-compatible bw.nrd0 bandwidth and bounded linear binning, normalized within each population. Length density uses log10(bp). Means retain unsmoothed 15-minute bins; gaps are not connected. Cumulative points attribute the entire bin's yield to its read-start interval. Color assignments are consistent across charts (palette repeats after eight sources). Exact histogram counts, thresholds and interval denominators remain in JSON.</p></section>");
 }
 
 fn run_color(index: usize) -> &'static str {
@@ -164,6 +167,18 @@ fn comparison_distribution(
     quality: bool,
     population: &str,
 ) {
+    let population = if report.minionqc_density.is_some() {
+        if selected {
+            format!(
+                "Q ≥ {} summary records",
+                cutoff_value(report.comparison.qscore_cutoff)
+            )
+        } else {
+            "All summary records".into()
+        }
+    } else {
+        population.to_owned()
+    };
     let runs = &report.collection.as_ref().unwrap().runs;
     let id = format!("combined-distribution-{quality}-{selected}");
     let title = format!(
@@ -173,11 +188,14 @@ fn comparison_distribution(
     figure(out, &id, &title);
     let estimates: Vec<_> = runs
         .iter()
-        .map(|r| match (quality, selected) {
-            (false, false) => r.distributions.length_log10.as_ref(),
-            (false, true) => r.distributions.selected_length_log10.as_ref(),
-            (true, false) => r.distributions.qscore.as_ref(),
-            (true, true) => r.distributions.selected_qscore.as_ref(),
+        .map(|r| {
+            let estimates = r.minionqc_density.as_ref().unwrap_or(&r.distributions);
+            match (quality, selected) {
+                (false, false) => estimates.length_log10.as_ref(),
+                (false, true) => estimates.selected_length_log10.as_ref(),
+                (true, false) => estimates.qscore.as_ref(),
+                (true, true) => estimates.selected_qscore.as_ref(),
+            }
         })
         .collect();
     let points: Vec<_> = estimates.iter().flatten().flat_map(|e| &e.points).collect();
@@ -201,7 +219,11 @@ fn comparison_distribution(
     svg_start(
         out,
         &id,
-        "Gaussian KDE: bw.nrd0 bandwidth, type-7 quartiles, 2048 linear bins and 512 display points. Length density uses log10(bp) space.",
+        if report.minionqc_density.is_some() {
+            "Provisional R 4.4 density: bw.nrd0, 512 mass bins, four-bandwidth extension and discrete convolution on a shared domain. Length is transformed before density estimation; zero lengths are omitted."
+        } else {
+            "Gaussian KDE: bw.nrd0 bandwidth, type-7 quartiles, 2048 linear bins and 512 display points. Length density uses log10(bp) space."
+        },
         294,
     );
     axes(
@@ -2103,6 +2125,10 @@ fn time_series_plot(
 // Configured reference lines share the plotted relative-time coordinate system.
 fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected: bool) {
     let metric = if quality { "qscore" } else { "length_bp" };
+    let selected_label = format!(
+        "Q ≥ {} summary records",
+        cutoff_value(report.comparison.qscore_cutoff)
+    );
     let mut curves = Vec::new();
     if let Some(collection) = &report.collection {
         for (i, run) in collection.runs.iter().enumerate() {
@@ -2120,7 +2146,7 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
             if curve.metric == metric {
                 curves.push((
                     if curve.population.starts_with("qscore") {
-                        "Q-cutoff summary records"
+                        selected_label.as_str()
                     } else {
                         "All summary records"
                     },
@@ -2138,17 +2164,24 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
         return;
     }
     let id = format!("fitted-{quality}-{selected}");
+    let population = if report.collection.is_some() {
+        if selected {
+            format!(
+                " · Q ≥ {} summary records",
+                cutoff_value(report.comparison.qscore_cutoff)
+            )
+        } else {
+            " · All summary records".into()
+        }
+    } else {
+        String::new()
+    };
     figure(
         out,
         &id,
         &format!(
-            "Fitted {} from individual summary records{}",
-            if quality { "Q-score" } else { "read length" },
-            if report.collection.is_some() {
-                if selected { " · Q-cutoff" } else { " · All" }
-            } else {
-                ""
-            }
+            "Fitted {} from individual summary records{population}",
+            if quality { "Q-score" } else { "read length" }
         ),
     );
     let allowed = |v: f64| v >= 0.0 || quality && report.collection.is_some();
@@ -2226,7 +2259,13 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
             .unwrap();
             connected = true;
         }
-        write!(out,"<path class=\"cumulative-line {color}\" d=\"{path}\"><title>{}: {}; {} observations; exact knots: {}</title></path>",escape(label),curve.method,curve.observations,curve.exact_knots).unwrap();
+        let class = if *color == "qselected" {
+            "qselected-line"
+        } else {
+            "cumulative-line"
+        };
+        let run_class = if color.starts_with("run") { *color } else { "" };
+        write!(out,"<path class=\"{class} {run_class}\" d=\"{path}\"><title>{}: {}; {} observations; exact knots: {}</title></path>",escape(label),curve.method,curve.observations,curve.exact_knots).unwrap();
     }
     out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Time from run start (h)</text></svg></div><p class=\"annotation\">");
     for (label, color, _) in curves {

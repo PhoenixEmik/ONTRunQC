@@ -5,13 +5,14 @@ from collections import Counter
 import hashlib
 import json
 import math
+import os
 import statistics
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 
-from minionqc_reference import REVISION, THRESHOLDS, n50, observations, projected_yaml
+from minionqc_reference import REVISION, n50, observations
 
 STATUSES = ("exact_match", "rounding_tolerance", "intentional_semantic_difference",
             "suspected_poregauge_defect", "upstream_minionqc_defect", "not_yet_verified")
@@ -72,14 +73,30 @@ def cases(upstream, output):
     edge = output/"synthetic"
     for name, lengths, qs in [
         ("zero-cutoff",[0,100,50,50,10,10],[7,7,7,6.999,8,9]),
-        ("n50-tie",[100,50,50,10,10,0],[9]*6),
+        ("n50-tie",[100,50,25,25],[9]*4),
         ("ultralong-endpoint",[200000,150000,100000,100000],[8]*4),
     ]:
         result.append((name,[synthetic(edge/name/"sequencing_summary.txt", lengths,qs)],7))
+    for name,n in [("fit-small",99),("fit-large",1500),("fit-sparse",1200)]:
+        times=[(i*71)%100000 for i in range(n)] if name!="fit-sparse" else [i%2*3600 for i in range(n)]
+        lengths=[1000+int(200*math.sin(t/10000))+i%13 for i,t in enumerate(times)]
+        qs=[8+2*math.cos(t/15000)+i%7/10 for i,t in enumerate(times)]
+        result.append((name,[synthetic(edge/name/"sequencing_summary.txt",lengths,qs,times)],7))
+    for name,lengths,qs in [
+        ("density-multimodal",[100]*30+[10000]*30,[7.0]*30+[20.0]*30),
+        ("density-skewed",[2**i for i in range(25)],[7+i/2 for i in range(25)]),
+        ("density-constant",[100]*40,[20.0]*40),
+        ("density-near",[100+i for i in range(40)],[20.0+i*1e-8 for i in range(40)]),
+        ("density-outliers",[100]*40+[10000000],[9.0]*40+[10000.0]),
+    ]:
+        # Two unequal source sizes are needed to exercise real upstream multi.plots.
+        a=synthetic(edge/name/"a/sequencing_summary.txt",lengths,qs)
+        b=synthetic(edge/name/"b/sequencing_summary.txt",lengths[:12],qs[:12])
+        result.append((name,[a,b],7))
     return result
 
 
-def metrics(reference, pg, rows, cutoff):
+def metrics(reference, pg, rows, cutoff, channel_scope=False):
     results = []
     summaries = reference.get("summaries", [])
     if not summaries:
@@ -113,7 +130,12 @@ def metrics(reference, pg, rows, cutoff):
                 "median_q":statistics.median([r[1] for r in basecalled]) if basecalled else None,
             }[metric]
             proof = pv==expected or isinstance(pv,(int,float)) and isinstance(expected,(int,float)) and abs(pv-expected)<1e-8
-            results.append(comparison(f"{name}.{metric}",rv,pv,tolerance,intentional=difference if proof else None))
+            reference_expected={"read_count":len(cohort),"total_bases":sum(r[0] for r in cohort),"mean_length":statistics.mean([r[0] for r in cohort]) if cohort else None,"median_length":statistics.median([r[0] for r in cohort]) if cohort else None,"mean_q":statistics.mean([r[1] for r in cohort]) if cohort else None,"median_q":statistics.median([r[1] for r in cohort]) if cohort else None}[metric]
+            proof = proof and (rv==reference_expected or isinstance(rv,(int,float)) and isinstance(reference_expected,(int,float)) and abs(rv-reference_expected)<=tolerance)
+            if rv is None and pv is not None:
+                results.append(unverified(f"{name}.{metric}","Reference value unavailable; partial R output is not evidence of a PoreGauge defect."))
+            else:
+                results.append(comparison(f"{name}.{metric}",rv,pv,tolerance,intentional=difference if proof else None))
         lengths = sorted((r[0] for r in basecalled),reverse=True)
         total = sum(lengths); accumulated = 0; strict = None
         for length in lengths:
@@ -133,14 +155,34 @@ def metrics(reference, pg, rows, cutoff):
         known_endpoint = bool(lengths) and min(lengths)>=100000 and ultra["read_count"]==len(lengths) and r["reads"]["ultralong"]==len(lengths)-1
         bug="Upstream binSearch drops the final eligible read (max-1 endpoint)." if known_endpoint else None
         results.append(comparison(f"{name}.ultralong.reads",r["reads"]["ultralong"],ultra["read_count"],upstream=bug))
-        results.append(comparison(f"{name}.ultralong.bases",r["gigabases"]["ultralong"]*1e9,ultra["total_yield_bp"],50.1,upstream=bug))
-    # Individual source's exact channel medians; combined channels intentionally remain run-local.
-    if pg["comparison"]["channels"]:
-        for row in reference.get("channels",{}).get("All reads",[]):
-            if row.get("variable") != "median.read.length": continue
-            channel = next((c for c in pg["comparison"]["channels"] if c["channel"]==row["channel"]),None)
-            if channel:
-                results.append(comparison(f"channel.{row['channel']}.median",row["value"],channel["all_summary_records"]["median_read_length_bp"]))
+        reference_ultra_bases = r["gigabases"]["ultralong"]*1e9
+        yield_bug = bug if bug and ultra["total_yield_bp"]==sum(lengths) and abs(reference_ultra_bases-sum(lengths[:-1]))<=50.1 else None
+        results.append(comparison(f"{name}.ultralong.bases",reference_ultra_bases,ultra["total_yield_bp"],50.1,upstream=yield_bug))
+    if not channel_scope: return results
+    # Same source-file population as upstream; production run identity is untouched.
+    channels={c["channel"]:c for c in pg["comparison"]["channels"]}
+    by_channel={}
+    for row in rows: by_channel.setdefault(row[2],[]).append(row)
+    for population,data in reference.get("channels",{}).items():
+        selected=population!="All reads"
+        for row in data:
+            key=f"channel.{row['channel']}.{population}.{row['variable']}"
+            channel=channels.get(row["channel"])
+            if channel is None:
+                results.append(unverified(key,"No matching PoreGauge channel in file-scoped probe."));continue
+            p=channel["qscore_selected_reads" if selected else "all_summary_records"]
+            cohort=[r[0] for r in by_channel.get(row["channel"],[]) if not selected or r[1]>=cutoff]
+            positives=[n for n in cohort if n>0] if selected else cohort
+            field={"total.reads":"read_count","total.bases":"total_yield_bp","mean.read.length":"mean_read_length_bp","median.read.length":"median_read_length_bp"}.get(row["variable"])
+            if not field: continue
+            expected={"read_count":len(positives),"total_yield_bp":sum(positives),"mean_read_length_bp":statistics.mean(positives) if positives else None,"median_read_length_bp":statistics.median(positives) if positives else None}[field]
+            correct=p[field]==expected or isinstance(p[field],(int,float)) and isinstance(expected,(int,float)) and abs(p[field]-expected)<1e-9
+            bug="Upstream channel.summary uses sum(which(...)), n(n+1)/2 instead of a true read count." if field=="read_count" and row["value"]==len(cohort)*(len(cohort)+1)//2 and correct else None
+            semantic=None
+            if selected and len(cohort)!=len(positives) and correct:
+                if field=="median_read_length_bp" and row["value"]==statistics.median(cohort) or field=="mean_read_length_bp" and abs(row["value"]-statistics.mean(cohort))<1e-9:
+                    semantic="Reference includes selected zero-length summary records; PoreGauge channel cutoff statistics use basecalled reads."
+            results.append(comparison(key,row["value"],p[field],1e-9 if field=="mean_read_length_bp" else 0,intentional=semantic,upstream=bug))
     return results
 
 
@@ -160,6 +202,8 @@ def fitted_comparisons(reference, probe):
             by_group={}
             for row in array(layer.get("data")):
                 by_group.setdefault((str(row["PANEL"]),row["group"]),[]).append(row)
+            available_fits=sum(bool(c["points"]) for source_id,source in sources.items() if combined or source_id==plot["directory"] for c in source.get("fitted_trends",{}).get("combined" if combined else "single",[]) if (c["metric"]=="qscore")==quality)
+            checks.append(comparison(f"fit.{plot['directory']}.{family}.available_groups",len(by_group),available_fits))
             for (panel,group),rows in by_group.items():
                 label=legends.get(rows[0].get("colour"))
                 source=label if combined else plot["directory"]
@@ -175,8 +219,46 @@ def fitted_comparisons(reference, probe):
                 checks.append(comparison(key+".points",len(rows),len(curve["points"])))
                 for i,(r,p) in enumerate(zip(rows,curve["points"])):
                     checks.append(comparison(f"{key}.{i}.hours",r.get("x"),p["hours"],1e-10))
-                    checks.append(comparison(f"{key}.{i}.fitted",r.get("y"),p["value"],1e-6,1e-6))
+                    if r.get("y") is None and p["value"]<0:
+                        checks.append(unverified(f"{key}.{i}.fitted","R scale censored a negative fit; uncensored reference prediction is unavailable."))
+                    else:
+                        checks.append(comparison(f"{key}.{i}.fitted",r.get("y"),p["value"],1e-6,1e-6))
                 checks.append(unverified(key+".confidence_interval","Rust confidence intervals are deliberately unavailable until R verification."))
+    return checks
+
+
+def density_comparisons(reference,probe):
+    checks=[];sources={s["source_id"]:s for s in probe.get("reference_sources",[])}
+    def array(x): return x if isinstance(x,list) else [x] if x is not None else []
+    def integral(points): return sum((b[0]-a[0])*(a[1]+b[1])/2 for a,b in zip(points,points[1:]))
+    for plot in reference.get("plots",[]):
+        family=plot["file"].rsplit(".",1)[0]
+        if family not in ("length_distributions","q_distributions"): continue
+        panels={str(p["PANEL"]):p for p in array(plot["panels"])}
+        legends=dict(zip(array(plot.get("colours")),array(plot.get("colour_labels"))))
+        for layer in plot["layers"]:
+            if layer["stat"]!="StatDensity": continue
+            groups={}
+            for row in array(layer.get("data")):
+                groups.setdefault((str(row["PANEL"]),row["group"]),[]).append(row)
+            for (panel,group),rows in groups.items():
+                source=legends.get(rows[0].get("colour"));population=panels[panel].get("Q_cutoff")
+                field=("selected_" if population!="All reads" else "")+("length_log10" if family=="length_distributions" else "qscore")
+                actual=(sources.get(source,{}).get("density") or {}).get(field)
+                key=f"density.{source}.{population}.{field}"
+                finite=[(r["x"],r["density"]) for r in rows if isinstance(r.get("x"),(float,int)) and isinstance(r.get("density"),(float,int))]
+                if actual is None:
+                    checks.append(comparison(key+".unavailable",not bool(finite),True));continue
+                points=[(p["x"],p["density"]) for p in actual["points"]]
+                checks.append(comparison(key+".points",len(finite),len(points)))
+                if not finite: continue
+                peak=max(y for x,y in finite)
+                for i,(r,p) in enumerate(zip(finite,points)):
+                    checks.append(comparison(f"{key}.{i}.x",r[0],p[0],1e-10,1e-12))
+                    checks.append(comparison(f"{key}.{i}.density",r[1],p[1],max(peak*1e-7,1e-12),1e-6))
+                checks.append(comparison(key+".integral_on_plotted_domain",integral(finite),integral(points),1e-7,1e-6))
+                step=(finite[-1][0]-finite[0][0])/511
+                checks.append(comparison(key+".peak_position",max(finite,key=lambda p:p[1])[0],max(points,key=lambda p:p[1])[0],abs(step)+1e-10))
     return checks
 
 
@@ -188,7 +270,7 @@ def main(argv=None):
     parser.add_argument("--output",type=Path,default=Path("benchmark-results/minionqc-reference"))
     parser.add_argument("--rscript",default="Rscript")
     parser.add_argument("--docker",metavar="IMAGE")
-    parser.add_argument("--case",action="append",default=[])
+    parser.add_argument("--case",action="append",default=[],choices=["minion","promethion","short","1d2","rna","combined","zero-cutoff","n50-tie","ultralong-endpoint","fit-small","fit-large","fit-sparse","density-multimodal","density-skewed","density-constant","density-near","density-outliers"])
     parser.add_argument("--capture-only",action="store_true",help="Skip figure files; still execute upstream functions and ggplot_build")
     args=parser.parse_args(argv)
     upstream=args.upstream.resolve();binary=args.binary.resolve();output=args.output.resolve()
@@ -197,46 +279,54 @@ def main(argv=None):
     output.mkdir(parents=True,exist_ok=True)
     harness=Path(__file__).resolve().parent/"reference/capture.R"
     available=shutil.which("docker" if args.docker else args.rscript)
-    report=dict(reference_commit=REVISION,source_sha256=digest(upstream/"MinIONQC.R"),cases=[])
+    image_id=None
+    if args.docker and available:
+        inspected=subprocess.run(["docker","image","inspect",args.docker,"--format","{{.Id}}"],capture_output=True,text=True)
+        if inspected.returncode==0: image_id=inspected.stdout.strip()
+    report=dict(reference_commit=REVISION,source_sha256=digest(upstream/"MinIONQC.R"),poregauge_binary_sha256=digest(binary),reference_image=dict(name=args.docker,id=image_id),cases=[])
     for name, paths, cutoff in cases(upstream, output):
         if args.case and name not in args.case: continue
         directory=output/name; directory.mkdir(exist_ok=True)
-        pgdir=directory/"poregauge"
-        result=subprocess.run([str(binary),"analyze",*map(str,paths),"--split-runs","--yaml","-q",str(cutoff),"-o",str(pgdir)],capture_output=True,text=True)
-        (directory/"poregauge.log").write_text(result.stdout+result.stderr)
-        if result.returncode: raise RuntimeError(result.stderr)
-        pg=json.loads((pgdir/"combined/report.json").read_text())
-        probe=directory/"source-population.json"
-        probe_env=dict(__import__('os').environ,PG_PROBE_INPUTS=json.dumps(list(map(str,paths))),PG_PROBE_CUTOFF=str(cutoff),PG_PROBE_OUTPUT=str(probe),PG_PROBE_CURVES="1" if available else "0")
-        checked=subprocess.run(["cargo","test","reference_probe::export_report","--","--ignored","--exact"],env=probe_env,capture_output=True,text=True,cwd=Path(__file__).resolve().parents[1])
-        if checked.returncode: raise RuntimeError(checked.stderr)
-        source_population=json.loads(probe.read_text())
         # Keep original source bytes, including legacy columns and RNA controls.
         inputdir=directory/"inputs"; inputdir.mkdir(exist_ok=True)
         copied=[]
         for i,path in enumerate(paths):
             dest=inputdir/f"source_{i+1:03}"/"sequencing_summary.txt"
             dest.parent.mkdir(exist_ok=True);shutil.copyfile(path,dest);copied.append(dest)
+        pgdir=directory/"poregauge"
+        options=["--minionqc-trends","--minionqc-density"] if available else []
+        result=subprocess.run([str(binary),"analyze",*map(str,copied),"--split-runs","--yaml","--muxes","8",*options,"-q",str(cutoff),"-o",str(pgdir)],capture_output=True,text=True)
+        (directory/"poregauge.log").write_text(result.stdout+result.stderr)
+        if result.returncode: raise RuntimeError(result.stderr)
+        pg=json.loads((pgdir/"combined/report.json").read_text())
+        probe=directory/"source-population.json"
+        probe_env=dict(os.environ,PG_PROBE_INPUTS=json.dumps(list(map(str,copied))),PG_PROBE_CUTOFF=str(cutoff),PG_PROBE_OUTPUT=str(probe),PG_PROBE_CURVES="1" if available else "0")
+        checked=subprocess.run(["cargo","test","reference_probe::export_report","--","--ignored","--exact"],env=probe_env,capture_output=True,text=True,cwd=Path(__file__).resolve().parents[1])
+        if checked.returncode: raise RuntimeError(checked.stderr)
+        source_population=json.loads(probe.read_text())
         rdir=directory/"minionqc";rdir.mkdir(exist_ok=True)
         capture=directory/"capture.json"
         capture.unlink(missing_ok=True) # Never reuse a stale successful R capture.
-        env=dict(__import__('os').environ,PG_REFERENCE_SOURCE=str(upstream/"MinIONQC.R"),PG_REFERENCE_CAPTURE=str(capture),PG_REFERENCE_RENDER=str(not args.capture_only).lower())
-        cli=[str(harness),"-i",str(inputdir if len(paths)>1 else copied[0]),"-o",str(rdir),"-q",str(cutoff),"-p","1","-f","pdf","-s","TRUE"]
+        env=dict(os.environ,PG_REFERENCE_SOURCE=str(upstream/"MinIONQC.R"),PG_REFERENCE_CAPTURE=str(capture),PG_REFERENCE_RENDER=str(not args.capture_only).lower())
+        cli=[str(harness),"-i",str(inputdir if len(paths)>1 else copied[0]),"-o",str(rdir),"-q",str(cutoff),"-p","1","-m","8","-f","pdf","-s","TRUE"]
         if args.docker:
             # Same absolute paths inside the container; no shell interpolation.
             mounts=set([upstream,output,harness.parent])
-            command=["docker","run","--rm",*[v for path in sorted(mounts) for v in ["-v",f"{path}:{path}"]],*[v for k in ["PG_REFERENCE_SOURCE","PG_REFERENCE_CAPTURE","PG_REFERENCE_RENDER"] for v in ["-e",f"{k}={env[k]}"]],args.docker,*cli]
+            command=["docker","run","--rm",*[v for path in sorted(mounts) for v in ["-v",f"{path}:{path}"+("" if path==output else ":ro")]],*[v for k in ["PG_REFERENCE_SOURCE","PG_REFERENCE_CAPTURE","PG_REFERENCE_RENDER"] for v in ["-e",f"{k}={env[k]}"]],args.docker,*cli]
         else: command=[args.rscript,*cli]
         if available:
             result=subprocess.run(command,env=env,capture_output=True,text=True)
             (directory/"minionqc.log").write_text(result.stdout+result.stderr)
+        else:
+            (directory/"minionqc.log").write_text("Reference executable unavailable; original R script was not executed.\n")
         reference=json.loads(capture.read_text()) if capture.exists() else None
         rows,excluded=observations(paths)
         checks=metrics(reference,pg,rows,cutoff) if reference else [unverified("reference_execution","R/container unavailable or failed; inspect minionqc.log. No R comparisons fabricated.")]
         if reference:
-            channel_checks=metrics(reference,source_population,rows,cutoff)
+            channel_checks=metrics(reference,source_population,rows,cutoff,channel_scope=True)
             checks.extend(c for c in channel_checks if c["metric"].startswith("channel."))
             checks.extend(fitted_comparisons(reference,source_population))
+            checks.extend(density_comparisons(reference,source_population))
         if reference and reference.get("error"):
             checks.append(unverified("reference_completion",reference["error"]))
         if reference:
@@ -251,7 +341,7 @@ def main(argv=None):
             for item in inventory:
                 if not item["labels"].get("x") or not item["labels"].get("y"):
                     checks.append(unverified(f"plot.{item['file']}.axes","Reference axis metadata missing; inspect inventory."))
-        report["cases"].append(dict(name=name,qscore_cutoff=cutoff,inputs=[dict(sha256=digest(p),bytes=p.stat().st_size) for p in paths],excluded_controls=excluded,reference_executed=reference is not None,checks=checks))
+        report["cases"].append(dict(name=name,qscore_cutoff=cutoff,inputs=[dict(sha256=digest(p),bytes=p.stat().st_size) for p in paths],excluded_controls=excluded,reference_executed=reference is not None,reference_environment=reference.get("session") if reference else None,checks=checks))
         print(name,dict(Counter(c["status"] for c in checks)))
     statuses=Counter(c["status"] for case in report["cases"] for c in case["checks"])
     report["status_counts"]=dict(statuses)

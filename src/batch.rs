@@ -16,6 +16,7 @@ pub struct AnalysisOptions {
     pub layout: Option<FlowcellLayout>,
     pub cutoff: f64,
     pub minionqc_trends: bool,
+    pub minionqc_density: bool,
     pub combined_only: bool,
     pub group_inputs: bool,
     pub split_runs: bool,
@@ -81,6 +82,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
                 let index = groups.len();
                 let mut aggregator = Aggregator::new(options.layout, false);
                 aggregator.set_qscore_cutoff(options.cutoff, true);
+                aggregator.enable_reference_density(options.minionqc_density);
                 aggregator.set_sampling_enabled(!options.combined_only);
                 groups.push(Group {
                     trends: options
@@ -148,6 +150,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         } else if !had_record {
             let mut aggregator = Aggregator::new(options.layout, speed);
             aggregator.set_qscore_cutoff(options.cutoff, native);
+            aggregator.enable_reference_density(options.minionqc_density);
             aggregator.set_sampling_enabled(!options.combined_only);
             aggregator.include_input_format(schema, representation)?;
             groups.push(Group {
@@ -207,8 +210,19 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         }
     }
     let mut fits = plans.into_iter();
+    let mut domain = crate::density::Bounds::default();
+    if options.minionqc_density {
+        for group in &groups {
+            domain.merge(group.aggregator.density_bounds());
+        }
+        for group in &mut groups {
+            group.aggregator.set_density_domain(domain);
+        }
+    }
     let mut pooled = Aggregator::new(None, false);
     pooled.set_qscore_cutoff(options.cutoff, true);
+    pooled.enable_reference_density(options.minionqc_density);
+    pooled.set_density_domain(domain);
     let mut runs = Vec::new();
     for (index, group) in groups.into_iter().enumerate() {
         let (mut report, observations) = group.aggregator.finish_retaining(group.run_id)?;

@@ -2814,3 +2814,105 @@ fn optional_gam_and_sparse_fits_are_bounded_and_unavailable_when_required() {
         directory.analyze_with_args(&format!("{HEADER}{ROW}{ROW}"), &["--minionqc-trends"]);
     assert!(sparse["fitted_trends"]["single"][0]["unavailable_reason"].is_string());
 }
+
+#[test]
+fn reference_densities_keep_old_statistics_and_include_zero_q_only_in_named_population() {
+    let directory = TestDirectory::new();
+    let data = fs::read_to_string(fixture("synthetic.tsv")).unwrap();
+    let old = directory.analyze(&data);
+    let report =
+        directory.analyze_with_args(&data, &["--minionqc-density", "--qscore-cutoff", "0"]);
+    let normal = directory.analyze_with_args(&data, &["--qscore-cutoff", "0"]);
+    for key in [
+        "metrics",
+        "quality",
+        "comparison",
+        "distributions",
+        "diagnostics",
+    ] {
+        assert_eq!(normal[key], report[key]);
+    }
+    assert!(old.get("minionqc_density").is_none());
+    let density = &report["minionqc_density"];
+    assert_eq!(density["qscore"]["observations"], 6);
+    assert_eq!(density["selected_qscore"]["observations"], 6);
+    assert_eq!(density["length_log10"]["observations"], 4);
+    assert_eq!(density["qscore"]["points"].as_array().unwrap().len(), 512);
+    let empty = directory.analyze_with_args(HEADER, &["--minionqc-density"]);
+    assert!(empty["minionqc_density"]["qscore"].is_null());
+    let zero = directory.analyze_with_args(
+        &format!(
+            "{HEADER}{}{}",
+            ROW.replace("\t10\t", "\t0\t"),
+            ROW.replace("\t10\t", "\t0\t")
+        ),
+        &["--minionqc-density"],
+    );
+    assert!(zero["minionqc_density"]["qscore"].is_object());
+    assert!(zero["quality"]["mean_qscore"].is_null());
+}
+
+#[test]
+fn reference_densities_share_domains_across_unequal_sources_and_are_deterministic() {
+    let directory = TestDirectory::new();
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv");
+    fs::write(
+        &a,
+        format!("{HEADER}{ROW}{}", ROW.replace("\t10\t", "\t20\t")),
+    )
+    .unwrap();
+    fs::write(
+        &b,
+        format!(
+            "{HEADER}{}{}{}",
+            ROW.replace("synthetic-run", "second")
+                .replace("\t10\t", "\t1000000\t"),
+            ROW.replace("synthetic-run", "second")
+                .replace("\t12.5\t", "\t30\t"),
+            ROW.replace("synthetic-run", "second")
+                .replace("\t10\t", "\t0\t")
+        ),
+    )
+    .unwrap();
+    let report = run_collection(&directory, &[&a, &b], &["--minionqc-density"]);
+    let runs = report["collection"]["runs"].as_array().unwrap();
+    let first = &runs[0]["minionqc_density"]["length_log10"]["points"];
+    let second = &runs[1]["minionqc_density"]["length_log10"]["points"];
+    assert_eq!(first[0]["x"], 1.0);
+    assert_eq!(second[511]["x"], 6.0);
+    for (a, b) in first
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(second.as_array().unwrap())
+    {
+        assert_eq!(a["x"], b["x"]);
+    }
+    let html = fs::read_to_string(directory.0.join("output/combined/report.html")).unwrap();
+    assert!(html.contains("R-grid density mode"));
+    assert!(html.contains("All summary records"));
+    assert!(!html.contains("NaN"));
+    assert!(!html.contains("src=\"https://"));
+    let same = run_collection(&directory, &[&a, &b], &["--minionqc-density"]);
+    assert_eq!(report, same);
+    assert_eq!(
+        html,
+        fs::read_to_string(directory.0.join("output/combined/report.html")).unwrap()
+    );
+}
+
+#[test]
+fn optional_reference_views_keep_untrusted_metadata_escaped_and_offline() {
+    let directory = TestDirectory::new();
+    let data = format!(
+        "{HEADER}{}",
+        ROW.replace("synthetic-run", "<script>alert('fictional')</script>&")
+    );
+    directory.analyze_with_args(&data, &["--minionqc-trends", "--minionqc-density"]);
+    let html = directory.html();
+    assert_eq!(html.matches("<script>").count(), 1);
+    assert!(html.contains("&lt;script&gt;alert(&#39;fictional&#39;)&lt;/script&gt;&amp;"));
+    assert!(!html.contains("src=\"https://"));
+    assert!(!html.contains("<link"));
+}

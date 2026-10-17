@@ -625,3 +625,41 @@ constant GAM intercepts, method selection, exact populations, unchanged existing
 metrics, sparse inputs and bounded storage. Actual R curve comparisons remain
 unverified here; the harness's provisional target is 1e-10 hours and fitted-value
 absolute 1e-6 + relative 1e-6. These are acceptance targets, not measured accuracy.
+
+## Optional R-grid density estimates (#13)
+
+`--minionqc-density` adds `minionqc_density`, leaving the original `distributions`
+and all existing statistics unchanged. The new four estimates use the existing
+`DistributionEstimates` shape (bandwidth, observation count, 512 x/density pairs).
+Length observations are transformed with log10 **before** estimation, matching
+scale transformation before ggplot statistics; density units are per log10(bp),
+not per bp. No raw-length Jacobian is applied. Zero lengths cannot enter that
+transformed population. Q density includes all retained summary-record Q values,
+including zero-length rows; its named Q-cutoff subset is inclusive. These are
+reference comparison populations, separate from basecalled Q-score statistics.
+
+Bandwidth is Gaussian `bw.nrd0`, sample SD and type-7 IQR/1.34, adjust 1. All groups
+share the plot's observed scale domain (`trim=false`); selected groups do not
+silently acquire independent X grids. Degenerate domains provisionally use width
+1, pending real ggplot validation. R 4.4 corrected coordinates (`old.coords=false`)
+use 512 linear mass bins, an internal domain extended by four bandwidths and a
+zero-padded discrete Gaussian convolution, then linear interpolation to 512 plot
+points. Direct convolution replaces FFT computation, without another dependency;
+its mathematical convolution is the same, but floating rounding may differ.
+No boundary reflection or forced re-normalization is applied. Area on the plotted
+observed range can be less than one because Gaussian tails extend beyond it.
+Very wide domains/small bandwidths can underresolve peaks, as in a finite R grid.
+
+Existing positive-length numeric buffers are reused. Only this optional mode
+additionally retains one `f64` per zero-length record (8 bytes of elements plus
+capacity), required for exact summary-Q bandwidth quantiles. Buffers are moved
+into pooling, not duplicated by subset. Kernel/mass/evaluation arrays are fixed
+size; sparse (<2 observations) and nonrepresentable estimates are null. Original
+single-observation fallback behavior remains unchanged in legacy distributions.
+
+Tests cover known bandwidths, integral mass on a sufficiently wide domain,
+symmetry/peaks, close/constant observations, long tails, shared domains, unequal
+source sizes, zero-Q population distinctions, determinism and unchanged old QC.
+The executable harness compares every density point, plotted-domain integral and
+peak position to actual ggplot layers when R is available. No R results were
+measured in this environment; all tolerances remain provisional acceptance targets.

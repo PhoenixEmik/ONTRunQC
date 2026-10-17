@@ -48,7 +48,7 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 | `length_histogram`, `q_histogram` | Complete | All/Q count and yield histograms; fixed documented bins rather than 300 automatic bins; U histogram conservation / offline tests, V. |
 | `yield_over_time`, `reads_per_hour` | Complete | Absolute cumulative yield and counts in 15-minute bins, All/Q; U interval/cumulative conservation and gap tests, V. Counts are per 15 min, explicitly labeled. |
 | `yield_by_length` | Complete | Exact retained bp at bounded display queries, exact threshold counts; All/Q, full yield range rather than R's 99% crop; U `every_display_query_uses_exact_lengths_including_ties`, P, V. |
-| `length_by_hour`, `q_by_hour` | Partial | Actual unsmoothed 15-minute per-read means, All/Q, gaps retained; U temporal means. R's fitted smoothing/ribbons are not reproduced. |
+| `length_by_hour`, `q_by_hour` | Partial | Unchanged 15-minute means plus opt-in raw-read LOESS/cubic-shrinkage REML fits; U temporal/fitting tests. R interpolation, large-group exact knots and ribbons remain incomplete. |
 | `channel_summary` | Complete | Four channel distributions and exact values, All-summary/Q; U channel summary tests, V. |
 | `gb_per_channel_overview` | Complete | Explicit-layout yield heatmaps including All/Q (native maps additionally available); U layout/yield conservation, V. |
 | MinION `flowcell_overview` | Partial | Exact physical panels, actual start/length/Q values, deterministic <=16 reads/channel; U sample bound/mapping tests, V. Full-read panels not reproduced. |
@@ -56,9 +56,9 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 | PromethION physical read-level overview | Not applicable | Upstream omits the per-read channel panels for PromethION. |
 | PromethION `length_vs_q` | Complete | Bounded logarithmic-length/Q count heatmaps, matching the upstream bin2d analysis family; fixed documented bins, no individual read points; U joint count conservation, V. |
 | `combined_length_histogram`, `combined_q_histogram`, `combined_yield_by_length` | Complete | Pooled All/Q observations and exact yield queries; U pooled conservation/exact median/N50, P multiple inputs, V. |
-| Per-source `length_distributions`, `q_distributions` | Partial | Gaussian KDE with R `bw.nrd0`, bounded linear binning/512 evaluations; U direct Gaussian tolerance <=0.5% peak. R FFT/cropping not identical. |
+| Per-source `length_distributions`, `q_distributions` | Partial | Legacy KDE retained; opt-in shared-domain R-grid estimates, including summary Q observations. U kernel/bandwidth/mass tests; actual R differential accuracy pending. |
 | Per-source `yield_over_time`, `yield_by_length` | Complete | Absolute yields, common units/colors; U combined report/curve tests, P pooled totals, V. Run/source labels never invent flowcell identity. |
-| Per-source `length_by_hour`, `q_by_hour` | Partial | All/Q unsmoothed 15-minute means, independent missing intervals; U collection/time means, V. No R fit/ribbons. |
+| Per-source `length_by_hour`, `q_by_hour` | Partial | All/Q unsmoothed means plus opt-in raw-read fits with global method selection; U collection/time and fit tests. Exact R fits/ribbons remain Partial. |
 
 ## CLI and outputs
 
@@ -101,7 +101,7 @@ Issues should remain open wherever their required acceptance criteria exceed
 these implemented, tested behaviors. In particular, sampling, smoothing/KDE and
 six static export formats prevent an unqualified full-parity claim.
 
-Executed repository checks: rustfmt, Clippy with warnings denied, **17 unit +76
+Earlier baseline checks (before #11–#13): rustfmt, Clippy with warnings denied, **17 unit +76
 integration tests**, and the locked release build. Existing JSON subtrees match
 the pre-multi-run binary on synthetic, advanced-quality and Deep-QC fixtures.
 Chrome inspection covered combined HTML at 1440/390 px, a no-script MinION report
@@ -120,8 +120,8 @@ exact, rounding-tolerance, intentional semantic, suspected PoreGauge defect,
 proved upstream defect and unverified results. The validation-only Rust probe
 preserves upstream file-scoped populations without changing CLI run grouping.
 
-Executed here: three harness classification tests and the nine-case paired
-command. PoreGauge ran; **all nine R comparisons are Not yet verified**: no R
+Executed here: four harness tests and the expanded 17-case paired command.
+PoreGauge ran; **all 17 R comparisons are Not yet verified**: no R
 installation, stopped Docker daemon, restricted environment-download/network
 access. Saved YAML/Python checks remain valid but are not actual R execution.
 No scientific parity status was promoted, and issue #11 remains open pending a
@@ -140,3 +140,31 @@ population details are in metrics.md. Polynomial/spline/constant-model unit test
 and CLI regressions passed; no actual R numerical tolerance has been measured.
 The executable harness compares methods, all 80 X/Y points and explicitly records
 unverified confidence intervals. Issue #12 remains open.
+
+## R-grid densities (#13): Partial
+
+`--minionqc-density` adds a separate R 4.4-style Gaussian estimator and uses it in
+combined distribution charts. Legacy density values remain available unchanged.
+The estimator uses shared scale domains, transformed log lengths, `bw.nrd0`,
+512 mass/evaluation bins, four-bandwidth extension and direct discrete convolution
+of the same padded-grid kernel. Summary-Q density explicitly includes zero-length
+rows; ordinary basecalled quality metrics still exclude them. Details and extra
+optional zero-Q storage are documented in metrics.md.
+
+Tests passed for bandwidth, area/symmetry/peaks, near-identical/constant values,
+long tails, unequal sizes and shared axes. The expanded optional harness covers
+17 public/synthetic cases and compares 512 X/density values per series, domain
+integrals and peak locations. It does not confuse an observed-domain integral
+with full Gaussian mass or auto-accept mismatches. **Actual R verification remains
+unavailable**; constant-domain expansion, FFT rounding and fitted confidence bands
+are not verified. Neither #12 nor #13 is promoted to Complete or closed.
+
+Current closure checks: rustfmt, warning-free Clippy, **25 unit +81 integration
+tests**, four Python harness tests and the locked release build passed. The
+optional Rust file-population probe also executed on the public short fixture
+and produced 80-point fits and 512-point densities; this is not an R comparison.
+Chrome inspection covered the new combined views at 1440/390 px; all 87 exported
+synthetic SVG files passed XML parsing. No private-data rerun or performance
+benchmark was performed. No Rust dependencies were added. Fits require an extra
+streaming pass; optional summary-Q densities retain eight bytes per zero-length
+Q observation in addition to existing buffers.

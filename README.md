@@ -6,7 +6,7 @@ modern MinKNOW/Dorado output. It streams TSV records, validates them, calculates
 run metrics, and writes deterministic JSON and standalone HTML reports.
 
 Current release: **[v0.4.0 — Advanced Read Quality Diagnostics](https://github.com/PhoenixEmik/PoreGauge/tree/v0.4.0)**.
-Unreleased development: **MinIONQC parity, issues #5–#10** (on the 0.4.1 codebase).
+Unreleased development: **MinIONQC scientific parity, issues #11–#13** (on the 0.4.1 codebase).
 
 PoreGauge is not a basecaller or a replacement for MinKNOW instrument monitoring.
 It does not analyze FASTQ, BAM, or POD5 files.
@@ -453,3 +453,11 @@ an extra streaming pass and adds clearly labeled curves alongside the unchanged
 numerical equivalence and confidence bands remain unverified. See
 [the scientific parity audit](docs/minionqc-parity.md#fitted-time-trends-12-partial)
 before treating these curves as interchangeable with MinIONQC.
+
+`--minionqc-density` adds provisional shared-domain R-grid densities to combined
+reports and JSON while preserving the existing density estimates. It estimates
+log-length density after transformation and distinguishes summary-Q observations
+from basecalled Q statistics. This mode adds 8 bytes per zero-length Q observation,
+plus allocation overhead; positive-length buffers are reused. Real R differential
+execution is optional: see [reference setup and commands](tests/reference/README.md).
+No R package or container is required to build or run normal PoreGauge analysis.

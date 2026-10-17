@@ -408,6 +408,9 @@ pub struct ReadPoint {
 pub struct Aggregator {
     overall: OverallMetrics,
     input: InputSummary,
+    reference_density: bool,
+    reference_domain: crate::density::Bounds,
+    zero_qscores: Vec<f64>,
     negative_quality_count: u64,
     negative_joint: [u64; JOINT_LENGTH_BOUNDS.len()],
     negative_passed_joint: [u64; JOINT_LENGTH_BOUNDS.len()],
@@ -452,6 +455,19 @@ pub struct DensityEstimate {
 pub struct DensityPoint {
     pub x: f64,
     pub density: f64,
+}
+
+fn mixed_quality<'a>(parts: [&'a [f64]; 4], zero: &'a [f64]) -> impl Iterator<Item = f64> + 'a {
+    let mut indices = [0usize; 5];
+    let slices = [parts[0], parts[1], parts[2], parts[3], zero];
+    std::iter::from_fn(move || {
+        let next = (0..5)
+            .filter(|&i| indices[i] < slices[i].len())
+            .min_by(|&a, &b| slices[a][indices[a]].total_cmp(&slices[b][indices[b]]))?;
+        let value = slices[next][indices[next]];
+        indices[next] += 1;
+        Some(value)
+    })
 }
 
 // Gaussian KDE with R's bw.nrd0 rule and type-7 quartiles. Linear binning
@@ -555,6 +571,7 @@ fn density_estimate<I: Iterator<Item = f64>>(values: impl Fn() -> I) -> Option<D
 }
 
 pub struct NumericObservations {
+    zero_qscores: Vec<f64>,
     lengths: [Vec<u64>; 4],
     qscores: [Vec<f64>; 4],
 }
@@ -665,9 +682,33 @@ impl Aggregator {
         for (to, from) in self.qscores.iter_mut().zip(observations.qscores) {
             append_observations(to, from)?;
         }
+        append_observations(&mut self.zero_qscores, observations.zero_qscores)?;
         Ok(())
     }
 
+    pub fn enable_reference_density(&mut self, enabled: bool) {
+        self.reference_density = enabled;
+    }
+    pub fn density_bounds(&self) -> crate::density::Bounds {
+        crate::density::Bounds {
+            length: crate::density::range(
+                self.channel_lengths
+                    .values()
+                    .flat_map(|c| c.partitions.iter().flatten())
+                    .map(|n| (*n as f64).log10()),
+            ),
+            qscore: crate::density::range(
+                self.qscores
+                    .iter()
+                    .flatten()
+                    .chain(&self.zero_qscores)
+                    .copied(),
+            ),
+        }
+    }
+    pub fn set_density_domain(&mut self, bounds: crate::density::Bounds) {
+        self.reference_domain = bounds;
+    }
     pub fn set_sampling_enabled(&mut self, enabled: bool) {
         self.sample_enabled = enabled;
     }
@@ -799,6 +840,9 @@ impl Aggregator {
             value.total_records += 1;
         }
         if record.length == 0 {
+            if self.reference_density {
+                push_compact(&mut self.zero_qscores, record.qscore)?;
+            }
             self.overall.zero_length_records += 1;
             if let Some(value) = &mut channel_mux {
                 value.zero_length_records += 1;
@@ -1047,6 +1091,7 @@ impl Aggregator {
         for part in &mut self.qscores {
             part.sort_unstable_by(f64::total_cmp);
         }
+        self.zero_qscores.sort_unstable_by(f64::total_cmp);
         let all_lengths = length_slices(&lengths, Population::All);
         let native_lengths = length_slices(&lengths, Population::Native);
         let selected_lengths = length_slices(&lengths, Population::Selected);
@@ -1074,6 +1119,32 @@ impl Aggregator {
                 ascending_lengths(selected_lengths).map(|n| (n as f64).log10())
             }),
             selected_qscore: density_estimate(|| ascending_quality(selected_q)),
+        };
+        let minionqc_density = if self.reference_density {
+            let selected_zero = &self.zero_qscores[self
+                .zero_qscores
+                .partition_point(|q| *q < self.comparison.cutoff)..];
+            Some(DistributionEstimates {
+                method: "R4.4_gaussian_nrd0_grid512_ext4_discrete_convolution_unverified",
+                length_log10: crate::density::estimate(
+                    || ascending_lengths(all_lengths).map(|n| (n as f64).log10()),
+                    self.reference_domain.length,
+                ),
+                selected_length_log10: crate::density::estimate(
+                    || ascending_lengths(selected_lengths).map(|n| (n as f64).log10()),
+                    self.reference_domain.length,
+                ),
+                qscore: crate::density::estimate(
+                    || mixed_quality(all_q, &self.zero_qscores),
+                    self.reference_domain.qscore,
+                ),
+                selected_qscore: crate::density::estimate(
+                    || mixed_quality(selected_q, selected_zero),
+                    self.reference_domain.qscore,
+                ),
+            })
+        } else {
+            None
         };
         let passed_read_statistics = subset_statistics(
             native_lengths,
@@ -1345,6 +1416,7 @@ impl Aggregator {
                 diagnostics,
                 comparison,
                 distributions,
+                minionqc_density,
                 input: self.input,
                 presentation: crate::report::PresentationOptions::default(),
                 fitted_trends: None,
@@ -1352,6 +1424,7 @@ impl Aggregator {
                 collection: None,
             },
             NumericObservations {
+                zero_qscores: self.zero_qscores,
                 lengths,
                 qscores: self.qscores,
             },
