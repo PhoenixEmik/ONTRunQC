@@ -4,3 +4,5 @@
 /sequencing_summary*.txt
 /sequencing_summary*.txt.gz
 .DS_Store
+
+__pycache__/

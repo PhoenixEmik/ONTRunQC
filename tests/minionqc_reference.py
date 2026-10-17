@@ -208,4 +208,7 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--execute-r" in sys.argv:
+        from minionqc_differential import main as differential_main
+        sys.exit(differential_main())
     main()

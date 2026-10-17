@@ -109,3 +109,20 @@ copy, and an independent SVG with its title/legend. The final two-run synthetic
 export's 89 SVG files passed XML parsing; Ruby Psych independently parsed a YAML
 summary and confirmed its integer yield against JSON. These are validation
 checks, not full-run performance benchmarks. No Rust dependencies were added.
+
+## Executable reference validation (#11)
+
+The optional [paired R harness](../tests/reference/README.md) runs the exact pinned
+script and actual `ggplot_build()` layers, with R 4.4.1 / ggplot2 3.5.1 / mgcv
+1.9-1 and a dated CRAN snapshot. It records source/input hashes, environment,
+actual YAML, plot metadata and machine-readable differences. Statuses distinguish
+exact, rounding-tolerance, intentional semantic, suspected PoreGauge defect,
+proved upstream defect and unverified results. The validation-only Rust probe
+preserves upstream file-scoped populations without changing CLI run grouping.
+
+Executed here: three harness classification tests and the nine-case paired
+command. PoreGauge ran; **all nine R comparisons are Not yet verified**: no R
+installation, stopped Docker daemon, restricted environment-download/network
+access. Saved YAML/Python checks remain valid but are not actual R execution.
+No scientific parity status was promoted, and issue #11 remains open pending a
+successful reference run. The command returns 2 rather than falsely passing.

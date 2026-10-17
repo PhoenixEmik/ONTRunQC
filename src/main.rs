@@ -69,3 +69,7 @@ fn run(cli: Cli) -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/reference/probe.rs"]
+mod reference_probe;
