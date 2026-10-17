@@ -1,9 +1,9 @@
 {
   "reference_commit": "54485d586038d8ee36f168dd94f31c423f52f581",
   "reference_source_sha256": "841253a28a785b9efdc09c855c163646882e01152e26eda509adae2732c6651d",
-  "capture_script_sha256": "e1da9e9aaa32bf645f8771f858f4010524d533bf41a5cd7568811522d9cdc11f",
-  "poregauge_binary_sha256": "978d295e09ed5f16b6304924e529ff323074a3bea4e5081e36f6e822216e6bf9",
-  "comparison_sha256": "2eaeeb47879578a1a5e808c23ea111ec7bf4c5aee8e0f77ea0decbf76d9a721d",
+  "capture_script_sha256": "f0ea8abe8f0f21f0a2db2e1f1ddc8b70e30a4a55d9bb4d5ae7c7509585a40afe",
+  "poregauge_binary_sha256": "50bf419874c2616e2087bc78b527e63183ec19fbe40f9a65e6a6c9e70b1cace3",
+  "comparison_sha256": "d09b26688cfb9904a39041b1fd1b860e5afd015fa8bba871a2ad549970f65942",
   "environment": {
     "r": "4.4.1",
     "ggplot2": "3.5.1",
@@ -398,21 +398,17 @@
       }
     ]
   },
-  "command": "python3 tests/minionqc_reference.py /path/to/pinned/minion_qc --execute-r --rscript /path/to/Rscript --output benchmark-results/minionqc-final --capture-only",
+  "command": "python3 tests/minionqc_reference.py /path/to/pinned/minion_qc --execute-r --rscript /path/to/Rscript --output benchmark-results/issue12-paired --capture-only",
   "case_count": 18,
   "reference_completed": 18,
   "suite_exit_code": 1,
   "status_counts": {
     "intentional_semantic_difference": 36,
-    "exact_match": 58185,
-    "rounding_tolerance": 45656,
+    "exact_match": 58763,
+    "rounding_tolerance": 49956,
     "upstream_minionqc_defect": 8954,
-    "suspected_poregauge_defect": 2400,
-    "not_yet_verified": 604
-  },
-  "unverified_reasons": {
-    "R layer prediction is censored or nonfinite; uncensored reference prediction is unavailable. A null cannot establish a Rust numerical defect or a match.": 460,
-    "Rust confidence intervals are deliberately unavailable until R verification.": 144
+    "suspected_poregauge_defect": 6302,
+    "not_yet_verified": 112
   },
   "density": {
     "status_counts": {
@@ -426,6 +422,41 @@
     "maximum_plotted_integral_absolute_error": 6.687583820053078e-11,
     "maximum_error_divided_by_reference_peak": 9.212027642994249e-08
   },
+  "unverified_reasons": {
+    "Uncensored reference or Rust confidence intervals unavailable; no uncertainty match claimed.": 112
+  },
+  "previous_validation": {
+    "comparison_sha256": "2eaeeb47879578a1a5e808c23ea111ec7bf4c5aee8e0f77ea0decbf76d9a721d",
+    "poregauge_binary_sha256": "978d295e09ed5f16b6304924e529ff323074a3bea4e5081e36f6e822216e6bf9",
+    "status_counts": {
+      "intentional_semantic_difference": 36,
+      "exact_match": 58185,
+      "rounding_tolerance": 45656,
+      "upstream_minionqc_defect": 8954,
+      "suspected_poregauge_defect": 2400,
+      "not_yet_verified": 604
+    },
+    "note": "Before exact knots / two-row LOESS / uncensored R predictions / GAM uncertainty; comparison scope differs."
+  },
+  "fitting": {
+    "failed_checks_by_field": {
+      "fitted": 1625,
+      "standard_error": 1435,
+      "lower": 1641,
+      "upper": 1601
+    },
+    "knot_coordinates_compared": 320,
+    "maximum_knot_absolute_error_hours": 1.4210854715202004e-14,
+    "uncertainty_convention": "GAM: pointwise 95% Bayesian normal, conditional on smoothing parameter; LOESS: unavailable.",
+    "tolerance": {
+      "hours_absolute": 1e-10,
+      "knots_absolute": 1e-10,
+      "knots_relative": 1e-12,
+      "fitted_and_uncertainty_absolute": 1e-06,
+      "fitted_and_uncertainty_relative": 1e-06
+    }
+  },
+  "unchanged_non_fit_checks": 92299,
   "cases": [
     {
       "name": "minion",
@@ -439,19 +470,53 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "6fbf81ea2b70fbbda7559cb0397df0e833f6cac5b8be658160884eeb59d63c84",
+      "reference_capture_sha256": "f8bb3712cdb26bc3e8f0453a23e5f794d38c0136ab58828ad386c6b9eefe2e80",
       "status_counts": {
         "intentional_semantic_difference": 3,
-        "exact_match": 2581,
-        "rounding_tolerance": 730,
+        "exact_match": 2613,
+        "rounding_tolerance": 979,
         "upstream_minionqc_defect": 976,
-        "suspected_poregauge_defect": 304,
-        "not_yet_verified": 20
+        "suspected_poregauge_defect": 1051
       },
       "failures_by_family": {
-        "fit": 304
+        "fit": 1051
       },
-      "maximum_fit_absolute_error": 1465.2745860456926
+      "maximum_fit_absolute_error": 2.350896982316044,
+      "failed_fit_values": 267,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.0.fitted",
+          "reference": 21344.06284608871,
+          "poregauge": 21346.413743071025,
+          "absolute_difference": 2.350896982316044,
+          "relative_difference": 0.00011014290012488625,
+          "status": "suspected_poregauge_defect"
+        },
+        "standard_error": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.standard_error",
+          "reference": 1850.557633135447,
+          "poregauge": 1849.9862516210294,
+          "absolute_difference": 0.5713815144176806,
+          "relative_difference": 0.0003087618046510523,
+          "status": "suspected_poregauge_defect"
+        },
+        "lower": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.lower",
+          "reference": 19394.725840736723,
+          "poregauge": 19397.671924350187,
+          "absolute_difference": 2.9460836134639976,
+          "relative_difference": 0.00015190127654581418,
+          "status": "suspected_poregauge_defect"
+        },
+        "upper": {
+          "metric": "fit.source_001.length_by_hour.All reads.0.upper",
+          "reference": 21767.565376033832,
+          "poregauge": 21770.120948846743,
+          "absolute_difference": 2.555572812911123,
+          "relative_difference": 0.00011740278569347117,
+          "status": "suspected_poregauge_defect"
+        }
+      }
     },
     {
       "name": "promethion",
@@ -465,18 +530,52 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "a34c1631bc8181e52a9c89375c834a412e8384a9a063f2717db4ffd9c68b8c00",
+      "reference_capture_sha256": "7503a72186f0d50b3914ca4d6e6cef3fc8e5b54b8f00168dd74fc36316b4da56",
       "status_counts": {
-        "exact_match": 15706,
-        "rounding_tolerance": 1750,
+        "exact_match": 15754,
+        "rounding_tolerance": 2503,
         "upstream_minionqc_defect": 5610,
-        "suspected_poregauge_defect": 320,
-        "not_yet_verified": 4
+        "suspected_poregauge_defect": 531
       },
       "failures_by_family": {
-        "fit": 320
+        "fit": 531
       },
-      "maximum_fit_absolute_error": 70.14415086886675
+      "maximum_fit_absolute_error": 211.01709097690582,
+      "failed_fit_values": 129,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.fitted",
+          "reference": 11750.65090436984,
+          "poregauge": 11961.667995346746,
+          "absolute_difference": 211.01709097690582,
+          "relative_difference": 0.017957906561451215,
+          "status": "suspected_poregauge_defect"
+        },
+        "standard_error": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.standard_error",
+          "reference": 708.1549793492298,
+          "poregauge": 685.8827957301669,
+          "absolute_difference": 22.272183619062957,
+          "relative_difference": 0.03145100192549706,
+          "status": "suspected_poregauge_defect"
+        },
+        "lower": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.lower",
+          "reference": 10362.692649372644,
+          "poregauge": 10617.362418099976,
+          "absolute_difference": 254.66976872733176,
+          "relative_difference": 0.02457563659795984,
+          "status": "suspected_poregauge_defect"
+        },
+        "upper": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.upper",
+          "reference": 13138.609159367037,
+          "poregauge": 13305.973572593517,
+          "absolute_difference": 167.36441322647988,
+          "relative_difference": 0.012738366077900957,
+          "status": "suspected_poregauge_defect"
+        }
+      }
     },
     {
       "name": "short",
@@ -490,16 +589,27 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "1c3e5fb10c0bc5c8ba7882ec57cc2edfef17c8819a2ccd8ad85d4fcc52dfddab",
+      "reference_capture_sha256": "59a69da397f36f5102f7606d3412d783b98ccb330cc6ef4007ab0d16f31a54cd",
       "status_counts": {
         "intentional_semantic_difference": 4,
-        "exact_match": 899,
+        "exact_match": 907,
         "rounding_tolerance": 391,
         "upstream_minionqc_defect": 20,
         "not_yet_verified": 4
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 2.7284841053187847e-11
+      "maximum_fit_absolute_error": 2.7284841053187847e-11,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.Q>=8.65.fitted",
+          "reference": 12535.50413597397,
+          "poregauge": 12535.504135973943,
+          "absolute_difference": 2.7284841053187847e-11,
+          "relative_difference": 2.176605005847888e-15,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "1d2",
@@ -513,19 +623,53 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "a377ec0a3d0c6a4192faf2c5ea86e720e796a0aab250c4230ef409691dcecdff",
+      "reference_capture_sha256": "47784afc91562252361d8ceba5c74f3baadfd381981ac7f5d14784028357bb0c",
       "status_counts": {
         "intentional_semantic_difference": 4,
-        "exact_match": 2514,
-        "rounding_tolerance": 720,
+        "exact_match": 2562,
+        "rounding_tolerance": 1568,
         "upstream_minionqc_defect": 948,
-        "suspected_poregauge_defect": 320,
-        "not_yet_verified": 4
+        "suspected_poregauge_defect": 436
       },
       "failures_by_family": {
-        "fit": 320
+        "fit": 436
       },
-      "maximum_fit_absolute_error": 63.11121586025911
+      "maximum_fit_absolute_error": 0.19787907105137492,
+      "failed_fit_values": 101,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.0.fitted",
+          "reference": 4033.9642008089736,
+          "poregauge": 4034.162079880025,
+          "absolute_difference": 0.19787907105137492,
+          "relative_difference": 4.9053254119531386e-05,
+          "status": "suspected_poregauge_defect"
+        },
+        "standard_error": {
+          "metric": "fit.source_001.length_by_hour.All reads.0.standard_error",
+          "reference": 56.09760375092347,
+          "poregauge": 56.102145662255914,
+          "absolute_difference": 0.004541911332445636,
+          "relative_difference": 8.096444462426558e-05,
+          "status": "suspected_poregauge_defect"
+        },
+        "lower": {
+          "metric": "fit.source_001.length_by_hour.All reads.0.lower",
+          "reference": 3924.0149178381644,
+          "poregauge": 3924.2038949265834,
+          "absolute_difference": 0.18897708841905114,
+          "relative_difference": 4.815911569550384e-05,
+          "status": "suspected_poregauge_defect"
+        },
+        "upper": {
+          "metric": "fit.source_001.length_by_hour.All reads.0.upper",
+          "reference": 4143.913483779783,
+          "poregauge": 4144.1202648334665,
+          "absolute_difference": 0.2067810536836987,
+          "relative_difference": 4.989994470036275e-05,
+          "status": "suspected_poregauge_defect"
+        }
+      }
     },
     {
       "name": "rna",
@@ -539,16 +683,27 @@
       "excluded_controls": 37,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "ad87f2921588c741281a687be2af2281632e7c13f2f6c19c4397540bbf26f833",
+      "reference_capture_sha256": "b9d5d9ba77763a06857c2a9b3097ee62ad0339be4d4a5b6ef355c187f24f206d",
       "status_counts": {
         "intentional_semantic_difference": 5,
-        "exact_match": 2087,
+        "exact_match": 2095,
         "rounding_tolerance": 416,
         "upstream_minionqc_defect": 306,
         "not_yet_verified": 4
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 8.810729923425242e-13
+      "maximum_fit_absolute_error": 8.810729923425242e-13,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.79.fitted",
+          "reference": 157.2370161306814,
+          "poregauge": 157.23701613068053,
+          "absolute_difference": 8.810729923425242e-13,
+          "relative_difference": 5.603470569616093e-15,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "combined",
@@ -566,19 +721,53 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "30221b0d0f702042075082bb3fe85a5babc01e5031f50e36e6035c58a6088308",
+      "reference_capture_sha256": "c0546c7ab3e42abb86d22358d71354384157629cd2d3b9939d757af510fc9feb",
       "status_counts": {
         "intentional_semantic_difference": 5,
-        "exact_match": 6371,
-        "rounding_tolerance": 6317,
+        "exact_match": 6531,
+        "rounding_tolerance": 7201,
         "upstream_minionqc_defect": 1014,
-        "suspected_poregauge_defect": 1248,
-        "not_yet_verified": 48
+        "suspected_poregauge_defect": 4284
       },
       "failures_by_family": {
-        "fit": 1248
+        "fit": 4284
       },
-      "maximum_fit_absolute_error": 1465.2745860456926
+      "maximum_fit_absolute_error": 7.44092888628802,
+      "failed_fit_values": 1128,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_002.length_by_hour.All reads.79.fitted",
+          "reference": 9262.436446787651,
+          "poregauge": 9269.87737567394,
+          "absolute_difference": 7.44092888628802,
+          "relative_difference": 0.0008033446630415093,
+          "status": "suspected_poregauge_defect"
+        },
+        "standard_error": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.standard_error",
+          "reference": 1850.557633135447,
+          "poregauge": 1849.9862516210294,
+          "absolute_difference": 0.5713815144176806,
+          "relative_difference": 0.0003087618046510523,
+          "status": "suspected_poregauge_defect"
+        },
+        "lower": {
+          "metric": "fit.source_002.length_by_hour.All reads.79.lower",
+          "reference": 8632.657712235949,
+          "poregauge": 8640.030738691898,
+          "absolute_difference": 7.373026455949002,
+          "relative_difference": 0.0008540853467986409,
+          "status": "suspected_poregauge_defect"
+        },
+        "upper": {
+          "metric": "fit.source_002.length_by_hour.All reads.79.upper",
+          "reference": 9892.215181339354,
+          "poregauge": 9899.724012655981,
+          "absolute_difference": 7.508831316627038,
+          "relative_difference": 0.0007590646967315951,
+          "status": "suspected_poregauge_defect"
+        }
+      }
     },
     {
       "name": "zero-cutoff",
@@ -592,16 +781,27 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "0d2b2f69b78e8d3782ff283c41ff1bfdea2fd4d9fe1250750732f5fcbb04fe0d",
+      "reference_capture_sha256": "539c60a4db422a2bbd560867ae9ffd672f05f5105d12cddc66e08b563a8dfed8",
       "status_counts": {
         "intentional_semantic_difference": 11,
-        "exact_match": 312,
+        "exact_match": 308,
         "upstream_minionqc_defect": 4,
-        "not_yet_verified": 6,
-        "rounding_tolerance": 405
+        "rounding_tolerance": 419,
+        "not_yet_verified": 4
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 2.842170943040401e-14
+      "maximum_fit_absolute_error": 2.842170943040401e-14,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.11.fitted",
+          "reference": 85.48309565774717,
+          "poregauge": 85.48309565774714,
+          "absolute_difference": 2.842170943040401e-14,
+          "relative_difference": 3.324833899815396e-16,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "n50-tie",
@@ -615,18 +815,26 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "8452d72a3034bbd0ee8b190216d9328e5e5e3a5a417960f42d0f42b69c62b2a7",
+      "reference_capture_sha256": "b9215be0eca086d55697725e619906cb501719421569ece4a43135e19f927374",
       "status_counts": {
-        "exact_match": 482,
+        "exact_match": 494,
         "intentional_semantic_difference": 2,
-        "rounding_tolerance": 150,
-        "suspected_poregauge_defect": 104,
+        "rounding_tolerance": 250,
         "not_yet_verified": 4
       },
-      "failures_by_family": {
-        "fit": 104
-      },
-      "maximum_fit_absolute_error": 1.8516283701695002
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 5.684341886080802e-14,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.0.fitted",
+          "reference": 100.00000000000003,
+          "poregauge": 99.99999999999997,
+          "absolute_difference": 5.684341886080802e-14,
+          "relative_difference": 5.6843418860808e-16,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "ultralong-endpoint",
@@ -640,18 +848,26 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "bec526bb107169426b781e8de723fd37b94a1337b5a9ae46203c100d761f1a17",
+      "reference_capture_sha256": "f7340e6230369fd3608abc90350a7b56465f7386d309d4c7feffa60f4fdc8dba",
       "status_counts": {
-        "exact_match": 480,
+        "exact_match": 502,
         "upstream_minionqc_defect": 4,
-        "rounding_tolerance": 150,
-        "suspected_poregauge_defect": 104,
+        "rounding_tolerance": 240,
         "not_yet_verified": 4
       },
-      "failures_by_family": {
-        "fit": 104
-      },
-      "maximum_fit_absolute_error": 3703.2567403389985
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 1.1641532182693481e-10,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.0.fitted",
+          "reference": 200000.00000000006,
+          "poregauge": 199999.99999999994,
+          "absolute_difference": 1.1641532182693481e-10,
+          "relative_difference": 5.820766091346739e-16,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "fit-small",
@@ -665,15 +881,26 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "a9aa83d9b280c167c678b5293e6dd5be2f098a24d5b665666ff9fc0e1aa0e890",
+      "reference_capture_sha256": "6764caedf2b529e094cae92dacd9c879d425392468779e132b0ba83cb00a2e9e",
       "status_counts": {
-        "exact_match": 326,
+        "exact_match": 334,
         "rounding_tolerance": 404,
         "upstream_minionqc_defect": 8,
         "not_yet_verified": 4
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 1.5916157281026244e-12
+      "maximum_fit_absolute_error": 1.5916157281026244e-12,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.30.fitted",
+          "reference": 1057.716568429388,
+          "poregauge": 1057.7165684293864,
+          "absolute_difference": 1.5916157281026244e-12,
+          "relative_difference": 1.5047658092999599e-15,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "fit-large",
@@ -687,15 +914,49 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "1ebf337cfa5e8017957b8da1a922fefffbdaad50159215ec44a98178831a1c7c",
+      "reference_capture_sha256": "8c5738bbbda1999eead953ffe87773d987eebdd9abf380d31f7a06ff8707e278",
       "status_counts": {
-        "exact_match": 275,
-        "rounding_tolerance": 455,
-        "upstream_minionqc_defect": 8,
-        "not_yet_verified": 4
+        "exact_match": 319,
+        "rounding_tolerance": 1423,
+        "upstream_minionqc_defect": 8
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 6.697515573250712e-06
+      "maximum_fit_absolute_error": 6.692701617794228e-06,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.fitted",
+          "reference": 891.9970763353069,
+          "poregauge": 891.9970830280085,
+          "absolute_difference": 6.692701617794228e-06,
+          "relative_difference": 7.503053311890455e-09,
+          "status": "rounding_tolerance"
+        },
+        "standard_error": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.0.standard_error",
+          "reference": 0.9619409085802247,
+          "poregauge": 0.9619410006491145,
+          "absolute_difference": 9.206888973434246e-08,
+          "relative_difference": 9.5711585725397e-08,
+          "status": "rounding_tolerance"
+        },
+        "lower": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.lower",
+          "reference": 889.9534578576602,
+          "poregauge": 889.9534645308037,
+          "absolute_difference": 6.6731435026667896e-06,
+          "relative_difference": 7.498306168426728e-09,
+          "status": "rounding_tolerance"
+        },
+        "upper": {
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.upper",
+          "reference": 894.0406948129537,
+          "poregauge": 894.0407015252134,
+          "absolute_difference": 6.712259732921666e-06,
+          "relative_difference": 7.507778753097998e-09,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "fit-sparse",
@@ -709,14 +970,16 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "cc2db87805602b140e1b1387acb7f3435710436ca71cf3c819d400ca735e3b92",
+      "reference_capture_sha256": "47ef024f9a5b776462ec288e33d8a8b9c7e2541ad3a2ebc7ed2ef9626cf5be29",
       "status_counts": {
         "exact_match": 76,
         "rounding_tolerance": 6,
         "upstream_minionqc_defect": 8
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": null
+      "maximum_fit_absolute_error": null,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {}
     },
     {
       "name": "density-multimodal",
@@ -734,15 +997,26 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "4d69b09441bc6e6754b03ea935bed97490a039e1a6f03af0d581182795c5c0ab",
+      "reference_capture_sha256": "bd2a84732698db57c698c0d903fd2da82822ea4d8630b4648815d43a6a0626b4",
       "status_counts": {
-        "exact_match": 4639,
-        "rounding_tolerance": 6224,
+        "exact_match": 4671,
+        "rounding_tolerance": 6308,
         "upstream_minionqc_defect": 8,
-        "not_yet_verified": 100
+        "not_yet_verified": 16
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 1.0913936421275139e-11
+      "maximum_fit_absolute_error": 1.0913936421275139e-11,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.47.fitted",
+          "reference": 8725.117447958746,
+          "poregauge": 8725.117447958735,
+          "absolute_difference": 1.0913936421275139e-11,
+          "relative_difference": 1.2508641272019175e-15,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "density-skewed",
@@ -760,15 +1034,26 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "5c29919df788a21013edd01bd9094f6ccd7f37ddc4aa870369e4265c435ce272",
+      "reference_capture_sha256": "0aeb327cc09f33f83fb3df76c04d3544c735bcfa72637a7fa130aadab4d16e09",
       "status_counts": {
-        "exact_match": 4391,
-        "rounding_tolerance": 6302,
+        "exact_match": 4435,
+        "rounding_tolerance": 6542,
         "upstream_minionqc_defect": 10,
-        "not_yet_verified": 268
+        "not_yet_verified": 16
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 1.30385160446167e-08
+      "maximum_fit_absolute_error": 1.30385160446167e-08,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.79.fitted",
+          "reference": 12754586.058104558,
+          "poregauge": 12754586.058104571,
+          "absolute_difference": 1.30385160446167e-08,
+          "relative_difference": 1.0222610114682417e-15,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "density-constant",
@@ -786,15 +1071,26 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "6ebbefded417371499e132b940895b3ec416d7cfc627ab53828544c2db2216e4",
+      "reference_capture_sha256": "8e22ed8f061ae6934bba1236d8f1745145769aed71919d7c3f1e6903a38a88f7",
       "status_counts": {
-        "exact_match": 5429,
+        "exact_match": 5461,
         "upstream_minionqc_defect": 8,
         "rounding_tolerance": 5518,
         "not_yet_verified": 16
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 1.4210854715202004e-13
+      "maximum_fit_absolute_error": 1.4210854715202004e-13,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_002.length_by_hour.All reads.0.fitted",
+          "reference": 100.00000000000007,
+          "poregauge": 99.99999999999993,
+          "absolute_difference": 1.4210854715202004e-13,
+          "relative_difference": 1.4210854715201993e-15,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "density-near",
@@ -812,15 +1108,26 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "1017d867c3b9f85c7dc16ebb675cdccda7ef1e554743b723e4e922cccdeb3595",
+      "reference_capture_sha256": "cc0c6f9d64d4639883c41dded77bf726b41b90cf0aba91dd65533e7719522b46",
       "status_counts": {
-        "exact_match": 4505,
+        "exact_match": 4537,
         "rounding_tolerance": 6442,
         "upstream_minionqc_defect": 8,
         "not_yet_verified": 16
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 2.5579538487363607e-13
+      "maximum_fit_absolute_error": 2.5579538487363607e-13,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.7.fitted",
+          "reference": 103.4556962025315,
+          "poregauge": 103.45569620253175,
+          "absolute_difference": 2.5579538487363607e-13,
+          "relative_difference": 2.4725113673091006e-15,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "density-outliers",
@@ -838,15 +1145,26 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "8f2400931d9b3529077264d97abd5b4454b53da07ba1b0ca7df4169f76c77cb2",
+      "reference_capture_sha256": "208d7f7841792949345f28e09a5a897689e0dabda6c9b6176fe0d3bb197b129b",
       "status_counts": {
-        "exact_match": 4359,
-        "rounding_tolerance": 6510,
+        "exact_match": 4395,
+        "rounding_tolerance": 6580,
         "upstream_minionqc_defect": 12,
-        "not_yet_verified": 90
+        "not_yet_verified": 16
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 5.587935447692871e-09
+      "maximum_fit_absolute_error": 5.587935447692871e-09,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.79.fitted",
+          "reference": 3404041.037948877,
+          "poregauge": 3404041.0379488827,
+          "absolute_difference": 5.587935447692871e-09,
+          "relative_difference": 1.6415593658823546e-15,
+          "status": "rounding_tolerance"
+        }
+      }
     },
     {
       "name": "density-singleton",
@@ -864,23 +1182,43 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "b8e5ae15db8737cddff0c1f481d4bbb5e52c30d24065192647b7c55ca9ad1b02",
+      "reference_capture_sha256": "5c5e81b9b23ebfca802bcb21c31ed434d525a8697708f3db8331a63dd9d20179",
       "status_counts": {
-        "exact_match": 2753,
+        "exact_match": 2769,
         "rounding_tolerance": 2766,
         "intentional_semantic_difference": 2,
         "upstream_minionqc_defect": 2,
         "not_yet_verified": 8
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 1.7053025658242404e-13
+      "maximum_fit_absolute_error": 1.7053025658242404e-13,
+      "failed_fit_values": 0,
+      "maximum_errors_by_field": {
+        "fitted": {
+          "metric": "fit.source_001.length_by_hour.All reads.60.fitted",
+          "reference": 305.6934644115373,
+          "poregauge": 305.6934644115375,
+          "absolute_difference": 1.7053025658242404e-13,
+          "relative_difference": 5.578472438417888e-16,
+          "status": "rounding_tolerance"
+        }
+      }
     }
   ],
   "limitations": [
-    "Full suite does not pass: all 2400 suspected defects are fitted predictions (#12).",
-    "GAM uses bounded approximate unique-time knots above 4096; singular four-read LOESS differs; confidence intervals unavailable.",
-    "Capture-only executes actual upstream YAML and ggplot layers without PDF files; a separate short case generated 11 PDFs.",
+    "Suite exit 1: 1625 fitted values and 4677 GAM uncertainty values still exceed tolerance; #12 remains Partial/open.",
+    "Exact knots agree with R; GAM penalty/null-space orientation and REML residual differences are not fully isolated.",
+    "PromethION maximum fitted length error regressed from 70.144151 bp to 211.017091 bp; not accepted as parity.",
+    "112 LOESS confidence-band comparisons remain unverified; no uncertainty parity claimed for LOESS.",
+    "All 92299 non-fit checks are unchanged from the previous paired execution, including core/channel/density results.",
+    "Capture-only executes actual upstream YAML and ggplot layers without PDF files; a separate earlier short case generated 11 PDFs.",
     "No private PBM95914 raw summary was reprocessed.",
-    "Native transitive packages are recorded, not claimed identical to the dated optional Docker snapshot."
-  ]
+    "Native transitive packages are recorded, not claimed identical to the dated optional Docker snapshot.",
+    "No large-data memory/CPU benchmark performed; exact time sorting adds bounded RAM and temporary disk I/O."
+  ],
+  "final_binary_recheck": {
+    "sha256": "44a107f292b9f36c8656dd715f37d5e9dc9722e89771e0951644b48649f65f38",
+    "case_count": 18,
+    "release_json_and_reference_populations": "Numerically identical after final nonfinite-uncertainty guard; reused unchanged actual R captures. R was not executed again for this final guard."
+  }
 }

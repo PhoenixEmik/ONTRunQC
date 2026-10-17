@@ -47,6 +47,21 @@ class Classification(unittest.TestCase):
 
 
 class NumericalLayers(unittest.TestCase):
+    def test_uncensored_smooth_predictions_and_gam_uncertainty_are_compared(self):
+        from minionqc_differential import fitted_comparisons
+        row=dict(x=0,y=-1,se=.1,ymin=-1.2,ymax=-.8)
+        reference={"plots":[dict(file="length_by_hour.pdf",directory="source_001",panels=[{"PANEL":"1"}],
+            colours=["indigo"],colour_labels=["All reads"],smooth_predictions=[dict(observations=5,data=[row])],
+            layers=[dict(stat="StatSmooth",method="gam",data=[dict(PANEL="1",group=1,colour="indigo",x=0,y=None)])])]}
+        curve=dict(population="all_summary_records",metric="length_bp",method="gam",observations=5,
+                   confidence_interval="pointwise_95_percent_bayesian_normal",points=[dict(hours=0,value=-1,standard_error=.1,lower=-1.2,upper=-.8)])
+        probe={"reference_sources":[dict(source_id="source_001",fitted_trends={"single":[curve]})]}
+        checks=fitted_comparisons(reference,probe)
+        self.assertTrue(all(c["status"]=="exact_match" for c in checks))
+        curve["points"][0]["standard_error"]=.2
+        checks=fitted_comparisons(reference,probe)
+        self.assertTrue(any(c["metric"].endswith("standard_error") and c["status"]=="suspected_poregauge_defect" for c in checks))
+
     def test_censored_reference_prediction_is_not_a_false_match_or_defect(self):
         from minionqc_differential import fitted_comparisons
         reference={"plots":[dict(file="length_by_hour.pdf",directory="source_001",

@@ -137,7 +137,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
                 .add(&record)
                 .with_context(|| format!("input {} line {}", path.display(), record.line))?;
             if let Some(tracker) = &mut group.trends {
-                tracker.add(&record, options.cutoff);
+                tracker.add(&record, options.cutoff)?;
             }
         }
         if !had_record && options.group_inputs && !groups.is_empty() {
@@ -180,7 +180,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         plans = groups
             .iter_mut()
             .map(|g| g.trends.take().unwrap().prepare(largest >= 1000))
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         // Fit sufficient statistics on every raw observation, not bin means.
         for (file_index, path) in files.iter().enumerate() {
             let mut reader = SummaryReader::with_options(

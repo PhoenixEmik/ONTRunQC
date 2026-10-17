@@ -36,7 +36,7 @@ fn export_report() {
         while let Some(record) = reader.next_record().unwrap() {
             aggregator.add(&record).unwrap();
             if curves {
-                tracker.add(&record, cutoff);
+                tracker.add(&record, cutoff).unwrap();
             }
         }
         trackers.push(tracker);
@@ -53,7 +53,7 @@ fn export_report() {
         .unwrap_or(0);
     if curves {
         for (i, (path, tracker)) in paths.iter().zip(trackers).enumerate() {
-            let mut plan = tracker.prepare(largest >= 1000);
+            let mut plan = tracker.prepare(largest >= 1000).unwrap();
             let mut source = Aggregator::new(None, false);
             source.set_qscore_cutoff(cutoff, true);
             source.enable_reference_density(true);

@@ -608,31 +608,50 @@ alone and GAM in a collection. LOESS uses degree 2, span .75, tricube weights an
 a median-split interpolated surface (cell .2, padded range, vertex derivatives
 and cubic Hermite interpolation). Local quadratics use equilibrated Householder
 QR and a three-column Jacobi SVD pseudoinverse with R's 100-epsilon cutoff;
-zero-cell leaves also split at singleton observations. This recovers several
-previously unavailable small fits. Roundoff-sensitive rank-deficient four-read
-curves still differ from R and remain Partial. GAM uses natural cubic basis functions, integrated second-derivative
-penalty, .1/.01 null-space shrinkage, a centered smooth and unpenalized intercept.
-The eigensolver's null-space orientation may differ from mgcv/LAPACK. Confidence
-intervals are intentionally null rather than invented.
+zero-cell leaves also split at singleton observations. Two-active-row singular
+neighborhoods use a direct minimum-norm solve, preserving responses with tiny
+weights that QR previously lost. Actual R goldens cover the four-read N50-tie
+and ultralong endpoint cases. GAM uses natural cubic basis functions, integrated
+second-derivative penalty, .1/.01 null-space shrinkage, a centered smooth and an
+unpenalized intercept. Its smoothing parameter uses the analytical profiled REML
+score. Penalty/null-space and REML numerical differences from mgcv remain Partial.
 
-Knot locations are type-7 quantiles of unique start times. At most 4,096 unique
-times are retained by deterministic bottom-hash selection, with exact endpoints;
-`exact_knots=false` explicitly identifies approximation beyond this bound. Every
-raw observation contributes to the second-pass sufficient statistics: no fit uses
-interval means or downsampled responses. Up to 999 observations/population are
-retained only for small LOESS groups; larger groups discard that buffer. Empty,
-constant-time, unsupported-rank and nonrepresentable fits have a reason and no points.
-Fits can bridge unobserved intervals; observed-bin plots still retain their gaps.
-All fit calculations live in `trends.rs`; HTML renders the final model only.
+Knots are exact type-7 quantiles of each population's **unique** start times,
+including endpoints; `exact_knots=true` and `knots_hours` expose the result. Knot
+selection uses at most 262,144 numeric (time, cohort-flags) elements (4 MiB) per
+tracker, then sorted temporary runs with deduplication and at most 64 merge readers.
+On disk each entry is 9 bytes before deduplication; intermediate merges require
+additional scratch space/I/O proportional to observations, not additional read
+objects in RAM. Run-name metadata grows logarithmically. Scratch files use the
+system temporary directory (respecting `TMPDIR`) and are removed on normal success
+or error; abrupt process termination may leave files. Unix directories/files use
+0700/0600 permissions. Scratch failures abort with an error rather than selecting
+approximate knots. Inputs below the buffer limit require no scratch files.
+
+Every raw observation contributes to second-pass sufficient statistics: no fit
+uses interval means or downsampled responses. Up to 999 observations/population
+are retained for LOESS; larger groups discard that buffer. Empty, constant-time,
+unsupported-rank and nonrepresentable fits have a reason and no points. Fits can
+bridge unobserved intervals; observed-bin plots retain their gaps. All fit
+calculations live in `trends.rs`, with numeric knot selection in `trend_knots.rs`;
+HTML renders the final model only.
+
+GAM points add nullable `standard_error`, `lower` and `upper`: pointwise 95%
+Bayesian normal intervals conditional on the estimated smoothing parameter,
+using residual variance RSS/(n−edf). `confidence_interval` names this convention;
+LOESS uncertainty remains unavailable (`null`). HTML renders available GAM bands
+and omits segments crossing negative bounds on nonnegative axes. These are additive schema-1 fields;
+consumers that reject unknown fields must be updated. Existing metrics and
+unsmoothed charts are unchanged.
 
 Unit/CLI tests exercise polynomial reproduction, natural knot interpolation,
-constant GAM intercepts, method selection, exact populations, unchanged existing
-metrics, sparse inputs and bounded storage. The public short-run LOESS comparison
-met the harness target (1e-10 hours and fitted-value absolute 1e-6 + relative 1e-6);
-measured errors and environment are in the parity matrix. Committed synthetic
-R golden data also test small/irregular LOESS, 1,500-observation GAM and the
-zero/cutoff case. Large-group approximate GAM, degenerate LOESS and confidence
-intervals do not meet full R parity; see the differential results.
+constant intercepts, method selection, exact populations/knots, forced scratch
+merges, cleanup, unchanged QC metrics and deterministic reports. Five synthetic
+actual-R goldens verify 1,598 fitted values and 960 GAM uncertainty values at
+absolute 1e-6 + relative 1e-6. The 18-case paired run verifies all captured knots,
+but large public GAM predictions and bands still exceed tolerance; LOESS intervals
+remain unverified. See the parity matrix for errors, including the PromethION
+regression. Optional fitting is not yet full R parity.
 
 ## Optional R-grid density estimates (#13)
 

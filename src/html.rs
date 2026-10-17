@@ -2226,22 +2226,20 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
         .unwrap()
         .max(f64::MIN_POSITIVE);
     let scale = if quality { 1.0 } else { 1000.0 };
-    let minimum = values
-        .iter()
-        .map(|p| p.value / scale)
-        .reduce(f64::min)
-        .unwrap()
-        .min(0.0);
-    let maximum = values
-        .iter()
-        .map(|p| p.value / scale)
-        .reduce(f64::max)
-        .unwrap()
-        .max(1.0);
+    let extent = || {
+        values
+            .iter()
+            .flat_map(|p| [Some(p.value), p.lower, p.upper])
+            .flatten()
+            .filter(|v| allowed(*v))
+            .map(|v| v / scale)
+    };
+    let minimum = extent().reduce(f64::min).unwrap().min(0.0);
+    let maximum = extent().reduce(f64::max).unwrap().max(1.0);
     svg_start(
         out,
         &id,
-        "Provisional raw-observation fit; numerical equivalence to R has not been verified. Confidence intervals unavailable.",
+        "Raw-observation fit with exact unique-time knots. Available GAM ribbons are pointwise 95% Bayesian normal intervals. Full R equivalence remains Partial; LOESS intervals are unavailable.",
         294,
     );
     axes_range(
@@ -2264,6 +2262,44 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
     }
     time_markers(out, report, end * 3600.0);
     for (label, color, curve) in &curves {
+        let mut segment = Vec::new();
+        let band_color = *color;
+        let draw_band = |out: &mut String, points: &[(f64, f64, f64)]| {
+            if points.len() < 2 {
+                return;
+            }
+            let mut coordinates = String::new();
+            for &(x, _, upper) in points {
+                write!(
+                    coordinates,
+                    " {:.2},{:.2}",
+                    LEFT + x / end * (RIGHT - LEFT),
+                    BOTTOM - plot_fraction(upper / scale, minimum, maximum) * (BOTTOM - TOP)
+                )
+                .unwrap();
+            }
+            for &(x, lower, _) in points.iter().rev() {
+                write!(
+                    coordinates,
+                    " {:.2},{:.2}",
+                    LEFT + x / end * (RIGHT - LEFT),
+                    BOTTOM - plot_fraction(lower / scale, minimum, maximum) * (BOTTOM - TOP)
+                )
+                .unwrap();
+            }
+            write!(out,"<polygon class=\"fit-ribbon {band_color}\" points=\"{coordinates}\"><title>{}: pointwise 95% GAM interval</title></polygon>",escape(label)).unwrap();
+        };
+        for point in &curve.points {
+            if let (Some(lower), Some(upper)) = (point.lower, point.upper) {
+                if allowed(lower) && allowed(upper) {
+                    segment.push((point.hours, lower, upper));
+                    continue;
+                }
+            }
+            draw_band(out, &segment);
+            segment.clear();
+        }
+        draw_band(out, &segment);
         let mut path = String::new();
         let mut connected = false;
         for p in &curve.points {
@@ -2305,7 +2341,7 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
         )
         .unwrap();
     }
-    out.push_str("</p><p class=\"annotation\">Provisional MinIONQC-style fit of individual records, including zero lengths. All/Q populations are distinct from native passing. LOESS uses degree 2, span 0.75 and median-cell Hermite interpolation (cell 0.2); GAM uses a 10-knot cubic shrinkage spline and REML. Large groups use deterministic bounded unique-time knot selection. Combined method selection uses the largest group across panels. Confidence intervals and R numerical equivalence are not yet verified. Fits may cross missing intervals; the separate observed-bin charts retain gaps.</p></figure>");
+    out.push_str("</p><p class=\"annotation\">Provisional MinIONQC-style fit of individual records, including zero lengths. All/Q populations are distinct from native passing. LOESS uses degree 2, span 0.75 and median-cell Hermite interpolation (cell 0.2); GAM uses a 10-knot cubic shrinkage spline and REML. Knots use exact unique-time quantiles. Combined method selection uses the largest group across panels. GAM ribbons are pointwise 95% Bayesian normal intervals; LOESS intervals remain unavailable. Full R numerical equivalence is Partial. Fits may cross missing intervals; the separate observed-bin charts retain gaps.</p></figure>");
 }
 
 fn time_markers(out: &mut String, report: &Report, end: f64) {

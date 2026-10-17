@@ -217,6 +217,7 @@ def fitted_comparisons(reference, probe):
         if family not in ("length_by_hour","q_by_hour"): continue
         quality=family=="q_by_hour"
         combined=plot["directory"]=="combinedQC"
+        predictions=iter(array(plot.get("smooth_predictions")))
         panels={str(p["PANEL"]):p for p in array(plot["panels"])}
         legends=dict(zip(array(plot.get("colours")),array(plot.get("colour_labels"))))
         for layer in plot["layers"]:
@@ -227,25 +228,42 @@ def fitted_comparisons(reference, probe):
             available_fits=sum(bool(c["points"]) for source_id,source in sources.items() if combined or source_id==plot["directory"] for c in source.get("fitted_trends",{}).get("combined" if combined else "single",[]) if (c["metric"]=="qscore")==quality)
             checks.append(comparison(f"fit.{plot['directory']}.{family}.available_groups",len(by_group),available_fits))
             for (panel,group),rows in by_group.items():
+                raw=next(predictions,None)
                 label=legends.get(rows[0].get("colour"))
                 source=label if combined else plot["directory"]
                 population=panels[panel].get("Q_cutoff") if combined else label
                 selected=population!="All reads"
                 fitting=sources.get(source,{}).get("fitted_trends",{}).get("combined" if combined else "single",[])
                 curve=next((c for c in fitting if (c["metric"]=="qscore")==quality and c["population"].startswith("qscore")==selected),None)
-                key=f"fit.{plot['directory']}.{family}.{population}"
+                key=f"fit.{plot['directory']}.{family}."+(f"{source}." if combined else "")+str(population)
                 if curve is None:
                     checks.append(unverified(key,"No matching file-scoped Rust fit; inspect panel/legend metadata."));continue
                 expected="loess" if curve["method"].startswith("loess") else "gam"
                 checks.append(comparison(key+".method",layer.get("method"),expected))
                 checks.append(comparison(key+".points",len(rows),len(curve["points"])))
-                for i,(r,p) in enumerate(zip(rows,curve["points"])):
+                reference_points=array(raw.get("data")) if raw else rows
+                if raw:
+                    checks.append(comparison(key+".raw_points",len(rows),len(reference_points)))
+                    checks.append(comparison(key+".observations",raw["observations"],curve["observations"]))
+                    if raw.get("knots"):
+                        knots=array(curve.get("knots_hours"))
+                        checks.append(comparison(key+".knots.count",len(raw["knots"]),len(knots)))
+                        for i,(r,p) in enumerate(zip(raw["knots"],knots)):
+                            checks.append(comparison(f"{key}.knots.{i}",r,p,1e-10,1e-12))
+                for i,(r,p) in enumerate(zip(reference_points,curve["points"])):
                     checks.append(comparison(f"{key}.{i}.hours",r.get("x"),p["hours"],1e-10))
                     if r.get("y") is None:
                         checks.append(unverified(f"{key}.{i}.fitted","R layer prediction is censored or nonfinite; uncensored reference prediction is unavailable. A null cannot establish a Rust numerical defect or a match."))
                     else:
                         checks.append(comparison(f"{key}.{i}.fitted",r.get("y"),p["value"],1e-6,1e-6))
-                checks.append(unverified(key+".confidence_interval","Rust confidence intervals are deliberately unavailable until R verification."))
+                    if raw and curve.get("confidence_interval"):
+                        for r_field,p_field in [("se","standard_error"),("ymin","lower"),("ymax","upper")]:
+                            if r.get(r_field) is None:
+                                checks.append(unverified(f"{key}.{i}.{p_field}","Reference uncertainty is nonfinite/unavailable."))
+                            else:
+                                checks.append(comparison(f"{key}.{i}.{p_field}",r[r_field],p.get(p_field),1e-6,1e-6))
+                if not raw or not curve.get("confidence_interval"):
+                    checks.append(unverified(key+".confidence_interval","Uncensored reference or Rust confidence intervals unavailable; no uncertainty match claimed."))
     return checks
 
 

@@ -8,6 +8,7 @@ mod layout;
 mod metrics;
 mod record;
 mod report;
+mod trend_knots;
 mod trends;
 
 use anyhow::Result;

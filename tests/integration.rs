@@ -2802,7 +2802,27 @@ fn optional_gam_and_sparse_fits_are_bounded_and_unavailable_when_required() {
     for curve in report["fitted_trends"]["single"].as_array().unwrap() {
         assert!(curve["method"].as_str().unwrap().contains("REML"));
         assert_eq!(curve["points"].as_array().unwrap().len(), 80);
+        assert_eq!(curve["exact_knots"], true);
+        assert_eq!(curve["knots_hours"].as_array().unwrap().len(), 10);
+        assert_eq!(
+            curve["confidence_interval"],
+            "pointwise_95_percent_bayesian_normal"
+        );
+        for point in curve["points"].as_array().unwrap() {
+            let y = point["value"].as_f64().unwrap();
+            assert!(point["standard_error"].as_f64().unwrap() >= 0.0);
+            assert!(point["lower"].as_f64().unwrap() <= y);
+            assert!(point["upper"].as_f64().unwrap() >= y);
+        }
     }
+    let html = directory.html();
+    assert!(html.contains("<polygon class=\"fit-ribbon"));
+    assert!(html.contains("pointwise 95%"));
+    assert_eq!(
+        report,
+        directory.analyze_with_args(&data, &["--minionqc-trends"])
+    );
+    assert_eq!(html, directory.html());
     let empty = directory.analyze_with_args(HEADER, &["--minionqc-trends"]);
     assert!(
         empty["fitted_trends"]["single"][0]["points"]
@@ -2813,6 +2833,43 @@ fn optional_gam_and_sparse_fits_are_bounded_and_unavailable_when_required() {
     let sparse =
         directory.analyze_with_args(&format!("{HEADER}{ROW}{ROW}"), &["--minionqc-trends"]);
     assert!(sparse["fitted_trends"]["single"][0]["unavailable_reason"].is_string());
+}
+
+#[test]
+fn gam_knots_are_exact_unique_time_quantiles_beyond_previous_sampling_limit() {
+    let directory = TestDirectory::new();
+    let mut data =
+        "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n".to_owned();
+    for i in 0..6000 {
+        data += &format!(
+            "1\t{}\t{}\t{}\n",
+            i * 7 % 6000,
+            1000 + i % 97,
+            if i % 2 == 0 { 9.0 } else { 6.9 }
+        );
+    }
+    let old = directory.analyze_with_args(&data, &["--qscore-cutoff", "9"]);
+    let fitted = directory.analyze_with_args(&data, &["--qscore-cutoff", "9", "--minionqc-trends"]);
+    for key in [
+        "metrics",
+        "quality",
+        "comparison",
+        "diagnostics",
+        "time_bins",
+    ] {
+        assert_eq!(old[key], fitted[key]);
+    }
+    for curve in fitted["fitted_trends"]["single"].as_array().unwrap() {
+        let end = if curve["population"] == "all_summary_records" {
+            5999.0
+        } else {
+            5998.0
+        };
+        assert_eq!(curve["exact_knots"], true);
+        for (i, knot) in curve["knots_hours"].as_array().unwrap().iter().enumerate() {
+            assert!((knot.as_f64().unwrap() - end * i as f64 / 9.0 / 3600.0).abs() < 1e-12);
+        }
+    }
 }
 
 #[test]

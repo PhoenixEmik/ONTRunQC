@@ -691,6 +691,7 @@ footer {
 
 /* Independent Q-cutoff comparisons are distinct from semantic native pass. */
 .qselected { fill:#70609c; }
+.fit-ribbon { opacity:0.16; stroke:none; }
 .qselected-line { fill:none; stroke:#70609c; stroke-width:2; stroke-dasharray:3 3; }
 .legend.qselected-key:before { background:#70609c; }
 

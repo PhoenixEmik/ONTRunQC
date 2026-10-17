@@ -1,11 +1,10 @@
-//! Optional raw-read fits. Bounded knot selection plus a second streaming pass;
+//! Optional raw-read fits. Exact bounded-memory knot selection and a second pass;
 //! never regress interval means or retain an unbounded time/length/Q dataset.
 use crate::record::Record;
+use anyhow::Result;
 use serde::Serialize;
-use std::collections::BTreeMap;
 
 const K: usize = 10;
-const UNIQUE_LIMIT: usize = 4096;
 type Matrix = [[f64; K]; K];
 
 #[derive(Clone, Debug, Serialize)]
@@ -21,6 +20,7 @@ pub struct Curve {
     pub method: &'static str,
     pub observations: u64,
     pub exact_knots: bool,
+    pub knots_hours: Option<[f64; K]>,
     pub confidence_interval: Option<&'static str>,
     pub unavailable_reason: Option<&'static str>,
     pub points: Vec<Point>,
@@ -29,6 +29,9 @@ pub struct Curve {
 pub struct Point {
     pub hours: f64,
     pub value: f64,
+    pub standard_error: Option<f64>,
+    pub lower: Option<f64>,
+    pub upper: Option<f64>,
 }
 #[derive(Clone, Copy)]
 struct Observation {
@@ -47,8 +50,7 @@ struct Population {
     q_max: f64,
     length_min: f64,
     length_max: f64,
-    unique: BTreeMap<(u64, u64), f64>,
-    truncated: bool,
+    knots: Option<[f64; K]>,
     small: Vec<Observation>,
 }
 impl Population {
@@ -75,24 +77,6 @@ impl Population {
         } else {
             self.small.clear();
         }
-        let bits = if v.x == 0.0 { 0 } else { v.x.to_bits() };
-        let mut hash = bits.wrapping_add(0x9e3779b97f4a7c15);
-        hash = (hash ^ (hash >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-        hash = (hash ^ (hash >> 27)).wrapping_mul(0x94d049bb133111eb);
-        hash ^= hash >> 31;
-        let key = (hash, bits);
-        if self.unique.contains_key(&key) {
-            return;
-        }
-        if self.unique.len() < UNIQUE_LIMIT {
-            self.unique.insert(key, v.x);
-        } else {
-            self.truncated = true;
-            if key < *self.unique.last_key_value().unwrap().0 {
-                self.unique.pop_last();
-                self.unique.insert(key, v.x);
-            }
-        }
     }
 }
 #[derive(Default)]
@@ -100,17 +84,22 @@ pub struct Tracker {
     all: Population,
     positive_q: Population,
     selected: Population,
+    times: crate::trend_knots::Times,
 }
 impl Tracker {
-    pub fn add(&mut self, r: &Record<'_>, cutoff: f64) {
+    pub fn add(&mut self, r: &Record<'_>, cutoff: f64) -> Result<()> {
         if r.is_control {
-            return;
+            return Ok(());
         }
         let v = Observation {
             x: r.start_time / 3600.0,
             length: r.length as f64,
             q: r.qscore,
         };
+        self.times.add(
+            v.x,
+            1 | if v.q >= 0.0 { 2 } else { 0 } | if v.q >= cutoff { 4 } else { 0 },
+        )?;
         self.all.add(v);
         if v.q >= 0.0 {
             self.positive_q.add(v);
@@ -118,11 +107,16 @@ impl Tracker {
         if v.q >= cutoff {
             self.selected.add(v);
         }
+        Ok(())
     }
     pub fn count(&self) -> u64 {
         self.all.count
     }
-    pub fn prepare(self, combined_gam: bool) -> Plan {
+    pub fn prepare(mut self, combined_gam: bool) -> Result<Plan> {
+        let [all, positive, selected] = std::mem::take(&mut self.times).finish()?;
+        self.all.knots = all;
+        self.positive_q.knots = positive;
+        self.selected.knots = selected;
         let single_gam = self.all.count >= 1000;
         let mut datasets = Vec::new();
         for (population, tracker, quality, single) in [
@@ -144,11 +138,11 @@ impl Tracker {
         ] {
             datasets.push(Dataset::new(population, tracker, quality, single));
         }
-        Plan {
+        Ok(Plan {
             datasets,
             single_gam,
             combined_gam,
-        }
+        })
     }
 }
 pub struct Plan {
@@ -194,7 +188,7 @@ impl Plan {
             }
         }
         Trends {
-            verification: "R_differential_partial; bounded_GAM_knots_singular_LOESS_and_confidence_bands_differ",
+            verification: "R_differential_partial; exact_unique_time_knots; singular_LOESS_and_null_space_orientation_require_verification",
             single,
             combined,
         }
@@ -251,7 +245,8 @@ impl Dataset {
                 "loess_degree2_span0.75_interpolate_cell0.2"
             },
             observations: self.tracker.count,
-            exact_knots: !self.tracker.truncated,
+            exact_knots: true,
+            knots_hours: if gam { self.tracker.knots } else { None },
             confidence_interval: None,
             unavailable_reason: None,
             points: Vec::new(),
@@ -261,8 +256,8 @@ impl Dataset {
                 Some("fewer than three observations or fewer than two distinct times");
             return curve;
         }
-        let coefficients = if gam { self.gam() } else { None };
-        if gam && coefficients.is_none() {
+        let fitted = if gam { self.gam() } else { None };
+        if gam && fitted.is_none() {
             curve.unavailable_reason =
                 Some("GAM requires ten distinct times and a finite nonsingular fit");
             return curve;
@@ -272,10 +267,19 @@ impl Dataset {
         } else {
             LoessSurface::new(&self.tracker.small, self.quality)
         };
+        if fitted.is_some() {
+            curve.confidence_interval = Some("pointwise_95_percent_bayesian_normal");
+        }
         for i in 0..80 {
             let x = self.tracker.min + (self.tracker.max - self.tracker.min) * i as f64 / 79.0;
-            let value = if let Some(c) = &coefficients {
-                Some(dot(&self.basis.as_ref().unwrap().evaluate(x), c) * self.scale + self.offset)
+            let value = if let Some(fitted) = &fitted {
+                Some(
+                    dot(
+                        &self.basis.as_ref().unwrap().evaluate(x),
+                        &fitted.coefficients,
+                    ) * self.scale
+                        + self.offset,
+                )
             } else {
                 surface.as_ref().map(|surface| surface.predict(x))
             };
@@ -285,11 +289,36 @@ impl Dataset {
                     Some("singular local fit or nonrepresentable prediction");
                 return curve;
             };
-            curve.points.push(Point { hours: x, value });
+            let standard_error = fitted.as_ref().and_then(|fit| {
+                let b = self.basis.as_ref().unwrap().evaluate(x);
+                let variance: f64 = (0..K)
+                    .map(|i| {
+                        (0..K)
+                            .map(|j| b[i] * fit.covariance[i][j] * b[j])
+                            .sum::<f64>()
+                    })
+                    .sum();
+                if !variance.is_finite() {
+                    return None;
+                }
+                let se = variance.max(0.0).sqrt() * self.scale;
+                se.is_finite().then_some(se)
+            });
+            curve.points.push(Point {
+                hours: x,
+                value,
+                standard_error,
+                lower: standard_error
+                    .map(|s| value - 1.959963984540054 * s)
+                    .filter(|v| v.is_finite()),
+                upper: standard_error
+                    .map(|s| value + 1.959963984540054 * s)
+                    .filter(|v| v.is_finite()),
+            });
         }
         curve
     }
-    fn gam(&self) -> Option<[f64; K]> {
+    fn gam(&self) -> Option<GamFit> {
         let basis = self.basis.as_ref()?;
         let n = self.n as f64;
         if n <= K as f64 {
@@ -327,7 +356,7 @@ impl Dataset {
             }
         }
         let centered_yy = (self.yy - n * ymean * ymean).max(0.0);
-        let objective = |log_lambda: f64| -> Option<(f64, [f64; K])> {
+        let objective = |log_lambda: f64| -> Option<(f64, [f64; K], f64)> {
             let lambda = log_lambda.exp();
             let mut a = xx;
             for i in 0..K - 1 {
@@ -337,34 +366,99 @@ impl Dataset {
             }
             let (beta, logdet) = solve(a, rhs, K - 1)?;
             let rss = (centered_yy - dot(&beta, &rhs)).max(1e-300);
+            let mut trace = 0.0;
+            for j in 0..K - 1 {
+                let mut e = [0.0; K];
+                e[j] = 1.0;
+                let inverse_column = solve(a, e, K - 1)?.0;
+                trace += dot(&inverse_column, &xx[j]);
+            }
+            let beta_penalty_beta: f64 = (0..K - 1)
+                .map(|i| {
+                    (0..K - 1)
+                        .map(|j| beta[i] * penalty[i][j] * beta[j])
+                        .sum::<f64>()
+                })
+                .sum();
+            // Analytical REML score avoids comparing nearly equal O(n) log
+            // likelihoods, whose roundoff moved the fitted smoothing parameter.
+            let score = (n - 1.0) * lambda * beta_penalty_beta.max(0.0) / rss - trace;
             Some((
                 (n - 1.0) * (rss / (n - 1.0)).ln() + logdet - (K - 1) as f64 * log_lambda,
                 beta,
+                score,
             ))
         };
         let (mut lo, mut hi) = (-30.0, 30.0);
-        for _ in 0..100 {
-            let a = lo + (hi - lo) / 3.0;
-            let b = hi - (hi - lo) / 3.0;
-            if objective(a)?.0 < objective(b)?.0 {
-                hi = b;
+        for _ in 0..60 {
+            let middle = (lo + hi) / 2.0;
+            if objective(middle)?.2 > 0.0 {
+                hi = middle;
             } else {
-                lo = a;
+                lo = middle;
             }
         }
-        let (_, beta) = objective((lo + hi) / 2.0)?;
+        let optimum = (lo + hi) / 2.0;
+        let (_, beta, _) = objective(optimum)?;
         let coefficients =
             std::array::from_fn(|i| ymean + (1..K).map(|a| q[i][a] * beta[a - 1]).sum::<f64>());
-        coefficients
-            .iter()
-            .all(|c| c.is_finite())
-            .then_some(coefficients)
+        let mut a = xx;
+        for i in 0..K - 1 {
+            for j in 0..K - 1 {
+                a[i][j] += optimum.exp() * penalty[i][j];
+            }
+        }
+        let mut inverse = [[0.0; K]; K];
+        for j in 0..K - 1 {
+            let mut e = [0.0; K];
+            e[j] = 1.0;
+            let solution = solve(a, e, K - 1)?.0;
+            for i in 0..K - 1 {
+                inverse[i][j] = solution[i];
+            }
+        }
+        let edf = 1.0
+            + (0..K - 1)
+                .map(|i| (0..K - 1).map(|j| inverse[i][j] * xx[j][i]).sum::<f64>())
+                .sum::<f64>();
+        let rss = (centered_yy - 2.0 * dot(&beta, &rhs)
+            + (0..K - 1)
+                .map(|i| {
+                    (0..K - 1)
+                        .map(|j| beta[i] * xx[i][j] * beta[j])
+                        .sum::<f64>()
+                })
+                .sum::<f64>())
+        .max(0.0);
+        let variance = rss / (n - edf);
+        let covariance = std::array::from_fn(|i| {
+            std::array::from_fn(|j| {
+                variance
+                    * (1.0 / n
+                        + (1..K)
+                            .map(|a| {
+                                (1..K)
+                                    .map(|b| q[i][a] * inverse[a - 1][b - 1] * q[j][b])
+                                    .sum::<f64>()
+                            })
+                            .sum::<f64>())
+            })
+        });
+        (variance.is_finite() && variance >= 0.0 && coefficients.iter().all(|c| c.is_finite()))
+            .then_some(GamFit {
+                coefficients,
+                covariance,
+            })
     }
+}
+struct GamFit {
+    coefficients: [f64; K],
+    covariance: Matrix,
 }
 fn dot(a: &[f64; K], b: &[f64; K]) -> f64 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
-// Small SPD solve only: natural splines, local quadratics and REML coefficients.
+// Small SPD solve for REML coefficients and posterior covariance.
 fn solve(a: Matrix, b: [f64; K], size: usize) -> Option<([f64; K], f64)> {
     let mut l = [[0.0; K]; K];
     let mut logdet = 0.0;
@@ -396,61 +490,62 @@ struct Basis {
     knots: [f64; K],
     second: Matrix,
     penalty: Matrix,
-    min: f64,
-    range: f64,
 }
 impl Basis {
     #[allow(clippy::needless_range_loop)] // Column-wise tridiagonal solves share neighboring rows.
     fn new(pop: &Population) -> Option<Self> {
-        if pop.unique.len() < K || pop.max <= pop.min {
-            return None;
-        }
-        let mut x: Vec<_> = pop.unique.values().copied().collect();
-        x.sort_by(f64::total_cmp);
-        x[0] = pop.min;
-        *x.last_mut().unwrap() = pop.max;
-        let knots = std::array::from_fn(|i| {
-            let p = (x.len() - 1) as f64 * i as f64 / (K - 1) as f64;
-            let j = p.floor() as usize;
-            (x[j] + (x[p.ceil() as usize] - x[j]) * p.fract() - pop.min) / (pop.max - pop.min)
-        });
+        let knots = pop.knots?;
         if knots.windows(2).any(|p| !p[0].is_finite() || p[1] <= p[0]) {
             return None;
         }
-        let mut second = [[0.0; K]; K];
-        for column in 0..K {
-            let y: [f64; K] = std::array::from_fn(|i| if i == column { 1.0 } else { 0.0 });
-            let mut diag = [0.0; K];
-            let mut rhs = [0.0; K];
-            for i in 1..K - 1 {
-                let h = knots[i] - knots[i - 1];
-                let g = knots[i + 1] - knots[i];
-                diag[i] = 2.0 * (h + g);
-                rhs[i] = 6.0 * ((y[i + 1] - y[i]) / g - (y[i] - y[i - 1]) / h);
-                if i > 1 {
-                    let ratio = h / diag[i - 1];
-                    diag[i] -= ratio * h;
-                    rhs[i] -= ratio * rhs[i - 1];
-                }
-            }
-            for i in (1..K - 1).rev() {
-                second[i][column] =
-                    (rhs[i] - (knots[i + 1] - knots[i]) * second[i + 1][column]) / diag[i];
-            }
-        }
-        let penalty = std::array::from_fn(|i| {
+        let widths: [f64; K - 1] = std::array::from_fn(|i| knots[i + 1] - knots[i]);
+        let difference: Matrix = std::array::from_fn(|i| {
             std::array::from_fn(|j| {
-                (0..K - 1)
-                    .map(|k| {
-                        (knots[k + 1] - knots[k]) / 6.0
-                            * (2.0 * second[k][i] * second[k][j]
-                                + second[k][i] * second[k + 1][j]
-                                + second[k + 1][i] * second[k][j]
-                                + 2.0 * second[k + 1][i] * second[k + 1][j])
-                    })
-                    .sum()
+                if i == 0 || i == K - 1 {
+                    0.0
+                } else if j == i - 1 {
+                    1.0 / widths[i - 1]
+                } else if j == i {
+                    -1.0 / widths[i - 1] - 1.0 / widths[i]
+                } else if j == i + 1 {
+                    1.0 / widths[i]
+                } else {
+                    0.0
+                }
             })
         });
+        // LDL' solve of the natural cubic spline tridiagonal system B F = D,
+        // followed by S = D' F. Keep original hour units, matching mgcv's
+        // constructor rather than changing null-space rounding by rescaling.
+        let mut diagonal: [f64; K] = std::array::from_fn(|i| {
+            if i == 0 || i == K - 1 {
+                0.0
+            } else {
+                (widths[i - 1] + widths[i]) / 3.0
+            }
+        });
+        let mut lower = [0.0; K];
+        for i in 1..K - 2 {
+            let off = widths[i] / 6.0;
+            lower[i] = off / diagonal[i];
+            diagonal[i + 1] -= lower[i] * off;
+        }
+        let mut second = [[0.0; K]; K];
+        for column in 0..K {
+            let mut rhs: [f64; K] = std::array::from_fn(|i| difference[i][column]);
+            for i in 2..K - 1 {
+                rhs[i] -= lower[i - 1] * rhs[i - 1];
+            }
+            second[K - 2][column] = rhs[K - 2] / diagonal[K - 2];
+            for i in (1..K - 2).rev() {
+                second[i][column] = rhs[i] / diagonal[i] - lower[i] * second[i + 1][column];
+            }
+        }
+        let raw: Matrix = std::array::from_fn(|i| {
+            std::array::from_fn(|j| (1..K - 1).map(|k| difference[k][i] * second[k][j]).sum())
+        });
+        let penalty =
+            std::array::from_fn(|i| std::array::from_fn(|j| (raw[i][j] + raw[j][i]) / 2.0));
         let (eigen, vectors) = symmetric_eigen(penalty);
         let maximum = eigen[K - 1];
         if maximum <= 0.0 {
@@ -470,12 +565,9 @@ impl Basis {
             knots,
             second,
             penalty,
-            min: pop.min,
-            range: pop.max - pop.min,
         })
     }
     fn evaluate(&self, x: f64) -> [f64; K] {
-        let x = (x - self.min) / self.range;
         let i = (self.knots.partition_point(|k| *k <= x).saturating_sub(1)).min(K - 2);
         let h = self.knots[i + 1] - self.knots[i];
         let a = (self.knots[i + 1] - x) / h;
@@ -493,6 +585,7 @@ impl Basis {
 fn symmetric_eigen(mut a: Matrix) -> ([f64; K], Matrix) {
     let mut v: Matrix =
         std::array::from_fn(|i| std::array::from_fn(|j| if i == j { 1.0 } else { 0.0 }));
+    let tolerance = a.iter().flatten().fold(0.0_f64, |m, v| m.max(v.abs())) * f64::EPSILON;
     for _ in 0..2000 {
         let (mut p, mut q) = (0, 1);
         for i in 0..K {
@@ -503,7 +596,7 @@ fn symmetric_eigen(mut a: Matrix) -> ([f64; K], Matrix) {
                 }
             }
         }
-        if a[p][q].abs() < 1e-12 {
+        if a[p][q].abs() <= tolerance {
             break;
         }
         let angle = 0.5 * (2.0 * a[p][q]).atan2(a[q][q] - a[p][p]);
@@ -643,6 +736,32 @@ fn local_pseudoinverse(design: &mut [[f64; 3]], response: &mut [f64]) -> Option<
             row[j] /= norms[j].max(f64::MIN_POSITIVE);
         }
     }
+    let active: Vec<_> = design
+        .iter()
+        .zip(response.iter())
+        .filter(|(r, _)| r.iter().any(|v| *v != 0.0))
+        .collect();
+    if let [(r0, y0), (r1, y1)] = active.as_slice() {
+        // The small-span edge case has two weighted equations for three
+        // coefficients. Solve its row-space minimum-norm problem directly.
+        // QR of a row with weight ~1e-24 followed by an O(1) row otherwise
+        // loses its response by cancellation, corrupting vertex derivatives.
+        let a: f64 = r0.iter().map(|v| v * v).sum();
+        let b: f64 = r0.iter().zip(r1.iter()).map(|(a, b)| a * b).sum();
+        let c: f64 = r1.iter().map(|v| v * v).sum();
+        let remainder = c - b * b / a;
+        if a > 0.0 && remainder > c * f64::EPSILON {
+            let second = (**y1 - b * **y0 / a) / remainder;
+            let first = **y0 / a - b * second / a;
+            let mut solution = [0.0; K];
+            for j in 0..3 {
+                solution[j] = (r0[j] * first + r1[j] * second) / norms[j].max(f64::MIN_POSITIVE);
+            }
+            if solution.iter().all(|v| v.is_finite()) {
+                return Some(solution);
+            }
+        }
+    }
     // Householder QR before the small SVD, as in R's dqrdc/dqrsl path.
     // This preserves tiny weighted responses near singular neighborhoods;
     // applying SVD rotations to the full design loses them by cancellation.
@@ -745,9 +864,9 @@ mod tests {
             let mut tracker = Tracker::default();
             let mut reader = SummaryReader::new(input).unwrap();
             while let Some(record) = reader.next_record().unwrap() {
-                tracker.add(&record, 7.0);
+                tracker.add(&record, 7.0).unwrap();
             }
-            let mut plan = tracker.prepare(false);
+            let mut plan = tracker.prepare(false).unwrap();
             let mut reader = SummaryReader::new(input).unwrap();
             while let Some(record) = reader.next_record().unwrap() {
                 plan.add(&record, 7.0);
@@ -787,6 +906,16 @@ mod tests {
                             y
                         );
                     }
+                    if expected.as_array().unwrap().len() == 5 {
+                        for (value, reference) in
+                            [actual.standard_error, actual.lower, actual.upper]
+                                .iter()
+                                .zip(&expected.as_array().unwrap()[2..])
+                        {
+                            let r = reference.as_f64().unwrap();
+                            assert!((value.unwrap() - r).abs() <= 1e-6 + r.abs() * 1e-6);
+                        }
+                    }
                 }
             }
         }
@@ -796,14 +925,17 @@ mod tests {
     }
     fn population(n: usize) -> Population {
         let mut p = Population::default();
+        let mut times = crate::trend_knots::Times::default();
         for i in 0..n {
             let x = i as f64 / (n - 1).max(1) as f64;
+            times.add(x, 7).unwrap();
             p.add(Observation {
                 x,
                 length: 100.0 + 50.0 * x * x,
                 q: 8.0 + 2.0 * x,
             });
         }
+        p.knots = times.finish().unwrap()[0];
         p
     }
     #[test]
@@ -873,20 +1005,29 @@ mod tests {
         let curve = d.fit(true);
         assert_eq!(curve.points.len(), 80);
         assert!(curve.points.iter().all(|p| (p.value - 42.0).abs() < 1e-7));
-        assert!(curve.confidence_interval.is_none());
+        assert!(curve.confidence_interval.is_some());
+        assert!(
+            curve
+                .points
+                .iter()
+                .all(|p| p.standard_error.unwrap() < 1e-6)
+        );
     }
     #[test]
     fn gam_is_stable_under_large_response_offsets() {
         let fit = |offset: f64| {
             let mut pop = Population::default();
+            let mut times = crate::trend_knots::Times::default();
             for i in 0..1200 {
                 let x = i as f64 / 1199.0;
+                times.add(x, 7).unwrap();
                 pop.add(Observation {
                     x,
                     length: 100.0,
                     q: offset + 8.0 + 2.0 * x,
                 });
             }
+            pop.knots = times.finish().unwrap()[0];
             let mut d = Dataset::new("all_summary_records", pop, true, false);
             for i in 0..1200 {
                 let x = i as f64 / 1199.0;
@@ -914,15 +1055,15 @@ mod tests {
     #[test]
     fn unique_time_storage_is_bounded_and_method_switch_is_global() {
         let p = population(20_000);
-        assert_eq!(p.unique.len(), UNIQUE_LIMIT);
-        assert!(p.truncated);
+        assert!(p.knots.is_some());
         assert!(p.small.is_empty());
         let tracker = Tracker {
             all: population(99),
             positive_q: population(99),
             selected: population(60),
+            times: crate::trend_knots::Times::default(),
         };
-        let plan = tracker.prepare(true);
+        let plan = tracker.prepare(true).unwrap();
         assert!(!plan.single_gam);
         assert!(plan.combined_gam);
         let result = plan.finish();

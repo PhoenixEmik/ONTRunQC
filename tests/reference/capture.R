@@ -20,6 +20,19 @@ set.seed(1)
 plots <- list()
 problems <- character()
 density_calls <- list()
+smooth_calls <- list()
+record_smooth <- function(model, prediction) {
+  if (is.null(prediction)) return(invisible(NULL))
+  smooth_calls[[length(smooth_calls)+1L]] <<- list(
+    method=if(inherits(model,"gam")) "gam" else "loess",
+    knots=if(inherits(model,"gam")) model$smooth[[1]]$xp else NULL,
+    smoothing_parameter=if(inherits(model,"gam")) unname(model$sp) else NULL,
+    residual_variance=if(inherits(model,"gam")) model$sig2 else model$s^2,
+    observations=if(inherits(model,"gam")) length(model$y) else model$n,
+    data=prediction)
+}
+invisible(trace("predictdf", where=asNamespace("ggplot2"), print=FALSE,
+  exit=quote(.GlobalEnv$record_smooth(model, returnValue()))))
 record_density <- function(bw, x, from, to, adjust, kernel, n) {
   density_calls[[length(density_calls)+1L]] <<- list(
     bandwidth=if (is.numeric(bw)) bw * adjust else NULL,
@@ -32,6 +45,7 @@ invisible(trace("compute_density", where=asNamespace("ggplot2"), print=FALSE,
 original_save <- ggplot2::ggsave
 ggsave <- function(filename, plot, ...) {
   density_calls <<- list()
+  smooth_calls <<- list()
   built <- ggplot2::ggplot_build(plot)
   layers <- lapply(seq_along(plot$layers), function(i) {
     layer <- built$plot$layers[[i]]
@@ -49,7 +63,7 @@ ggsave <- function(filename, plot, ...) {
       directory=basename(dirname(filename)), labels=lapply(plot$labels, function(x) paste(as.character(x),collapse=" ")),
       colour_labels=labels, colours=if(is.null(colour)) NULL else colour$map(breaks),
       panels=as.data.frame(built$layout$layout), layers=layers,
-      density_parameters=density_calls)
+      density_parameters=density_calls, smooth_predictions=smooth_calls)
   if (Sys.getenv("PG_REFERENCE_RENDER", "true") == "true")
     original_save(filename=filename, plot=plot, ...)
   invisible(filename)

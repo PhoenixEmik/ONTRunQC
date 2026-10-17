@@ -48,7 +48,7 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 | `length_histogram`, `q_histogram` | Complete | All/Q count and yield histograms; fixed documented bins rather than 300 automatic bins; U histogram conservation / offline tests, V. |
 | `yield_over_time`, `reads_per_hour` | Complete | Absolute cumulative yield and counts in 15-minute bins, All/Q; U interval/cumulative conservation and gap tests, V. Counts are per 15 min, explicitly labeled. |
 | `yield_by_length` | Complete | Exact retained bp at bounded display queries, exact threshold counts; All/Q, full yield range rather than R's 99% crop; U `every_display_query_uses_exact_lengths_including_ties`, P, V. |
-| `length_by_hour`, `q_by_hour` | Partial | Unchanged 15-minute means plus opt-in interpolated LOESS/cubic-shrinkage REML fits; U temporal/fitting tests. Singular LOESS, large-group exact knots and ribbons remain incomplete. |
+| `length_by_hour`, `q_by_hour` | Partial | Unchanged 15-minute means plus opt-in interpolated LOESS/cubic-shrinkage REML fits; U temporal/fitting tests. Exact unique-time knots, singular two-row LOESS solves and GAM ribbons are implemented; public GAM numerical parity and LOESS intervals remain incomplete. |
 | `channel_summary` | Complete | Four channel distributions and exact values, All-summary/Q; U channel summary tests, V. |
 | `gb_per_channel_overview` | Complete | Explicit-layout yield heatmaps including All/Q (native maps additionally available); U layout/yield conservation, V. |
 | MinION `flowcell_overview` | Partial | Exact physical panels, actual start/length/Q values, deterministic <=16 reads/channel; U sample bound/mapping tests, V. Full-read panels not reproduced. |
@@ -126,29 +126,34 @@ values, metadata, panels, axes and legends were generated without PDF rendering.
 A separate short run generated **11 actual PDF figures**. The file-population
 probe preserves upstream grouping without changing production run identity.
 
-The full comparison is `benchmark-results/minionqc-final/comparison.json`.
+The full comparison is `benchmark-results/issue12-paired/comparison.json`.
 The committed [machine-readable summary](../tests/reference/validation-summary.json)
 records input/source/capture/binary hashes, checked versions, per-case completion,
 counts and maximum errors. Run instructions are in the
 [reference README](../tests/reference/README.md). Cases checkpoint independently;
 wrong versions fail preflight and unavailable/partial R output never fabricates
-comparisons. Seven Python harness tests pass.
+comparisons. Eight Python harness tests pass; Rust checks pass (31 unit +83
+integration tests, one optional probe ignored), including release build. Desktop
+Chrome inspection confirmed the offline GAM ribbons; mobile rendering was not
+rechecked in this mathematical correction.
 
 | Final check classification | Count |
 | --- | ---: |
-| Exact match | 58,185 |
-| Within declared tolerance | 45,656 |
+| Exact match | 58,763 |
+| Within declared tolerance | 49,956 |
 | Intentional semantic difference | 36 |
 | Proved upstream defect | 8,954 |
-| Suspected PoreGauge defect | **2,400** |
-| Not yet verified | **604** |
+| Suspected PoreGauge defect | **6,302** |
+| Not yet verified | **112** |
 
-**The suite returns 1, not success.** Every suspected defect is a fitted prediction
-tracked by #12; none is a core scalar/channel/density mismatch. The 604 unverified
-checks are 460 censored/nonfinite R predictions and 144 unavailable Rust confidence
-bands. A null R layer value is not a zero or evidence of agreement. Upstream count
-and ultralong endpoint bugs are classified only with independent numerical proof.
-Execution/harness completion is not a claim that scientific parity is complete.
+**The suite returns 1, not success.** All 6,302 suspected differences are GAM
+fits/uncertainty (#12): 1,625 fitted values, 1,435 standard errors, 1,641 lower and
+1,601 upper bounds. The 112 unverified checks are LOESS confidence bands. Newly
+captured uncensored predictions and pointwise bands expand the comparison scope;
+the total failure count is **not directly comparable** to the previous 2,400
+fitted-value failures. All 92,299 non-fit checks, including scalar/channel/density
+checks, are unchanged. Upstream count and ultralong endpoint defects require
+independent numerical proof; execution completion does not establish parity.
 
 ## Fitted time trends (#12): Partial
 
@@ -157,22 +162,37 @@ follow pinned ggplot2 method selection: largest group across panels, LOESS below
 1,000, otherwise cubic-shrinkage `cs` (k=10) with REML. Single Q plots model the
 upstream pre-fit nonnegative y limit; combined Q plots retain signed observations.
 
-The focused correction uses equilibrated Householder QR and three-column Jacobi
-SVD local solves with R's 100-epsilon pseudoinverse cutoff, plus singleton splits
-in zero-cell interpolation trees. It recovers the zero/cutoff subset and retains
-bounded storage. [Synthetic R goldens](../tests/reference/trends-golden.json)
-verify **958 uncensored fitted values** across small/irregular LOESS, 1,500-read
-GAM and zero/cutoff inputs: max absolute error **6.698e-6**, within absolute 1e-6
-+ relative 1e-6. Their exact synthetic TSV bytes and capture hashes are retained.
-Short and RNA public fits also meet the target for available R values.
+The follow-up replaces the 4,096-time approximation with **exact unique-time
+quantiles** using a bounded numeric buffer and temporary merge runs. All 320
+captured knot coordinates agree with R (maximum error 1.421e-14 hours). Every
+read still contributes to sufficient statistics. Scratch requirements/cleanup
+are described in [metrics](metrics.md#provisional-individual-read-fits-12).
+Natural cubic penalties use original hour units; analytical REML scores avoid
+comparing almost-equal large likelihoods. GAM posterior covariance now supplies
+pointwise 95% Bayesian normal bands; LOESS bands remain unavailable.
 
-Remaining failed comparisons are explicit: large-group GAM with >4,096 unique
-times uses bounded approximate knots (max length-fit error **1,465.27 bp** MinION,
-**70.14 bp** PromethION, **63.11 bp** 1D2). Exact unique-time knots would require
-additional storage or selection passes; neither is silently substituted here.
-Four-read N50/ultralong fixtures remain roundoff-sensitive in singular LOESS
-neighborhoods (104 failures each). Null-space orientation and confidence bands
-are not claimed equivalent; `confidence_interval` stays null. #12 remains open.
+A direct minimum-norm solution for two-active-row singular LOESS neighborhoods
+preserves tiny weighted responses lost by QR. Four-read N50-tie and ultralong
+cases now have **zero fitted-value failures** (104 each previously). Five
+[synthetic R goldens](../tests/reference/trends-golden.json) cover small/irregular
+LOESS, 1,500-read GAM, zero/cutoff and both four-read boundaries: **1,598 fitted
+values** (max error 6.693e-6), plus **960 GAM uncertainty values**, within absolute
+1e-6 + relative 1e-6. Exact synthetic TSV bytes and capture hashes are retained.
+
+| Public case | Previous max fitted length error (bp) | Current (bp) |
+| --- | ---: | ---: |
+| MinION | 1,465.274586 | 2.350897 |
+| PromethION | 70.144151 | **211.017091** |
+| 1D2 | 63.111216 | 0.197879 |
+| Combined | 1,465.274586 | 7.440929 |
+
+The PromethION endpoint is a measured **regression**, not an accepted equivalence.
+Knot accuracy alone does not establish fitted-curve parity. Remaining GAM
+penalty/null-space orientation and REML behavior need further numerical work;
+these residual causes are not fully isolated. The eigensolver differs from
+mgcv/LAPACK. Public short/RNA LOESS and all synthetic finite fitted values meet
+the target. #12 remains **Partial/open**, including public GAM bands and LOESS
+uncertainty. No private PBM95914 input was reprocessed.
 
 ## R-grid densities (#13): Complete within declared tolerances
 

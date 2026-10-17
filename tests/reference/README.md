@@ -76,18 +76,27 @@ one grid interval. Actual bandwidths/domains/kernel/grid size are captured insid
 ggplot2's `compute_density()` without changing its returned values. Bandwidth
 tolerance is absolute 1e-12 + relative 1e-10. The density targets have now been
 met on all executed public/synthetic density groups; fitting remains Partial.
-Unsupported confidence intervals remain explicitly Not yet verified. Density
+GAM pointwise standard errors and 95% bounds are compared at the fitted-value
+tolerance; unsupported LOESS intervals remain explicitly Not yet verified. Density
 integrals are over the plotted domain; unplotted Gaussian tails are not silently
 renormalized to force area one. Constant-domain evaluation is at the unchanged
-single coordinate. Censored/nonfinite R layer predictions stay Not yet verified
-even when Rust predicts a tiny positive value: null is not numerical evidence.
+single coordinate. A `predictdf()` exit trace also captures uncensored predictions,
+observation counts, GAM knots, smoothing parameters and residual variance before
+plot-axis clipping. Comparisons use these predictions when available, including
+negative fitted values hidden by an axis limit. Nonfinite reference predictions
+remain Not yet verified; null is not numerical evidence.
 Failed point/method comparisons are never automatically accepted.
 
 `trends-golden.json` is a small, synthetic-only numerical snapshot of the actual
-`StatSmooth` layers from `fit-small`, `fit-large` and `zero-cutoff`, including
+`predictdf`/`StatSmooth` values from `fit-small`, `fit-large`, `zero-cutoff`,
+`n50-tie` and `ultralong-endpoint`, including
 their exact TSV bytes, reference versions and capture SHA-256. The Rust unit test
-re-runs parsing/fitting and compares every uncensored prediction at the same
-tolerance. It is not evidence that the other paired cases pass.
+re-runs parsing/fitting and compares all 1,598 finite fitted values and 960
+large-case GAM uncertainty values at the same tolerance. It is not evidence
+that the other paired cases pass. The latest paired run is recorded in
+`validation-summary.json`; the full ignored report is
+`benchmark-results/issue12-paired/comparison.json`. Its exit 1 reflects remaining
+public GAM mismatches, including a measured PromethION endpoint regression.
 
 `density-golden.json` contains 24 synthetic series (22 finite curves and two
 singleton unavailable states), exact observations, actual layer coordinates and
