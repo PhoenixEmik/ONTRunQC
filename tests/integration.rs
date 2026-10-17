@@ -527,11 +527,12 @@ fn termination_bars_and_accessible_counts_share_the_correct_table_cell() {
         .next()
         .unwrap();
     assert!(cell.starts_with("<span class=\"record-count\">1</span>"));
-    assert!(cell.contains("preserveAspectRatio=\"none\" aria-hidden=\"true\""));
-    assert!(cell.contains("<rect class=\"bar-track\" width=\"100\" height=\"4\"/>"));
-    assert!(cell.contains("<rect class=\"bar-fill\" width=\"100.00\" height=\"4\"/>"));
-    assert!(cell.ends_with("</svg>"));
-    assert!(table.contains("</svg></td><td>1</td><td>10</td>"));
+    assert!(
+        cell.contains("class=\"table-bar\" style=\"--bar-width:100.00%\" aria-hidden=\"true\"")
+    );
+    assert!(cell.ends_with("</span>"));
+    assert!(table.contains("</span></td><td>1</td><td>10</td>"));
+    assert!(!table.contains("<svg"));
 }
 
 #[test]
@@ -1435,4 +1436,34 @@ fn advanced_reports_are_deterministic_offline_and_match_json_values() {
         fs::read(directory.0.join("output/report.json")).unwrap()
     );
     assert_eq!(html, directory.html());
+}
+
+#[test]
+fn tabular_css_bars_preserve_exact_values_and_zero_half_maximum_proportions() {
+    let directory = TestDirectory::new();
+    let data = format!(
+        "{HEADER}{}{}{}",
+        ROW,
+        ROW.replace("\t10\t", "\t20\t")
+            .replace("\t1\t1\t", "\t2\t7\t"),
+        ROW.replace("\t10\t", "\t0\t")
+            .replace("\t1\t1\t", "\t3\t12\t")
+    );
+    directory.analyze(&data);
+    let html = directory.html();
+    let table = html
+        .split("id=\"channel-mux-table\"")
+        .nth(1)
+        .unwrap()
+        .split("</table>")
+        .next()
+        .unwrap();
+    for (number, percent) in [(10, "50.00"), (20, "100.00"), (0, "0.00")] {
+        assert!(table.contains(&format!("<span class=\"record-count\">{number}</span><span class=\"table-bar\" style=\"--bar-width:{percent}%\" aria-hidden=\"true\"></span>")));
+    }
+    assert!(!html.contains("class=\"inline-bar\""));
+    assert!(!table.contains("<svg"));
+    let empty = TestDirectory::new();
+    empty.analyze(HEADER);
+    assert!(!empty.html().contains("<span class=\"table-bar\""));
 }

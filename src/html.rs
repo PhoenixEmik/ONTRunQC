@@ -914,8 +914,8 @@ fn termination(out: &mut String, report: &Report) {
         .collect();
     for diagnostic in &report.diagnostics.termination_reasons {
         let reason = reasons[diagnostic.end_reason.as_str()];
-        write!(out, "<tr><th class=\"label\" scope=\"row\"><span class=\"reason-name\">{}</span></th><td class=\"bar-cell\"><span class=\"record-count\">{}</span><svg class=\"inline-bar\" viewBox=\"0 0 100 4\" preserveAspectRatio=\"none\" aria-hidden=\"true\"><rect class=\"bar-track\" width=\"100\" height=\"4\"/><rect class=\"bar-fill\" width=\"{:.2}\" height=\"4\"/></svg></td><td>{}</td><td>{}</td>",
-            escape(&reason.end_reason), count(reason.total_records), 100.0 * reason.total_records as f64 / max as f64, count(reason.basecalled_reads), count(reason.total_yield_bp)).unwrap();
+        write!(out, "<tr><th class=\"label\" scope=\"row\"><span class=\"reason-name\">{}</span></th><td class=\"bar-cell\"><span class=\"record-count\">{}</span><span class=\"table-bar\" style=\"--bar-width:{:.2}%\" aria-hidden=\"true\"></span></td><td>{}</td><td>{}</td>",
+            escape(&reason.end_reason), count(reason.total_records), bar_percent(reason.total_records, max), count(reason.basecalled_reads), count(reason.total_yield_bp)).unwrap();
         for value in [
             diagnostic.summary_record_percent,
             diagnostic.zero_length_fraction.map(|v| v * 100.0),
@@ -931,6 +931,15 @@ fn termination(out: &mut String, report: &Report) {
         empty_row(out, 9, "No termination observations.");
     }
     out.push_str("</tbody></table></div><p class=\"annotation\">Sorted by record count, then reason name. Zero-length and basecalled percentages use records within each reason; passed percentage uses basecalled reads within that reason. All-record and all-yield percentages use run totals. Unavailable denominators are shown explicitly.</p></section>");
+}
+
+// Decorative proportions only; exact counts/yields remain separate text.
+fn bar_percent(value: u64, maximum: u64) -> f64 {
+    if maximum == 0 {
+        0.0
+    } else {
+        (value as f64 / maximum as f64 * 100.0).clamp(0.0, 100.0)
+    }
 }
 
 fn physical_heatmaps(out: &mut String, report: &Report) {
@@ -1049,7 +1058,7 @@ fn channel_mux_table(out: &mut String, report: &Report) {
         .unwrap_or(1)
         .max(1);
     for m in &report.diagnostics.channel_mux {
-        write!(out, "<tr data-channel=\"{}\" data-mux=\"{}\" data-yield=\"{}\" data-reads=\"{}\"><th scope=\"row\">{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"bar-cell\"><span class=\"record-count\">{}</span><svg class=\"inline-bar\" viewBox=\"0 0 100 4\" preserveAspectRatio=\"none\" aria-hidden=\"true\"><rect class=\"bar-track\" width=\"100\" height=\"4\"/><rect class=\"bar-fill\" width=\"{:.2}\" height=\"4\"/></svg></td><td>{}</td><td>{}</td></tr>", m.channel, m.mux, m.total_yield_bp, m.basecalled_reads, m.channel, m.mux, count(m.total_records), count(m.basecalled_reads), count(m.zero_length_records), count(m.total_yield_bp), 100.0 * m.total_yield_bp as f64 / maximum as f64, count(m.passed_reads), count(m.passed_yield_bp)).unwrap();
+        write!(out, "<tr data-channel=\"{}\" data-mux=\"{}\" data-yield=\"{}\" data-reads=\"{}\"><th scope=\"row\">{}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"bar-cell\"><span class=\"record-count\">{}</span><span class=\"table-bar\" style=\"--bar-width:{:.2}%\" aria-hidden=\"true\"></span></td><td>{}</td><td>{}</td></tr>", m.channel, m.mux, m.total_yield_bp, m.basecalled_reads, m.channel, m.mux, count(m.total_records), count(m.basecalled_reads), count(m.zero_length_records), count(m.total_yield_bp), bar_percent(m.total_yield_bp, maximum), count(m.passed_reads), count(m.passed_yield_bp)).unwrap();
     }
     if report.diagnostics.channel_mux.is_empty() {
         empty_row(out, 8, "No observed channel/mux pairs.");
@@ -1432,6 +1441,21 @@ fn escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decorative_bar_widths_are_finite_and_clamped() {
+        for (value, maximum, expected) in [
+            (0, 0, 0.0),
+            (1, 0, 0.0),
+            (0, 10, 0.0),
+            (5, 10, 50.0),
+            (10, 10, 100.0),
+            (20, 10, 100.0),
+            (u64::MAX, u64::MAX, 100.0),
+        ] {
+            assert_eq!(bar_percent(value, maximum), expected);
+        }
+    }
 
     #[test]
     fn absent_histograms_and_channels_render_valid_empty_states() {
