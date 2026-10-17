@@ -59,9 +59,9 @@ fn combined_comparisons(out: &mut String, report: &Report) {
         "Run / source comparisons",
         "Pooled metrics use exact combined observations. Timelines remain relative to each run's own start; yields are absolute, never normalized.",
     );
-    out.push_str("<p class=\"annotation\">Source labels are deterministic output identifiers, not invented flowcell IDs. Matching run IDs identify chunks; a physical flowcell may have multiple runs. Instrument-local channels and muxes are available only in individual reports.</p><div class=\"table-scroll\"><table><caption>Inputs contributing to pooled statistics</caption><thead><tr><th class=\"label\">Source</th><th class=\"label\">Run ID</th><th class=\"label\">Flowcell ID</th><th>Files</th><th>Basecalled reads</th><th>Yield (bp)</th><th>N50 (bp)</th></tr></thead><tbody>");
+    out.push_str("<p class=\"annotation\">Source labels are deterministic output identifiers, not invented flowcell IDs. Matching run IDs identify chunks; a physical flowcell may have multiple runs. Instrument-local channels and muxes are available only in individual reports.</p><div class=\"table-scroll\"><table><caption>Inputs contributing to pooled statistics</caption><thead><tr><th class=\"label\">Source</th><th class=\"label\">Run ID</th><th class=\"label\">Flowcell ID</th><th class=\"label\">Read representation</th><th>Files</th><th>Basecalled reads</th><th>Yield (bp)</th><th>N50 (bp)</th></tr></thead><tbody>");
     for r in &collection.runs {
-        write!(out, "<tr><th class=\"label\">{}</th><td class=\"label\">{}</td><td class=\"label\">{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>", escape(&r.source.source_id), escape(r.run_id.as_deref().unwrap_or("Unavailable · source only")), escape(r.source.flow_cell_id.as_deref().unwrap_or("Unavailable")), r.source.input_files, count(r.metrics.basecalled_reads), count(r.metrics.total_yield_bp), r.metrics.n50_bp.map(count).unwrap_or_else(|| "Not available".into())).unwrap();
+        write!(out, "<tr><th class=\"label\">{}</th><td class=\"label\">{}</td><td class=\"label\">{}</td><td class=\"label\">{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>", escape(&r.source.source_id), escape(r.run_id.as_deref().unwrap_or("Unavailable · source only")), escape(r.source.flow_cell_id.as_deref().unwrap_or("Unavailable")), if r.input.read_representation == Some(crate::input::ReadRepresentation::TwoD) { "2D/1D2" } else { "Template" }, r.source.input_files, count(r.metrics.basecalled_reads), count(r.metrics.total_yield_bp), r.metrics.n50_bp.map(count).unwrap_or_else(|| "Not available".into())).unwrap();
     }
     out.push_str("</tbody></table></div>");
     for selected in [false, true] {
@@ -324,6 +324,9 @@ fn section(out: &mut String, id: &str, number: &str, title: &str, note: &str) {
 
 fn overview(out: &mut String, report: &Report) {
     let m = &report.metrics;
+    if report.input.excluded_control_records > 0 {
+        write!(out, "<p class=\"notice\">{} YHR174W control observations excluded from {} input records (MinIONQC-compatible policy).</p>", count(report.input.excluded_control_records), count(report.input.input_records)).unwrap();
+    }
     section(
         out,
         "overview",
@@ -332,7 +335,7 @@ fn overview(out: &mut String, report: &Report) {
         "Oxford Nanopore sequencing summary · Single-run analysis",
     );
     if !report.comparison.native_filtering_available {
-        out.push_str("<p class=\"notice\">Native filtering unavailable: passes_filtering is absent. Native count fields in JSON count observed TRUE/FALSE only; no reads are inferred to fail. Q-cutoff comparisons remain available.</p>");
+        out.push_str("<p class=\"notice\">Native filtering unavailable or incomplete: passes_filtering is absent or missing on some reads. Native count fields in JSON count observed TRUE/FALSE only; no reads are inferred to fail. Q-cutoff comparisons remain available.</p>");
     }
     let run_id = if report.collection.is_some() {
         "Pooled runs / sources"
@@ -1239,7 +1242,7 @@ fn length_quality_heatmaps(out: &mut String, report: &Report) {
             figure(out, id, title);
             empty_chart(
                 out,
-                "Native filtering unavailable: passes_filtering is absent.",
+                "Native filtering unavailable or incomplete: passes_filtering is absent or missing on some reads.",
             );
         } else {
             length_quality_map(out, h, id, title, counts, maximum);
@@ -1361,6 +1364,7 @@ fn channels(out: &mut String, report: &Report) {
         "Ranked views use channel identifiers only; physical maps require explicit layout selection. Channels with only zero-length records have no mean Q-score.",
     );
     physical_heatmaps(out, report);
+    minion_read_plots(out, report);
     channel_summary_distributions(out, report);
     figure(
         out,
@@ -1602,112 +1606,227 @@ fn bar_percent(value: u64, maximum: u64) -> f64 {
 
 fn physical_heatmaps(out: &mut String, report: &Report) {
     let Some(layout) = &report.diagnostics.physical_layout else {
-        out.push_str("<p class=\"annotation\">Physical channel maps are disabled. Select <code>--flowcell-layout promethion-3000</code> only for compatible channel numbering.</p>");
+        out.push_str("<p class=\"annotation\">Physical channel maps are disabled. Explicitly select a compatible --flowcell-layout promethion-3000 or minion-r9.5.</p>");
         return;
     };
-    out.push_str("<h3>PromethION spatial yield · 3000-channel layout</h3><p class=\"annotation\">Explicitly selected EPI2ME Basic QC Tutorial map: twelve 25 × 10 blocks, forming 25 rows × 120 columns. Row and column indices are zero-based; orientation follows the reference, not a verified instrument-facing orientation. Unobserved channels are not evidence of dead or inactive pores. Exact observed values are also available in the channel table.</p>");
+    let minion = matches!(layout.name, crate::layout::FlowcellLayout::MinionR95);
+    write!(out, "<h3>{} spatial yield</h3><p class=\"annotation\">Explicit {} layout: {} rows × {} columns, zero-based. {} Unobserved channels do not establish dead or inactive pores.</p>", if minion { "MinION R9.5" } else { "PromethION" }, layout.name.name(), layout.rows, layout.columns, if minion { "Exact MinIONQC p1–p8 / q1–q8 mapping." } else { "Twelve consecutive 25 × 10 blocks from the EPI2ME reference." }).unwrap();
     let channels: std::collections::BTreeMap<_, _> =
         report.channels.iter().map(|c| (c.channel, c)).collect();
-    for passed in [false, true] {
-        let (id, title, hue) = if passed {
-            (
-                "spatial-passed-yield",
-                "Passed yield per physical channel · native filtering",
-                164,
-            )
-        } else {
-            (
+    let selected: std::collections::BTreeMap<_, _> = report
+        .comparison
+        .channels
+        .iter()
+        .map(|c| (c.channel, &c.qscore_selected_reads))
+        .collect();
+    let cell = if minion { 16 } else { 10 };
+    let bottom = 28 + layout.rows * cell;
+    let width = if minion { 760 } else { 1280 };
+    let height = bottom + 115;
+    for population in 0..3 {
+        let (id, title, hue) = match population {
+            0 => (
                 "spatial-total-yield",
-                "Total basecalled yield per physical channel",
+                "Total basecalled yield per physical channel".to_owned(),
                 228,
-            )
+            ),
+            1 => (
+                "spatial-passed-yield",
+                "Passed yield per physical channel · native filtering".into(),
+                164,
+            ),
+            _ => (
+                "spatial-qcutoff-yield",
+                format!(
+                    "Yield per physical channel · Q ≥ {}",
+                    cutoff_value(report.comparison.qscore_cutoff)
+                ),
+                260,
+            ),
         };
-        let maximum = report
-            .channels
-            .iter()
-            .map(|c| {
-                if passed {
-                    c.passed_yield_bp
-                } else {
-                    c.total_yield_bp
-                }
+        figure(out, id, &title);
+        if population == 1 && !report.comparison.native_filtering_available {
+            empty_chart(out, "Native filtering unavailable or incomplete.");
+            continue;
+        }
+        let value = |channel| {
+            channels.get(&channel).map(|c| match population {
+                0 => c.total_yield_bp,
+                1 => c.passed_yield_bp,
+                _ => selected.get(&channel).map_or(0, |c| c.total_yield_bp),
             })
+        };
+        let maximum = layout
+            .channel_coordinates
+            .iter()
+            .filter_map(|c| value(c.channel))
             .max()
             .unwrap_or(0);
         let (scale, unit) = bp_scale(maximum);
-        figure(out, id, title);
-        if passed && !report.comparison.native_filtering_available {
-            empty_chart(
-                out,
-                "Native filtering unavailable: passes_filtering is absent.",
-            );
-            continue;
-        }
-        out.push_str(
-            "<p class=\"scroll-hint\">Scroll map horizontally to view all 120 columns.</p>",
-        );
-        let high_lightness = if maximum == 0 { 96 } else { 42 };
-        write!(out, "<div class=\"plot-scroll\" tabindex=\"0\" role=\"group\" aria-label=\"Scrollable physical channel heatmap\"><svg class=\"heatmap\" viewBox=\"0 0 1280 360\" role=\"group\" aria-labelledby=\"{id}-caption\"><defs><pattern id=\"{id}-unobserved\" width=\"4\" height=\"4\" patternUnits=\"userSpaceOnUse\"><rect width=\"4\" height=\"4\" fill=\"#f1f3f6\"/><path d=\"M0 0L4 4\" stroke=\"#cbd2df\" stroke-width=\"1\"/></pattern><linearGradient id=\"{id}-scale\"><stop stop-color=\"hsl({hue} 45% 96%)\"/><stop offset=\"1\" stop-color=\"hsl({hue} 45% {high_lightness}%)\"/></linearGradient></defs>").unwrap();
+        write!(out, "<p class=\"scroll-hint\">Scroll map horizontally for physical coordinates and values.</p><div class=\"plot-scroll\" tabindex=\"0\" role=\"group\" aria-label=\"Scrollable physical channel heatmap\"><svg class=\"heatmap\" viewBox=\"0 0 {width} {height}\" role=\"group\" aria-labelledby=\"{id}-caption\"><defs><pattern id=\"{id}-unobserved\" width=\"4\" height=\"4\" patternUnits=\"userSpaceOnUse\"><rect width=\"4\" height=\"4\" fill=\"#f1f3f6\"/><path d=\"M0 0L4 4\" stroke=\"#cbd2df\"/></pattern><linearGradient id=\"{id}-scale\"><stop stop-color=\"hsl({hue} 45% 96%)\"/><stop offset=\"1\" stop-color=\"hsl({hue} 45% 42%)\"/></linearGradient></defs>").unwrap();
         for coordinate in &layout.channel_coordinates {
-            let observed = channels.get(&coordinate.channel);
-            let value = observed.map(|c| {
-                if passed {
-                    c.passed_yield_bp
-                } else {
-                    c.total_yield_bp
-                }
-            });
-            let fill = value.map_or_else(
+            let v = value(coordinate.channel);
+            let fill = v.map_or_else(
                 || format!("url(#{id}-unobserved)"),
                 |v| {
-                    let fraction = if maximum == 0 {
-                        0.0
-                    } else {
-                        v as f64 / maximum as f64
-                    };
-                    format!("hsl({hue} 45% {:.2}%)", 96.0 - fraction * 54.0)
+                    format!(
+                        "hsl({hue} 45% {:.2}%)",
+                        96.0 - if maximum == 0 {
+                            0.0
+                        } else {
+                            v as f64 / maximum as f64 * 54.0
+                        }
+                    )
                 },
             );
-            let description = match (observed, value) {
-                (Some(c), Some(v)) => format!(
+            let description = match v {
+                Some(v) => format!(
                     "Channel {} · row {}, column {}: {} bp {}; {} summary records; {} basecalled reads",
                     coordinate.channel,
                     coordinate.row,
                     coordinate.column,
                     count(v),
-                    if passed {
+                    if population == 1 {
                         "passed yield"
+                    } else if population == 2 {
+                        "Q-cutoff yield"
                     } else {
                         "total yield"
                     },
-                    count(c.total_records),
-                    count(c.basecalled_reads)
+                    count(channels[&coordinate.channel].total_records),
+                    count(channels[&coordinate.channel].basecalled_reads)
                 ),
-                _ => format!(
-                    "Channel {} · row {}, column {}: not observed in summary; yield unavailable",
+                None => format!(
+                    "Channel {} · row {}, column {}: not observed; yield unavailable",
                     coordinate.channel, coordinate.row, coordinate.column
                 ),
             };
-            write!(out, "<rect class=\"heatmap-cell\" data-channel=\"{}\" data-yield-bp=\"{}\" x=\"{}\" y=\"{}\" width=\"9\" height=\"9\" fill=\"{fill}\" role=\"img\" aria-labelledby=\"{id}-c{}\"><title id=\"{id}-c{}\">{}</title></rect>", coordinate.channel, value.map(|v| v.to_string()).unwrap_or_default(), 48 + coordinate.column * 10, 28 + coordinate.row * 10, coordinate.channel, coordinate.channel, escape(&description)).unwrap();
+            write!(out, "<rect class=\"heatmap-cell\" data-channel=\"{}\" data-yield-bp=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{fill}\" role=\"img\" aria-labelledby=\"{id}-c{}\"><title id=\"{id}-c{}\">{}</title></rect>", coordinate.channel, v.map(|v| v.to_string()).unwrap_or_default(), 48+coordinate.column*cell, 28+coordinate.row*cell, cell-1, cell-1, coordinate.channel, coordinate.channel, escape(&description)).unwrap();
         }
-        for row in [0, 5, 10, 15, 20, 24] {
+        let row_ticks: std::collections::BTreeSet<_> = (0..layout.rows)
+            .step_by(5)
+            .chain([layout.rows - 1])
+            .collect();
+        for row in row_ticks {
             write!(
                 out,
                 "<text class=\"tick\" x=\"38\" y=\"{}\" text-anchor=\"end\">{row}</text>",
-                36 + row * 10
+                36 + row * cell
             )
             .unwrap();
         }
-        for column in [0, 20, 40, 60, 80, 100, 119] {
+        let column_ticks: std::collections::BTreeSet<_> = (0..layout.columns)
+            .step_by(if minion { 4 } else { 20 })
+            .chain([layout.columns - 1])
+            .collect();
+        for column in column_ticks {
             write!(
                 out,
-                "<text class=\"tick\" x=\"{}\" y=\"296\" text-anchor=\"middle\">{column}</text>",
-                52 + column * 10
+                "<text class=\"tick\" x=\"{}\" y=\"{}\" text-anchor=\"middle\">{column}</text>",
+                52 + column * cell,
+                bottom + 18
             )
             .unwrap();
         }
-        write!(out, "<text class=\"axis-label\" x=\"48\" y=\"17\">Row</text><text class=\"axis-label\" x=\"1248\" y=\"317\" text-anchor=\"end\">Column</text><rect x=\"48\" y=\"317\" width=\"240\" height=\"10\" fill=\"url(#{id}-scale)\"/><text class=\"tick\" x=\"48\" y=\"349\">0 {unit}</text><text class=\"tick\" x=\"288\" y=\"349\" text-anchor=\"end\">{} {unit}</text><rect x=\"360\" y=\"317\" width=\"14\" height=\"14\" fill=\"url(#{id}-unobserved)\"/><text class=\"tick\" x=\"382\" y=\"329\">Not observed · unavailable yield</text><rect x=\"760\" y=\"317\" width=\"14\" height=\"14\" fill=\"hsl({hue} 45% 96%)\" stroke=\"#aab4c8\"/><text class=\"tick\" x=\"782\" y=\"329\">Observed · zero yield</text></svg></div></figure>", decimal(maximum as f64 / scale)).unwrap();
+        write!(out, "<text class=\"axis-label\" x=\"48\" y=\"17\">Row</text><text class=\"axis-label\" x=\"{}\" y=\"{}\" text-anchor=\"end\">Column</text><rect x=\"48\" y=\"{}\" width=\"240\" height=\"10\" fill=\"url(#{id}-scale)\"/><text class=\"tick\" x=\"48\" y=\"{}\">0 {unit}</text><text class=\"tick\" x=\"288\" y=\"{}\" text-anchor=\"end\">{} {unit}</text><rect x=\"48\" y=\"{}\" width=\"14\" height=\"14\" fill=\"url(#{id}-unobserved)\"/><text class=\"tick\" x=\"70\" y=\"{}\">Not observed · unavailable yield</text><rect x=\"360\" y=\"{}\" width=\"14\" height=\"14\" fill=\"hsl({hue} 45% 96%)\" stroke=\"#aab4c8\"/><text class=\"tick\" x=\"382\" y=\"{}\">Observed · zero yield</text></svg></div></figure>", 48+layout.columns*cell, bottom+39, bottom+39, bottom+68, bottom+68, decimal(maximum as f64 / scale), bottom+82, bottom+94, bottom+82, bottom+94).unwrap();
     }
+}
+
+fn minion_read_plots(out: &mut String, report: &Report) {
+    let Some(sample) = &report.diagnostics.minion_sample else {
+        return;
+    };
+    let points: Vec<_> = sample.channels.iter().flat_map(|c| &c.points).collect();
+    write!(out, "<h3>MinION read-level diagnostics</h3><p class=\"annotation\">Deterministic channel-stratified reservoir sample: at most {} reads per channel (8,192 total), {} plotted from {} basecalled reads. Points are observed reads, not reconstructed histogram observations. Sampling is not proportional to channel yield; density and point counts are not exact full-run measurements. No identifiers are embedded.</p>", sample.limit_per_channel, count(points.len() as u64), count(sample.eligible_reads)).unwrap();
+    figure(
+        out,
+        "minion-length-quality",
+        "MinION read length vs Q-score · sampled basecalled reads",
+    );
+    if points.is_empty() {
+        empty_chart(out, "No sampled basecalled reads.");
+        return;
+    }
+    let max_length = report.metrics.max_read_length_bp.unwrap_or(1) as f64;
+    let log_max = max_length.log10().max(1.0);
+    let qmin = report.quality.min_qscore.unwrap_or(0.0);
+    let qmax = report.quality.max_qscore.unwrap_or(0.0);
+    let max_events = points
+        .iter()
+        .filter_map(|p| p.events_per_base)
+        .reduce(f64::max)
+        .unwrap_or(0.0);
+    svg_start(
+        out,
+        "minion-length-quality",
+        "Observed sampled reads; X is log10 read length, Y is per-read Q-score, color is log10(1+events/base). Gray indicates missing events.",
+        294,
+    );
+    for i in 0..=4 {
+        let fraction = i as f64 / 4.0;
+        let q = qmin * (1.0 - fraction) + qmax * fraction;
+        let y = BOTTOM - (BOTTOM - TOP) * fraction;
+        write!(out, "<line class=\"grid-line\" x1=\"{LEFT}\" x2=\"{RIGHT}\" y1=\"{y}\" y2=\"{y}\"/><text class=\"tick\" x=\"68\" y=\"{}\" text-anchor=\"end\">{}</text>", y+4.0, decimal(q)).unwrap();
+        x_tick(
+            out,
+            LEFT + (RIGHT - LEFT) * fraction,
+            &format!("10^{}", decimal(log_max * fraction)),
+        );
+    }
+    out.push_str("<text class=\"axis-label\" x=\"80\" y=\"17\">Mean read Q-score</text><text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Read length (bp; logarithmic axis)</text>");
+    for point in &points {
+        let x = LEFT + (point.length_bp as f64).log10() / log_max * (RIGHT - LEFT);
+        let y = BOTTOM - plot_fraction(point.qscore, qmin, qmax) * (BOTTOM - TOP);
+        let color = point.events_per_base.map_or_else(
+            || "#9aa6b6".into(),
+            |v| {
+                format!(
+                    "hsl(260 38% {:.2}%)",
+                    90.0 - if max_events == 0.0 {
+                        0.0
+                    } else {
+                        (1.0 + v).log10() / (1.0 + max_events).log10() * 55.0
+                    }
+                )
+            },
+        );
+        write!(out, "<circle cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"2\" fill=\"{color}\"><title>{} bp; Q {}; events/base {}</title></circle>", count(point.length_bp), cutoff_value(point.qscore), optional(point.events_per_base, 1.0, "")).unwrap();
+    }
+    write!(out, "</svg></div><p class=\"annotation\">Events/base palette: light 0 → dark {} (log10(1+ratio)); gray = unavailable. Template event counts are never used for 2D reads.</p></figure>", decimal(max_events)).unwrap();
+    let layout = report.diagnostics.physical_layout.as_ref().unwrap();
+    figure(
+        out,
+        "minion-flowcell-overview",
+        "MinION physical flowcell overview · sampled reads",
+    );
+    let end = report.time_bins.last().map_or(900, |b| b.end_seconds) as f64;
+    let sampled: std::collections::BTreeMap<_, _> =
+        sample.channels.iter().map(|c| (c.channel, c)).collect();
+    write!(out, "<p class=\"annotation\">Each physical panel: X = 0–{} h from run start; Y = 1–{} bp on a logarithmic axis. Indigo light → dark represents Q {}–{}. Channel labels identify panels; blank panels mean no sampled basecalled reads, not dead pores.</p>", decimal(end/3600.0), count(max_length as u64), cutoff_value(qmin), cutoff_value(qmax)).unwrap();
+    out.push_str("<p class=\"scroll-hint\">Scroll the physical overview horizontally to read all channel panels.</p><div class=\"plot-scroll\" tabindex=\"0\" role=\"group\" aria-label=\"Scrollable MinION flowcell overview\"><svg class=\"plot minion-overview\" viewBox=\"0 0 1320 2190\" role=\"img\" aria-labelledby=\"minion-flowcell-overview-caption\"><title>Exact R9.5 physical panels; sampled observations on shared time and logarithmic length scales, colored by per-read Q-score.</title><g>");
+    for c in &layout.channel_coordinates {
+        let x0 = 55 + c.column * 76;
+        let y0 = 30 + c.row * 66;
+        write!(out, "<g data-channel=\"{}\" data-row=\"{}\" data-column=\"{}\"><rect x=\"{x0}\" y=\"{y0}\" width=\"70\" height=\"59\" fill=\"#f0f2f7\" stroke=\"#d7ddeb\"/><text x=\"{}\" y=\"{}\" font-size=\"10\">ch {}</text>", c.channel,c.row,c.column,x0+2,y0+11,c.channel).unwrap();
+        if let Some(channel) = sampled.get(&c.channel) {
+            for point in &channel.points {
+                let x = x0 as f64 + 3.0 + point.start_seconds / end * 64.0;
+                let y = y0 as f64 + 55.0 - (point.length_bp as f64).log10() / log_max * 40.0;
+                let light = 90.0 - plot_fraction(point.qscore, qmin, qmax) * 55.0;
+                write!(out, "<circle cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"2\" fill=\"hsl(228 45% {light:.2}%)\"><title>Channel {}: {} s; {} bp; Q {}</title></circle>",c.channel,cutoff_value(point.start_seconds),count(point.length_bp),cutoff_value(point.qscore)).unwrap();
+            }
+        }
+        out.push_str("</g>");
+    }
+    out.push_str("</g><text class=\"axis-label\" x=\"80\" y=\"2180\">Physical columns 0–15; rows 0–31 (top to bottom)</text></svg></div></figure>");
+}
+
+fn plot_fraction(value: f64, minimum: f64, maximum: f64) -> f64 {
+    if maximum == minimum {
+        return 0.5;
+    }
+    let scale = minimum.abs().max(maximum.abs()).max(1.0);
+    ((value / scale - minimum / scale) / (maximum / scale - minimum / scale)).clamp(0.0, 1.0)
 }
 
 fn channel_mux_table(out: &mut String, report: &Report) {
@@ -1865,9 +1984,19 @@ fn time_series_plot(
         );
         return;
     };
-    let maximum = if maximum == 0.0 { 1.0 } else { maximum };
+    let minimum = series
+        .iter()
+        .flat_map(|s| s.points.iter().filter_map(|(_, v)| *v))
+        .reduce(f64::min)
+        .unwrap_or(0.0)
+        .min(0.0);
+    let maximum = if maximum == 0.0 && minimum == 0.0 {
+        1.0
+    } else {
+        maximum.max(0.0)
+    };
     // Finite extreme ratios remain valid data; avoid overflow in rounded axes.
-    let (ymax, ticks) = if !(1e-200..1e300).contains(&maximum) {
+    let (ymax, ticks) = if minimum < 0.0 || !(1e-200..1e300).contains(&maximum) {
         (maximum, 4)
     } else {
         plot_scale(maximum, integer_ticks)
@@ -1878,7 +2007,7 @@ fn time_series_plot(
         .max()
         .map_or(900, |start| start + 900) as f64;
     svg_start(out, id, title, 294);
-    axes(out, ymax, ticks, axis);
+    axes_range(out, minimum, ymax, ticks, axis);
     for i in 0..=4 {
         x_tick(
             out,
@@ -1896,7 +2025,7 @@ fn time_series_plot(
                 continue;
             };
             let x = LEFT + (start as f64 + 450.0) / end * (RIGHT - LEFT);
-            let y = BOTTOM - value / ymax * (BOTTOM - TOP);
+            let y = BOTTOM - plot_fraction(value, minimum, ymax) * (BOTTOM - TOP);
             let command = if previous.is_some_and(|last| start - last == 900) {
                 'L'
             } else {
@@ -1965,9 +2094,13 @@ fn empty_row(out: &mut String, columns: u8, message: &str) {
 }
 
 fn axes(out: &mut String, ymax: f64, ticks: usize, label: &str) {
+    axes_range(out, 0.0, ymax, ticks, label);
+}
+
+fn axes_range(out: &mut String, ymin: f64, ymax: f64, ticks: usize, label: &str) {
     for i in 0..=ticks {
         let y = BOTTOM - (BOTTOM - TOP) * i as f64 / ticks as f64;
-        write!(out, "<line class=\"grid-line\" x1=\"{LEFT}\" x2=\"{RIGHT}\" y1=\"{y:.2}\" y2=\"{y:.2}\"/><text class=\"tick\" x=\"68\" y=\"{:.2}\" text-anchor=\"end\">{}</text>", y + 4.0, compact(ymax * (i as f64 / ticks as f64))).unwrap();
+        write!(out, "<line class=\"grid-line\" x1=\"{LEFT}\" x2=\"{RIGHT}\" y1=\"{y:.2}\" y2=\"{y:.2}\"/><text class=\"tick\" x=\"68\" y=\"{:.2}\" text-anchor=\"end\">{}</text>", y + 4.0, compact(ymin * (1.0 - i as f64 / ticks as f64) + ymax * (i as f64 / ticks as f64))).unwrap();
     }
     write!(
         out,
@@ -2058,7 +2191,7 @@ fn quality_interval(lower: f64, upper: Option<f64>) -> String {
 
 // Cutoff labels must round-trip, unlike presentation-rounded metric means.
 fn cutoff_value(value: f64) -> String {
-    if value == 0.0 || (1e-4..1e6).contains(&value) {
+    if value == 0.0 || (1e-4..1e6).contains(&value.abs()) {
         value.to_string()
     } else {
         format!("{value:e}")

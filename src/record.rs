@@ -2,14 +2,16 @@
 #[derive(Debug)]
 pub struct Record<'a> {
     pub line: u64,
+    pub is_control: bool,
+    pub num_events_template: Option<u64>,
     pub flow_cell_id: Option<&'a str>,
-    pub run_id: &'a str,
+    pub run_id: Option<&'a str>,
     pub channel: u32,
-    pub mux: u32,
+    pub mux: Option<u32>,
     pub start_time: f64,
     pub template_duration: Option<f64>,
     pub passed: Option<bool>,
     pub length: u64,
     pub qscore: f64,
-    pub end_reason: &'a str,
+    pub end_reason: Option<&'a str>,
 }

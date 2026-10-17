@@ -8,12 +8,34 @@ pub enum FlowcellLayout {
     #[value(name = "promethion-3000")]
     #[serde(rename = "promethion-3000")]
     Promethion3000,
+    #[value(name = "minion-r9.5")]
+    #[serde(rename = "minion-r9.5")]
+    MinionR95,
 }
 
 impl FlowcellLayout {
     pub fn coordinate(self, channel: u32) -> Option<ChannelCoordinate> {
-        if !(1..=3000).contains(&channel) {
+        if !(1..=self.channel_count()).contains(&channel) {
             return None;
+        }
+        if matches!(self, Self::MinionR95) {
+            // Exact zero-based transcription of upstream p1..p8 and q1..q8.
+            for (right, starts) in [
+                (false, [33, 481, 417, 353, 289, 225, 161, 97]),
+                (true, [1, 449, 385, 321, 257, 193, 129, 65]),
+            ] {
+                for (block, start) in starts.into_iter().enumerate() {
+                    if (start..start + 32).contains(&channel) {
+                        let offset = channel - start;
+                        return Some(ChannelCoordinate {
+                            channel,
+                            row: block as u32 * 4 + offset / 8,
+                            column: if right { 15 - offset % 8 } else { offset % 8 },
+                        });
+                    }
+                }
+            }
+            unreachable!("all validated MinION channels occur in the source map");
         }
         // np.hstack([np.arange(x, x + 250).reshape(25, 10)
         //            for x in range(1, 2752, 250)])
@@ -25,12 +47,35 @@ impl FlowcellLayout {
         })
     }
 
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Promethion3000 => "promethion-3000",
+            Self::MinionR95 => "minion-r9.5",
+        }
+    }
+    pub fn channel_count(self) -> u32 {
+        match self {
+            Self::Promethion3000 => 3000,
+            Self::MinionR95 => 512,
+        }
+    }
+
     pub fn description(self) -> PhysicalLayout {
         PhysicalLayout {
             name: self,
-            rows: 25,
-            columns: 120,
-            channel_coordinates: (1..=3000).map(|c| self.coordinate(c).unwrap()).collect(),
+            rows: if matches!(self, Self::Promethion3000) {
+                25
+            } else {
+                32
+            },
+            columns: if matches!(self, Self::Promethion3000) {
+                120
+            } else {
+                16
+            },
+            channel_coordinates: (1..=self.channel_count())
+                .map(|c| self.coordinate(c).unwrap())
+                .collect(),
         }
     }
 }
@@ -88,5 +133,40 @@ mod tests {
         }
         assert_eq!(coordinates.len(), 3000);
         assert_eq!(map.channel_coordinates.len(), 3000);
+    }
+    #[test]
+    fn minion_positions_match_every_upstream_p_and_q_block() {
+        let layout = FlowcellLayout::MinionR95;
+        let mut seen = BTreeSet::new();
+        for (right, starts) in [
+            (false, [33, 481, 417, 353, 289, 225, 161, 97]),
+            (true, [1, 449, 385, 321, 257, 193, 129, 65]),
+        ] {
+            for (block, start) in starts.into_iter().enumerate() {
+                for offset in 0..32 {
+                    let c = layout.coordinate(start + offset).unwrap();
+                    assert_eq!(c.row, block as u32 * 4 + offset / 8);
+                    assert_eq!(c.column, if right { 15 - offset % 8 } else { offset % 8 });
+                    assert!(seen.insert((c.row, c.column)));
+                    assert!(c.row < 32 && c.column < 16);
+                }
+            }
+        }
+        assert_eq!(seen.len(), 512);
+        for (id, row, col) in [
+            (1, 0, 15),
+            (8, 0, 8),
+            (9, 1, 15),
+            (32, 3, 8),
+            (33, 0, 0),
+            (64, 3, 7),
+            (65, 28, 15),
+            (512, 7, 7),
+        ] {
+            let c = layout.coordinate(id).unwrap();
+            assert_eq!((c.row, c.column), (row, col));
+        }
+        assert!(layout.coordinate(0).is_none());
+        assert!(layout.coordinate(513).is_none());
     }
 }

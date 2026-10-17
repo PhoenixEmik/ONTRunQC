@@ -495,3 +495,60 @@ Empty or nonrepresentable floating ranges return null, never an invented curve.
 Singleton fallback is defined even though R's automatic density needs two points.
 Exact QC statistics do not depend on density estimation. No additional per-read
 vectors are retained; only bounded density grids and aggregated run summaries.
+
+## Legacy schemas and MinION (#9)
+
+`--input-schema auto` uses the modern schema when all eight original modern
+columns and template representation are present; otherwise it selects legacy.
+`--input-schema modern` enforces the original required columns and nonnegative Q;
+`legacy` permits missing run/mux/duration/native/reason metadata. Any provided
+numeric metadata is still validated. Legacy blanks/NA in optional metadata are
+unavailable; selected length/Q and channel/start remain required. Missing muxes
+and reasons create no invented groups. A partially missing native flag makes
+native completeness false while known TRUE/FALSE counts remain observed counts.
+
+Auto representation chooses the full `sequence_length_2d`/`mean_qscore_2d` pair
+when either is present (both are required). `--read-representation template|2d`
+makes the choice explicit. There is no row-level fallback; incompatible
+representations within a run are rejected. Each collection member records its
+representation; pooled comparisons may explicitly contain different run types.
+Template duration, template native flags and template event counts are unavailable
+for 2D reads. Finite signed legacy Q values are retained without clipping; when
+needed, an explicit [-f64::MAX,0) quality underflow interval and joint-histogram
+row are prepended. Nonnegative modern histogram boundaries are unchanged. Signed
+means/medians use overflow-safe arithmetic; time plots support signed axes.
+
+`input` records raw validated row counts, exact `YHR174W` control exclusions,
+negative-Q record counts, schemas and chosen representation. Control rows are
+validated and excluded before QC aggregation; excluded rows do not contribute
+zero-length/basecalled/filtering metrics. This reproduces MinIONQC's named-control
+policy, not a universal RNA filtering recommendation. Source rows with malformed
+required values still fail, unlike upstream's silent malformed-row removal.
+
+The explicit `minion-r9.5` map is the exact upstream p1..p8/q1..q8 construction,
+zero-based, 32 rows ×16 columns. Left block starts: 33,481,417,353,289,225,161,97;
+right block starts: 1,449,385,321,257,193,129,65. Each block contains 32 channels,
+4 rows ×8 columns; right columns are reversed. All 512 coordinates and block
+edges are tested. No layout is inferred from channel maxima. Total/native/Q-cutoff
+spatial yields remain distinct; absent observations differ from observed zero.
+
+MinION-only scatter and physical time/length panels use deterministic SplitMix64
+reservoir replacement, at most 16 positive-length reads per channel (8,192 total).
+Sampling is channel-stratified, not proportional to run read density. Coordinates
+are actual sampled values; overview x is relative start time, y is log10 length,
+color is per-read Q. Scatter x is logarithmic length, y is Q; optional event color
+uses log10(1+events/length), with missing events gray. This intentionally differs
+from upstream's full scatter and log(events/base) color transform. JSON includes
+bounded numeric sample points without read identifiers; no complete record objects
+are retained. Sampling is disabled for `--combined-only`; pooled reports retain
+aggregate histograms, not spatial/scatter overlays across distinct instruments.
+
+Optional public validation now reads original files without adapters or Q clipping:
+99 short-run records / 1,089,633 bp; 75,160 PromethION / 623,196,506 bp;
+159,799 1D2 / 930,249,488 bp; 963 retained direct-RNA /197,413 bp (37 controls
+excluded); two MinION inputs pooled: 608,208 /7,203,301,321 bp, N50 33,161,
+median 2,616. Inputs can contain several run IDs; they are split rather than
+pretended to be a single physical flowcell. Threshold/ultralong counts match
+available upstream YAML and independent calculations. Short/1D2 YAML labels
+Q>=7 are stale: numeric values match Q8, as used by upstream tests.R. R was not
+executed; the historical private PromethION dataset was not rerun.

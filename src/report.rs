@@ -28,6 +28,7 @@ pub struct Report {
     pub diagnostics: Diagnostics,
     pub comparison: ComparisonMetrics,
     pub distributions: crate::metrics::DistributionEstimates,
+    pub input: crate::metrics::InputSummary,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -50,6 +51,7 @@ pub struct Collection {
 
 #[derive(Debug, Serialize)]
 pub struct RunComparison {
+    pub input: crate::metrics::InputSummary,
     pub source: SourceMetadata,
     pub run_id: Option<String>,
     pub metrics: OverallMetrics,
@@ -67,6 +69,7 @@ pub struct RunComparison {
 impl RunComparison {
     pub fn from_report(report: &Report) -> Self {
         Self {
+            input: report.input.clone(),
             source: report.source.clone().expect("collection source metadata"),
             run_id: report.run.run_id.clone(),
             metrics: report.metrics.clone(),

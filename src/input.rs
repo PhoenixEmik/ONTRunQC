@@ -9,7 +9,7 @@ use csv::{ByteRecord, Reader, ReaderBuilder, StringRecord};
 
 use crate::record::Record;
 
-const REQUIRED: [&str; 8] = [
+const MODERN_REQUIRED: [&str; 8] = [
     "run_id",
     "channel",
     "mux",
@@ -20,15 +20,49 @@ const REQUIRED: [&str; 8] = [
     "end_reason",
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputSchema {
+    Auto,
+    Modern,
+    Legacy,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
+pub enum ReadRepresentation {
+    #[serde(rename = "auto")]
+    Auto,
+    #[serde(rename = "template")]
+    Template,
+    #[value(name = "2d")]
+    #[serde(rename = "2d")]
+    TwoD,
+}
+
 struct Columns {
-    required: [usize; REQUIRED.len()],
+    schema: InputSchema,
+    representation: ReadRepresentation,
+    channel: usize,
+    start_time: usize,
+    length: usize,
+    qscore: usize,
+    run_id: Option<usize>,
+    mux: Option<usize>,
+    duration: Option<usize>,
+    end_reason: Option<usize>,
     template_duration: Option<usize>,
     passes_filtering: Option<usize>,
     flow_cell_id: Option<usize>,
+    control: Option<usize>,
+    events: Option<usize>,
 }
 
 impl Columns {
-    fn new(headers: &StringRecord) -> Result<Self> {
+    fn new(
+        headers: &StringRecord,
+        requested_schema: InputSchema,
+        requested_representation: ReadRepresentation,
+    ) -> Result<Self> {
         ensure!(
             !headers.is_empty(),
             "line 1: empty input; expected a TSV header"
@@ -38,88 +72,156 @@ impl Columns {
             ensure!(!header.is_empty(), "line 1: empty column name");
             ensure!(seen.insert(header), "line 1: duplicate column {header:?}");
         }
-        let mut positions = [0; REQUIRED.len()];
-        for (index, name) in REQUIRED.iter().enumerate() {
-            positions[index] = headers
-                .iter()
-                .position(|header| header == *name)
-                .with_context(|| format!("line 1: missing required column {name:?}"))?;
+        let find = |name: &str| headers.iter().position(|h| h == name);
+        let required = |name: &str| {
+            find(name).with_context(|| format!("line 1: missing required column {name:?}"))
+        };
+        let representation = match requested_representation {
+            ReadRepresentation::Auto
+                if find("sequence_length_2d").is_some() || find("mean_qscore_2d").is_some() =>
+            {
+                ReadRepresentation::TwoD
+            }
+            ReadRepresentation::Auto => ReadRepresentation::Template,
+            value => value,
+        };
+        let schema = match requested_schema {
+            InputSchema::Auto
+                if representation == ReadRepresentation::Template
+                    && MODERN_REQUIRED.iter().all(|name| find(name).is_some()) =>
+            {
+                InputSchema::Modern
+            }
+            InputSchema::Auto => InputSchema::Legacy,
+            value => value,
+        };
+        if schema == InputSchema::Modern {
+            ensure!(
+                representation == ReadRepresentation::Template,
+                "modern schema requires template reads; use --input-schema legacy for 2D or --read-representation template"
+            );
+            for name in MODERN_REQUIRED {
+                required(name)?;
+            }
         }
+        let (length_name, quality_name) = if representation == ReadRepresentation::TwoD {
+            ("sequence_length_2d", "mean_qscore_2d")
+        } else {
+            ("sequence_length_template", "mean_qscore_template")
+        };
         Ok(Self {
-            required: positions,
-            template_duration: headers.iter().position(|h| h == "template_duration"),
-            passes_filtering: headers.iter().position(|h| h == "passes_filtering"),
-            flow_cell_id: headers.iter().position(|h| h == "flow_cell_id"),
+            schema,
+            representation,
+            channel: required("channel")?,
+            start_time: required("start_time")?,
+            length: required(length_name)?,
+            qscore: required(quality_name)?,
+            run_id: find("run_id"),
+            mux: find("mux"),
+            duration: find("duration"),
+            end_reason: find("end_reason"),
+            template_duration: find("template_duration"),
+            passes_filtering: find("passes_filtering"),
+            flow_cell_id: find("flow_cell_id"),
+            control: find("calibration_strand_genome_template"),
+            events: find("num_events_template"),
         })
     }
 
+    fn text<'a>(&self, row: &'a ByteRecord, index: usize, name: &str) -> Result<&'a str> {
+        std::str::from_utf8(&row[index]).with_context(|| format!("column {name:?}: expected UTF-8"))
+    }
+
+    fn optional<'a>(
+        &self,
+        row: &'a ByteRecord,
+        index: Option<usize>,
+        name: &str,
+    ) -> Result<Option<&'a str>> {
+        let value = index.map(|i| self.text(row, i, name)).transpose()?;
+        if self.schema == InputSchema::Legacy {
+            return Ok(value.filter(|v| !v.trim().is_empty() && *v != "NA"));
+        }
+        if let Some(value) = value {
+            ensure!(
+                !value.trim().is_empty(),
+                "column {name:?}: must not be empty"
+            );
+        }
+        Ok(value)
+    }
+
     fn parse<'a>(&self, row: &'a ByteRecord, line: u64) -> Result<Record<'a>> {
-        let field = |index: usize| -> Result<&'a str> {
-            std::str::from_utf8(&row[self.required[index]])
-                .with_context(|| format!("column {:?}: expected UTF-8", REQUIRED[index]))
-        };
-        let run_id = field(0)?;
-        ensure!(
-            !run_id.trim().is_empty(),
-            "column \"run_id\": must not be empty"
-        );
-        let channel = number::<u32>(field(1)?, REQUIRED[1])?;
+        let channel = number::<u32>(self.text(row, self.channel, "channel")?, "channel")?;
         ensure!(channel > 0, "column \"channel\": must be positive");
-        let mux = number::<u32>(field(2)?, REQUIRED[2])?;
-        ensure!(mux > 0, "column \"mux\": must be positive");
-        let start_time = nonnegative_finite(field(3)?, REQUIRED[3])?;
-        // Validate duration even though this milestone attributes yield to start time.
-        nonnegative_finite(field(4)?, REQUIRED[4])?;
+        let mux = self
+            .optional(row, self.mux, "mux")?
+            .map(|v| number::<u32>(v, "mux"))
+            .transpose()?;
+        ensure!(
+            mux.is_none_or(|v| v > 0),
+            "column \"mux\": must be positive"
+        );
+        let start_time =
+            nonnegative_finite(self.text(row, self.start_time, "start_time")?, "start_time")?;
+        if let Some(value) = self.optional(row, self.duration, "duration")? {
+            nonnegative_finite(value, "duration")?;
+        }
         let passed = self
-            .passes_filtering
-            .map(|i| -> Result<bool> {
-                let value = std::str::from_utf8(&row[i])
-                    .context("column \"passes_filtering\": expected UTF-8")?;
-                match value {
-                    v if v.eq_ignore_ascii_case("true") => Ok(true),
-                    v if v.eq_ignore_ascii_case("false") => Ok(false),
-                    v => bail!("column \"passes_filtering\": expected TRUE or FALSE, found {v:?}"),
-                }
+            .optional(row, self.passes_filtering, "passes_filtering")?
+            .map(|v| match v {
+                v if v.eq_ignore_ascii_case("true") => Ok(true),
+                v if v.eq_ignore_ascii_case("false") => Ok(false),
+                v => bail!("column \"passes_filtering\": expected TRUE or FALSE, found {v:?}"),
             })
             .transpose()?;
-        let length = number(field(5)?, REQUIRED[5])?;
-        let qscore = nonnegative_finite(field(6)?, REQUIRED[6])?;
-        let end_reason = field(7)?;
-        ensure!(
-            !end_reason.trim().is_empty(),
-            "column \"end_reason\": must not be empty"
-        );
+        let (length_name, quality_name) = if self.representation == ReadRepresentation::TwoD {
+            ("sequence_length_2d", "mean_qscore_2d")
+        } else {
+            ("sequence_length_template", "mean_qscore_template")
+        };
+        let length = number(self.text(row, self.length, length_name)?, length_name)?;
+        let qscore = if self.schema == InputSchema::Modern {
+            nonnegative_finite(self.text(row, self.qscore, quality_name)?, quality_name)?
+        } else {
+            let q = number::<f64>(self.text(row, self.qscore, quality_name)?, quality_name)?;
+            ensure!(
+                q.is_finite(),
+                "column {quality_name:?}: expected a finite number"
+            );
+            q
+        };
+        let template = self.representation == ReadRepresentation::Template;
         Ok(Record {
             line,
-            run_id,
-            flow_cell_id: self
-                .flow_cell_id
-                .map(|i| -> Result<&str> {
-                    let value = std::str::from_utf8(&row[i])
-                        .context("column flow_cell_id: expected UTF-8")?;
-                    ensure!(
-                        !value.trim().is_empty(),
-                        "column flow_cell_id: must not be empty"
-                    );
-                    Ok(value)
-                })
-                .transpose()?,
             channel,
             mux,
             start_time,
-            // Optional diagnostics never replace validation of required fields.
-            // Blank, malformed, nonpositive, or nonfinite durations are ineligible.
-            template_duration: self.template_duration.and_then(|i| {
-                std::str::from_utf8(&row[i])
-                    .ok()?
-                    .parse::<f64>()
-                    .ok()
-                    .filter(|v| v.is_finite() && *v > 0.0)
-            }),
-            passed,
             length,
             qscore,
-            end_reason,
+            run_id: self.optional(row, self.run_id, "run_id")?,
+            flow_cell_id: self.optional(row, self.flow_cell_id, "flow_cell_id")?,
+            end_reason: self.optional(row, self.end_reason, "end_reason")?,
+            passed: if template { passed } else { None },
+            is_control: self.optional(row, self.control, "calibration_strand_genome_template")?
+                == Some("YHR174W"),
+            num_events_template: if template {
+                self.events
+                    .and_then(|i| std::str::from_utf8(&row[i]).ok()?.parse::<u64>().ok())
+            } else {
+                None
+            },
+            template_duration: if template {
+                self.template_duration.and_then(|i| {
+                    std::str::from_utf8(&row[i])
+                        .ok()?
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|v| v.is_finite() && *v > 0.0)
+                })
+            } else {
+                None
+            },
         })
     }
 }
@@ -190,7 +292,16 @@ pub struct SummaryReader<R: Read> {
 }
 
 impl<R: Read> SummaryReader<R> {
+    #[cfg(test)]
     pub fn new(source: R) -> Result<Self> {
+        Self::with_options(source, InputSchema::Auto, ReadRepresentation::Auto)
+    }
+
+    pub fn with_options(
+        source: R,
+        schema: InputSchema,
+        representation: ReadRepresentation,
+    ) -> Result<Self> {
         // MinKNOW summaries are plain TSV: quotes are literal, not CSV escapes.
         let mut reader = ReaderBuilder::new()
             .delimiter(b'\t')
@@ -205,7 +316,7 @@ impl<R: Read> SummaryReader<R> {
         let headers = reader
             .headers()
             .context("cannot read TSV header at line 1")?;
-        let columns = Columns::new(headers)?;
+        let columns = Columns::new(headers, schema, representation)?;
         Ok(Self {
             reader,
             columns,
@@ -225,12 +336,21 @@ impl<R: Read> SummaryReader<R> {
         self.enforce_single_run = false;
     }
 
+    pub fn schema(&self) -> InputSchema {
+        self.columns.schema
+    }
+    pub fn representation(&self) -> ReadRepresentation {
+        self.columns.representation
+    }
+
     pub fn has_native_filtering(&self) -> bool {
         self.columns.passes_filtering.is_some()
+            && self.columns.representation == ReadRepresentation::Template
     }
 
     pub fn has_template_duration(&self) -> bool {
         self.columns.template_duration.is_some()
+            && self.columns.representation == ReadRepresentation::Template
     }
 
     pub fn next_record(&mut self) -> Result<Option<Record<'_>>> {
@@ -249,15 +369,15 @@ impl<R: Read> SummaryReader<R> {
             .columns
             .parse(&self.buffer, line)
             .with_context(|| format!("line {line}"))?;
-        if let Some(run_id) = &self.run_id {
-            ensure!(
-                !self.enforce_single_run || run_id == record.run_id,
-                "line {line}: inconsistent run_id {:?}; expected {:?}; use --split-runs to analyze multiple runs",
-                record.run_id,
-                run_id
-            );
-        } else {
-            self.run_id = Some(record.run_id.to_owned());
+        if let Some(observed) = record.run_id {
+            if let Some(run_id) = &self.run_id {
+                ensure!(
+                    !self.enforce_single_run || run_id == observed,
+                    "line {line}: inconsistent run_id {observed:?}; expected {run_id:?}; use --split-runs to analyze multiple runs"
+                );
+            } else {
+                self.run_id = Some(observed.to_owned());
+            }
         }
         Ok(Some(record))
     }
@@ -292,7 +412,7 @@ mod tests {
             assert_eq!(record.line, 2);
             assert_eq!(record.length, 9);
             assert_eq!(record.qscore, 12.125);
-            assert_eq!(record.end_reason, "unknown_new_reason");
+            assert_eq!(record.end_reason, Some("unknown_new_reason"));
             assert!(reader.next_record().unwrap().is_none());
             assert_eq!(reader.run_id(), Some("synthetic-run"));
         }

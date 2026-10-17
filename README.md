@@ -125,7 +125,7 @@ One uncompressed, unquoted TSV file with a header. LF and CRLF line endings,
 additional columns, and arbitrary column order are supported. Quotes are literal
 characters; CSV-style quoting and multiline fields are not supported.
 
-Required columns:
+Modern schema columns (use `--input-schema modern` to enforce):
 
 ```text
 run_id  channel  mux  start_time  duration
@@ -139,7 +139,15 @@ positive `u32` integers, without a device-specific upper limit. The optional
 native filtering is unavailable and cutoff analysis still works. Run IDs and termination reasons must be
 nonempty UTF-8 strings. Blank lines, duplicate/empty headers, mismatched field
 counts, and malformed required fields are errors, including on zero-length rows.
-The optional `template_duration` column enables sequencing speed analysis.
+Auto detection accepts legacy inputs with only `channel`, `start_time` and one
+complete length/Q pair. Missing modern metadata stays unavailable. Legacy finite
+negative Q-scores are retained as reported values with explicit underflow bins;
+modern Q-scores must remain nonnegative. Auto prefers the complete
+`sequence_length_2d`/`mean_qscore_2d` pair; missing selected values are errors,
+never per-row template fallbacks. Template event/duration/native-filter fields
+are not applied to 2D observations. Exact `YHR174W` control rows are excluded from
+QC totals and counted in `input.excluded_control_records` after validation.
+The optional `template_duration` column enables template-read speed analysis.
 Blank, malformed, nonfinite, or nonpositive optional durations make the row
 ineligible for speed only; required fields still undergo strict validation.
 `duration` is never substituted. Other unused columns are ignored. A header-only
@@ -288,8 +296,14 @@ Collection outputs use opaque `runs/run_001/` names and `combined/`; use
 `--combined-only` to omit individual reports. Exact pooled observations are moved,
 not cloned; channel/mux groups and timelines stay local to each run. Comparison
 charts provide per-run Gaussian densities, absolute yields and unsmoothed means.
-Outstanding parity includes #9 full legacy MinION/1D2/direct-RNA compatibility,
-and #10 YAML/export controls and the complete parity checklist. This is not a claim of full MinIONQC
+Legacy support (#9) now accepts minimal channel/start/length/Q headers, selects
+complete 2D/1D2 field pairs, excludes and counts YHR174W controls, and supports
+`--flowcell-layout minion-r9.5`. Explicit `--input-schema modern` retains strict
+modern validation; `--read-representation template` overrides 2D auto-selection.
+Unrelated modern metadata is optional for legacy inputs and is never invented.
+MinION read-level plots use at most 16 sampled reads/channel (8,192 points);
+PromethION remains aggregated. Full point-for-point scatter parity is not claimed.
+Issue #10 output controls and the complete parity audit remain in progress. This is not a claim of full MinIONQC
 parity; event-per-base coloring and individual-channel temporal overview plots
 also remain to be assessed in that checklist.
 
@@ -360,8 +374,8 @@ browser checks using the procedure in [benchmarking](docs/benchmark.md#html-repo
 The unreleased parity additions preserve existing scientific results and the
 v0.4.1 report optimizations. There is no
 automatic QC judgment, gzip support, barcode analysis, multi-run analysis, live
-monitoring, or instrument API integration. Physical maps support only the explicit
-EPI2ME 3000-channel layout; other models/geometries are not verified.
+monitoring, or instrument API integration. Physical maps support the explicit EPI2ME 3000-channel and MinIONQC R9.5
+512-channel layouts; other models/geometries are not verified.
 
 Parsing is streaming, but exact medians require retained lengths (`u64`) and
 Q-scores (`f64`): 16 bytes per basecalled read, approximately 466 MiB of elements

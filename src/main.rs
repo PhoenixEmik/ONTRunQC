@@ -32,6 +32,8 @@ fn run(cli: Cli) -> Result<()> {
             combined_only,
             group_inputs,
             split_runs,
+            input_schema,
+            read_representation,
         } => {
             input.extend(input_paths);
             batch::analyze(
@@ -43,6 +45,8 @@ fn run(cli: Cli) -> Result<()> {
                     combined_only,
                     group_inputs,
                     split_runs,
+                    input_schema,
+                    read_representation,
                 },
             )?;
             eprintln!("Reports written to {}", output.display());

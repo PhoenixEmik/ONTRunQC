@@ -76,10 +76,14 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn assert_invalid(data: &str, expected: &str) {
+    assert_invalid_with_args(data, expected, &[]);
+}
+
+fn assert_invalid_with_args(data: &str, expected: &str, args: &[&str]) {
     let directory = TestDirectory::new();
     let input = directory.0.join("invalid.tsv");
     fs::write(&input, data).unwrap();
-    let output = directory.run(&input);
+    let output = directory.run_with_args(&input, args);
     assert!(!output.status.success(), "unexpected success for {data:?}");
     let error = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -256,7 +260,11 @@ fn empty_input_and_missing_columns_fail() {
             .collect::<Vec<_>>()
             .join("\t")
             + "\n";
-        assert_invalid(&header, &format!("missing required column {name:?}"));
+        assert_invalid_with_args(
+            &header,
+            &format!("missing required column {name:?}"),
+            &["--input-schema", "modern"],
+        );
     }
     assert_invalid(&HEADER.replace("channel", "run_id"), "duplicate column");
     assert_invalid(&HEADER.replace("duration", ""), "empty column name");
@@ -1067,7 +1075,7 @@ fn empty_deep_reports_and_metadata_are_safe() {
     assert!(directory.html().contains("No observed channel/mux pairs."));
     assert_eq!(
         directory.html().matches("class=\"heatmap-cell\"").count(),
-        6000
+        9000
     );
     let reason = "</script><img src=x onerror=alert(1)>";
     let data = format!("{header}1\t{}", ROW.replace("unknown", reason));
@@ -1562,14 +1570,14 @@ fn large_synthetic_report_retains_all_source_rows_and_no_table_svg_microbars() {
         assert!(!table.contains("<svg"));
     }
     assert!(!html.contains("class=\"inline-bar\""));
-    assert_eq!(html.matches("class=\"heatmap-cell\"").count(), 6000);
+    assert_eq!(html.matches("class=\"heatmap-cell\"").count(), 9000);
     assert!(
         // Ten added scientific comparison charts; never one SVG per table row.
         html.matches("<svg ").count() <= 40,
         "SVG count must follow scientific charts, not table rows"
     );
     assert!(
-        html.len() < 9_000_000,
+        html.len() < 11_000_000,
         "unexpected synthetic HTML growth: {} bytes",
         html.len()
     );
@@ -2211,4 +2219,180 @@ fn gaussian_density_matches_independent_direct_kernel_evaluation() {
     for (p, reference) in points.iter().zip(reference) {
         assert!((p["density"].as_f64().unwrap() - reference).abs() < peak * 0.005);
     }
+}
+
+#[test]
+fn minimal_legacy_inputs_keep_missing_metadata_unavailable() {
+    let directory = TestDirectory::new();
+    let input = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t10\t7\n1\t900\t20\t9\n2\t0\t0\t0\n";
+    let report = directory.analyze(input);
+    assert!(report["run"]["run_id"].is_null());
+    assert_eq!(report["metrics"]["total_records"], 3);
+    assert_eq!(report["metrics"]["total_yield_bp"], 30);
+    assert_eq!(report["comparison"]["native_unclassified_reads"], 2);
+    assert_eq!(report["comparison"]["qscore_selected"]["read_count"], 2);
+    assert!(report["muxes"].as_array().unwrap().is_empty());
+    assert!(report["end_reasons"].as_array().unwrap().is_empty());
+    assert_eq!(report["input"]["schemas"], json!(["legacy"]));
+    assert_eq!(report["input"]["read_representation"], "template");
+    assert_invalid_with_args(
+        input,
+        "missing required column",
+        &["--input-schema", "modern"],
+    );
+}
+
+#[test]
+fn legacy_2d_substitution_is_consistent_and_never_falls_back_per_row() {
+    let directory = TestDirectory::new();
+    let input = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\tsequence_length_2d\tmean_qscore_2d\tpasses_filtering\ttemplate_duration\tnum_events_template\n1\t0\t100\t20\t10\t7\tTRUE\t1\t200\n1\t900\t200\t30\t30\t9\tFALSE\t1\t400\n";
+    let report = directory.analyze(input);
+    assert_eq!(report["metrics"]["total_yield_bp"], 40);
+    assert_eq!(report["quality"]["mean_qscore"], 8.0);
+    assert_eq!(report["input"]["read_representation"], "2d");
+    assert_eq!(report["comparison"]["native_unclassified_reads"], 2);
+    assert!(report["diagnostics"]["sequencing_speed"].is_null());
+    let template = directory.analyze_with_args(input, &["--read-representation", "template"]);
+    assert_eq!(template["metrics"]["total_yield_bp"], 300);
+    assert_eq!(template["metrics"]["passed_reads"], 1);
+    assert_invalid(
+        &input.replace("\t10\t7\t", "\tNA\t7\t"),
+        "sequence_length_2d",
+    );
+    assert_invalid(
+        "channel\tstart_time\tsequence_length_2d\n1\t0\t10\n",
+        "mean_qscore_2d",
+    );
+    assert_invalid(
+        "channel\tstart_time\tmean_qscore_2d\n1\t0\t10\n",
+        "sequence_length_2d",
+    );
+}
+
+#[test]
+fn direct_rna_controls_are_excluded_and_counted_separately() {
+    let directory = TestDirectory::new();
+    let data = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\tcalibration_strand_genome_template\n1\t0\t100000\t20\tYHR174W\n1\t0\t10\t7\tno_match\n1\t0\t20\t8\tYHR174W-like\n";
+    let report = directory.analyze(data);
+    assert_eq!(report["input"]["input_records"], 3);
+    assert_eq!(report["input"]["excluded_control_records"], 1);
+    assert_eq!(report["metrics"]["total_records"], 2);
+    assert_eq!(report["metrics"]["total_yield_bp"], 30);
+    assert!(
+        directory
+            .html()
+            .contains("1 YHR174W control observations excluded from 3")
+    );
+    assert_invalid(
+        &data.replace("100000\t20", "NA\t20"),
+        "sequence_length_template",
+    );
+}
+
+#[test]
+fn legacy_signed_qscores_are_preserved_with_histogram_conservation() {
+    let directory = TestDirectory::new();
+    let input = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t5\t-0.1\n1\t900\t10\t7\n";
+    let report = directory.analyze(input);
+    assert_eq!(report["input"]["negative_qscore_records"], 1);
+    assert_eq!(report["quality"]["histogram"][0]["read_count"], 1);
+    assert_eq!(report["quality"]["histogram"][0]["upper_exclusive"], 0.0);
+    assert!((report["quality"]["median_qscore"].as_f64().unwrap() - 3.45).abs() < 1e-12);
+    assert_eq!(report["comparison"]["qscore_selected"]["read_count"], 1);
+    assert_eq!(
+        report["diagnostics"]["length_quality_histogram"]["all_read_counts"][0][2],
+        1
+    );
+    assert_eq!(
+        report["diagnostics"]["length_quality_histogram"]["all_read_counts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|r| r.as_array().unwrap())
+            .map(|v| v.as_u64().unwrap())
+            .sum::<u64>(),
+        2
+    );
+    let extreme = input
+        .replace("-0.1", "-1.7976931348623157e308")
+        .replace("\t7\n", "\t1.7976931348623157e308\n");
+    let report = directory.analyze(&extreme);
+    assert_eq!(report["quality"]["mean_qscore"], 0.0);
+    assert_eq!(report["quality"]["median_qscore"], 0.0);
+}
+
+#[test]
+fn identity_free_sources_are_separate_unless_explicitly_grouped() {
+    let directory = TestDirectory::new();
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv");
+    let data = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t10\t9\n";
+    fs::write(&a, data).unwrap();
+    fs::write(&b, data).unwrap();
+    let report = run_collection(&directory, &[&a, &b], &[]);
+    assert_eq!(report["collection"]["runs"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        report["collection"]["runs"][0]["source"]["grouping"],
+        "unidentified_source"
+    );
+    assert!(report["collection"]["runs"][0]["run_id"].is_null());
+    let report = run_collection(&directory, &[&a, &b], &["--group-inputs"]);
+    assert_eq!(report["collection"]["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(report["metrics"]["total_yield_bp"], 20);
+    let two_d = "channel\tstart_time\tsequence_length_2d\tmean_qscore_2d\n1\t0\t10\t9\n";
+    fs::write(&b, two_d).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .arg("analyze")
+        .args([a, b])
+        .arg("--group-inputs")
+        .arg("--output")
+        .arg(directory.0.join("invalid"))
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("incompatible template/2D"));
+}
+
+#[test]
+fn minion_physical_maps_and_bounded_samples_preserve_observations() {
+    let directory = TestDirectory::new();
+    let mut input = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\tnum_events_template\n".to_owned();
+    for i in 0..100 {
+        input += &format!(
+            "1\t{}\t{}\t{}\t{}\n",
+            i * 900,
+            100 + i,
+            5 + i % 10,
+            (100 + i) * 2
+        );
+    }
+    input += "512\t0\t20\t9\t40\n33\t0\t0\t0\t0\n";
+    let report = directory.analyze_with_args(&input, &["--flowcell-layout", "minion-r9.5"]);
+    assert_eq!(report["diagnostics"]["physical_layout"]["rows"], 32);
+    assert_eq!(report["diagnostics"]["physical_layout"]["columns"], 16);
+    let sample = &report["diagnostics"]["minion_sample"];
+    assert_eq!(sample["eligible_reads"], 101);
+    assert_eq!(
+        sample["channels"][0]["points"].as_array().unwrap().len(),
+        16
+    );
+    assert_eq!(sample["channels"][1]["points"].as_array().unwrap().len(), 1);
+    assert_eq!(sample["channels"][0]["points"][0]["events_per_base"], 2.0);
+    let html = directory.html();
+    assert!(html.contains("MinION physical flowcell overview"));
+    assert!(html.contains("data-channel=\"1\" data-row=\"0\" data-column=\"15\""));
+    assert!(html.contains("data-channel=\"512\" data-row=\"7\" data-column=\"7\""));
+    assert_eq!(html.matches("class=\"heatmap-cell\"").count(), 1024); // native flag unavailable; all + Q selected
+    assert_eq!(
+        report,
+        directory.analyze_with_args(&input, &["--flowcell-layout", "minion-r9.5"])
+    );
+    assert_eq!(html, directory.html());
+    assert_invalid_with_args(
+        &input.replace("512\t0", "513\t0"),
+        "expected 1–512",
+        &["--flowcell-layout", "minion-r9.5"],
+    );
+    let no_map = directory.analyze(&input);
+    assert!(no_map["diagnostics"]["minion_sample"].is_null());
 }

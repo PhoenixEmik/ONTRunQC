@@ -18,6 +18,8 @@ pub struct AnalysisOptions {
     pub combined_only: bool,
     pub group_inputs: bool,
     pub split_runs: bool,
+    pub input_schema: crate::input::InputSchema,
+    pub read_representation: crate::input::ReadRepresentation,
 }
 
 struct Group {
@@ -43,8 +45,10 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
     let mut groups: Vec<Group> = Vec::new();
     let mut known = BTreeMap::<String, usize>::new();
     for (file_index, path) in files.iter().enumerate() {
-        let mut reader = SummaryReader::new(
+        let mut reader = SummaryReader::with_options(
             File::open(path).with_context(|| format!("cannot open input {}", path.display()))?,
+            options.input_schema,
+            options.read_representation,
         )
         .with_context(|| format!("invalid input {}", path.display()))?;
         if collection {
@@ -54,6 +58,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             reader.has_native_filtering(),
             reader.has_template_duration(),
         );
+        let (schema, representation) = (reader.schema(), reader.representation());
         let mut fallback = None;
         let mut had_record = false;
         while let Some(record) = reader
@@ -61,7 +66,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             .with_context(|| format!("input {}", path.display()))?
         {
             had_record = true;
-            let run_id = (!record.run_id.is_empty()).then_some(record.run_id);
+            let run_id = record.run_id;
             let index = if options.group_inputs && !groups.is_empty() {
                 Some(0)
             } else if let Some(id) = run_id {
@@ -73,6 +78,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
                 let index = groups.len();
                 let mut aggregator = Aggregator::new(options.layout, false);
                 aggregator.set_qscore_cutoff(options.cutoff, true);
+                aggregator.set_sampling_enabled(!options.combined_only);
                 groups.push(Group {
                     files: BTreeSet::new(),
                     run_id: run_id.map(str::to_owned),
@@ -114,6 +120,9 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             }
             if group.files.insert(file_index) {
                 group.aggregator.include_input_capabilities(native, speed);
+                group
+                    .aggregator
+                    .include_input_format(schema, representation)?;
             }
             group
                 .aggregator
@@ -123,6 +132,8 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         if !had_record {
             let mut aggregator = Aggregator::new(options.layout, speed);
             aggregator.set_qscore_cutoff(options.cutoff, native);
+            aggregator.set_sampling_enabled(!options.combined_only);
+            aggregator.include_input_format(schema, representation)?;
             groups.push(Group {
                 files: BTreeSet::from([file_index]),
                 run_id: None,
@@ -132,6 +143,10 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             });
         }
     }
+    ensure!(
+        collection || groups.len() == 1,
+        "ambiguous run identity in input; use --split-runs or explicit --group-inputs"
+    );
     let mut pooled = Aggregator::new(None, false);
     pooled.set_qscore_cutoff(options.cutoff, true);
     let mut runs = Vec::new();

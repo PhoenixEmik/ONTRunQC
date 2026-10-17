@@ -703,3 +703,5 @@ footer {
 .run5 { fill:#7256a5; } path.run5 { fill:none; stroke:#7256a5; } .legend.run5:before { background:#7256a5; }
 .run6 { fill:#4f748f; } path.run6 { fill:none; stroke:#4f748f; } .legend.run6:before { background:#4f748f; }
 .run7 { fill:#846159; } path.run7 { fill:none; stroke:#846159; } .legend.run7:before { background:#846159; }
+
+.minion-overview { min-width:1320px; }

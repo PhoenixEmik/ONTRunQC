@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use crate::layout::FlowcellLayout;
+use crate::{
+    input::{InputSchema, ReadRepresentation},
+    layout::FlowcellLayout,
+};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -33,6 +36,12 @@ pub enum Command {
         /// Split a mixed-run single file into individual and combined reports.
         #[arg(long)]
         split_runs: bool,
+        /// Auto-detect minimal legacy headers, or enforce the modern schema.
+        #[arg(long, value_enum, default_value = "auto")]
+        input_schema: InputSchema,
+        /// Choose one complete read representation; auto prefers the 2D pair.
+        #[arg(long, value_enum, default_value = "auto")]
+        read_representation: ReadRepresentation,
         /// Explicit physical channel map; requires channel IDs 1–3000.
         #[arg(long, value_enum)]
         flowcell_layout: Option<FlowcellLayout>,

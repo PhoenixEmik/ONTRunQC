@@ -136,6 +136,7 @@ pub struct Diagnostics {
     pub passed_read_statistics: PassedReadStatistics,
     pub length_quality_histogram: LengthQualityHistogram,
     pub channel_read_length_distribution: Vec<ChannelLengthBin>,
+    pub minion_sample: Option<MinionSample>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -371,9 +372,47 @@ impl Default for ComparisonAccumulator {
     }
 }
 
+#[derive(Clone, Default, Debug, Serialize)]
+pub struct InputSummary {
+    pub input_records: u64,
+    pub excluded_control_records: u64,
+    pub negative_qscore_records: u64,
+    pub schemas: Vec<crate::input::InputSchema>,
+    pub read_representation: Option<crate::input::ReadRepresentation>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MinionSample {
+    pub method: &'static str,
+    pub limit_per_channel: usize,
+    pub eligible_reads: u64,
+    pub channels: Vec<SampledChannel>,
+}
+
+#[derive(Default, Debug, Serialize)]
+pub struct SampledChannel {
+    pub channel: u32,
+    pub eligible_reads: u64,
+    pub points: Vec<ReadPoint>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReadPoint {
+    pub start_seconds: f64,
+    pub length_bp: u64,
+    pub qscore: f64,
+    pub events_per_base: Option<f64>,
+}
+
 #[derive(Default)]
 pub struct Aggregator {
     overall: OverallMetrics,
+    input: InputSummary,
+    negative_quality_count: u64,
+    negative_joint: [u64; JOINT_LENGTH_BOUNDS.len()],
+    negative_passed_joint: [u64; JOINT_LENGTH_BOUNDS.len()],
+    samples: BTreeMap<u32, SampledChannel>,
+    sample_enabled: bool,
     channel_lengths: BTreeMap<u32, ChannelLengths>,
     qscores: [Vec<f64>; 4],
     comparison: ComparisonAccumulator,
@@ -525,6 +564,7 @@ impl Aggregator {
         Self {
             layout,
             speed_available,
+            sample_enabled: true,
             ..Self::default()
         }
     }
@@ -532,6 +572,20 @@ impl Aggregator {
     /// Pool exact observations by ownership; instrument-local channel/time groups
     /// deliberately remain in the individual reports, never conflated across runs.
     pub fn absorb(&mut self, report: &Report, observations: NumericObservations) -> Result<()> {
+        self.input.input_records = self
+            .input
+            .input_records
+            .checked_add(report.input.input_records)
+            .context("combined input count exceeds u64 capacity")?;
+        self.input.excluded_control_records += report.input.excluded_control_records;
+        self.input.negative_qscore_records += report.input.negative_qscore_records;
+        for schema in &report.input.schemas {
+            if !self.input.schemas.contains(schema) {
+                self.input.schemas.push(*schema);
+            }
+        }
+        // A collection may contain different representations; they remain explicit
+        // in each run. No single representation is asserted for pooled reads.
         let m = &report.metrics;
         let before = self.overall.basecalled_reads;
         self.overall.total_records = self
@@ -579,15 +633,29 @@ impl Aggregator {
             c.length_counts[i] += report.comparison.length_histogram[i].read_count;
             c.length_yields[i] += report.comparison.length_histogram[i].yield_bp;
         }
+        for bin in &report.quality.histogram {
+            if bin.lower_inclusive < 0.0 {
+                self.negative_quality_count += bin.read_count;
+            } else {
+                let i = QUALITY_BOUNDS.partition_point(|b| *b <= bin.lower_inclusive) - 1;
+                self.quality_counts[i] += bin.read_count;
+            }
+        }
         for i in 0..QUALITY_BOUNDS.len() {
-            self.quality_counts[i] += report.quality.histogram[i].read_count;
             c.quality_counts[i] += report.comparison.quality_histogram[i].read_count;
         }
         let joint = &report.diagnostics.length_quality_histogram;
+        let offset = usize::from(joint.qscore_lower_bounds.first().is_some_and(|v| *v < 0.0));
+        if offset == 1 {
+            for l in 0..JOINT_LENGTH_BOUNDS.len() {
+                self.negative_joint[l] += joint.all_read_counts[0][l];
+                self.negative_passed_joint[l] += joint.passed_read_counts[0][l];
+            }
+        }
         for q in 0..JOINT_QUALITY_BOUNDS.len() {
             for l in 0..JOINT_LENGTH_BOUNDS.len() {
-                self.joint_counts[q][l] += joint.all_read_counts[q][l];
-                self.joint_passed_counts[q][l] += joint.passed_read_counts[q][l];
+                self.joint_counts[q][l] += joint.all_read_counts[q + offset][l];
+                self.joint_passed_counts[q][l] += joint.passed_read_counts[q + offset][l];
             }
         }
         let destination = &mut self.channel_lengths.entry(0).or_default().partitions;
@@ -596,6 +664,28 @@ impl Aggregator {
         }
         for (to, from) in self.qscores.iter_mut().zip(observations.qscores) {
             append_observations(to, from)?;
+        }
+        Ok(())
+    }
+
+    pub fn set_sampling_enabled(&mut self, enabled: bool) {
+        self.sample_enabled = enabled;
+    }
+
+    pub fn include_input_format(
+        &mut self,
+        schema: crate::input::InputSchema,
+        representation: crate::input::ReadRepresentation,
+    ) -> Result<()> {
+        if let Some(previous) = self.input.read_representation {
+            ensure!(
+                previous == representation,
+                "incompatible template/2D representations within one run; select --read-representation explicitly"
+            );
+        }
+        self.input.read_representation = Some(representation);
+        if !self.input.schemas.contains(&schema) {
+            self.input.schemas.push(schema);
         }
         Ok(())
     }
@@ -611,11 +701,25 @@ impl Aggregator {
     }
 
     pub fn add(&mut self, record: &Record<'_>) -> Result<()> {
+        self.input.input_records = self
+            .input
+            .input_records
+            .checked_add(1)
+            .context("input record count exceeds u64 capacity")?;
+        if record.is_control {
+            self.input.excluded_control_records += 1;
+            return Ok(());
+        }
+        if record.qscore < 0.0 {
+            self.input.negative_qscore_records += 1;
+        }
         if let Some(layout) = self.layout {
             ensure!(
                 layout.coordinate(record.channel).is_some(),
-                "channel {} is incompatible with --flowcell-layout promethion-3000 (expected 1–3000); select a matching layout or omit the option",
-                record.channel
+                "channel {} is incompatible with --flowcell-layout {} (expected 1–{}); select a matching layout or omit the option",
+                record.channel,
+                layout.name(),
+                layout.channel_count()
             );
         }
         // Validate cumulative counters first; every subgroup is bounded by these totals.
@@ -648,9 +752,11 @@ impl Aggregator {
                 channel: record.channel,
                 ..ChannelMetrics::default()
             });
-        let mux = self.muxes.entry(record.mux).or_insert_with(|| MuxMetrics {
-            mux: record.mux,
-            ..MuxMetrics::default()
+        let mut mux = record.mux.map(|id| {
+            self.muxes.entry(id).or_insert_with(|| MuxMetrics {
+                mux: id,
+                ..MuxMetrics::default()
+            })
         });
         let time = self
             .time_bins
@@ -663,28 +769,40 @@ impl Aggregator {
                 },
                 ..TimeAccumulator::default()
             });
-        let channel_mux = self
-            .channel_mux
-            .entry((record.channel, record.mux))
-            .or_insert_with(|| ChannelMuxMetrics {
-                channel: record.channel,
-                mux: record.mux,
-                ..ChannelMuxMetrics::default()
-            });
-        // Borrowed lookup avoids a fresh String for every record.
-        if !self.end_reasons.contains_key(record.end_reason) {
-            self.end_reasons
-                .insert(record.end_reason.to_owned(), ReasonAccumulator::default());
-        }
-        let reason = self.end_reasons.get_mut(record.end_reason).unwrap();
+        let mut channel_mux = record.mux.map(|mux| {
+            self.channel_mux
+                .entry((record.channel, mux))
+                .or_insert_with(|| ChannelMuxMetrics {
+                    channel: record.channel,
+                    mux,
+                    ..ChannelMuxMetrics::default()
+                })
+        });
+        let mut reason = if let Some(name) = record.end_reason {
+            if !self.end_reasons.contains_key(name) {
+                self.end_reasons
+                    .insert(name.to_owned(), ReasonAccumulator::default());
+            }
+            self.end_reasons.get_mut(name)
+        } else {
+            None
+        };
         channel.total_records += 1;
-        mux.total_records += 1;
+        if let Some(value) = &mut mux {
+            value.total_records += 1;
+        }
         time.metrics.total_records += 1;
-        reason.metrics.total_records += 1;
-        channel_mux.total_records += 1;
+        if let Some(value) = &mut reason {
+            value.metrics.total_records += 1;
+        }
+        if let Some(value) = &mut channel_mux {
+            value.total_records += 1;
+        }
         if record.length == 0 {
             self.overall.zero_length_records += 1;
-            channel_mux.zero_length_records += 1;
+            if let Some(value) = &mut channel_mux {
+                value.zero_length_records += 1;
+            }
             return Ok(());
         }
 
@@ -701,6 +819,7 @@ impl Aggregator {
         push_compact(&mut self.qscores[partition], record.qscore)?;
         if record.passed.is_none() {
             self.comparison.unclassified += 1;
+            self.comparison.native_available = false;
         }
         if selected {
             let c = &mut self.comparison;
@@ -738,8 +857,12 @@ impl Aggregator {
         channel.total_yield_bp += record.length;
         let channel_mean = channel.mean_qscore.get_or_insert(0.0);
         update_mean(channel_mean, record.qscore, channel.basecalled_reads);
-        mux.basecalled_reads += 1;
-        mux.total_yield_bp += record.length;
+        if let Some(value) = &mut mux {
+            value.basecalled_reads += 1;
+        }
+        if let Some(value) = &mut mux {
+            value.total_yield_bp += record.length;
+        }
         time.metrics.basecalled_reads += 1;
         time.metrics.yield_bp += record.length;
         time.metrics.qscore_observations += 1;
@@ -749,10 +872,18 @@ impl Aggregator {
             time.metrics.qscore_observations,
         );
         time.channels.insert(record.channel);
-        reason.metrics.basecalled_reads += 1;
-        reason.metrics.total_yield_bp += record.length;
-        channel_mux.basecalled_reads += 1;
-        channel_mux.total_yield_bp += record.length;
+        if let Some(value) = &mut reason {
+            value.metrics.basecalled_reads += 1;
+        }
+        if let Some(value) = &mut reason {
+            value.metrics.total_yield_bp += record.length;
+        }
+        if let Some(value) = &mut channel_mux {
+            value.basecalled_reads += 1;
+        }
+        if let Some(value) = &mut channel_mux {
+            value.total_yield_bp += record.length;
+        }
         if let Some(speed) = record
             .template_duration
             .map(|duration| record.length as f64 / duration)
@@ -773,10 +904,18 @@ impl Aggregator {
             );
             channel.passed_reads += 1;
             channel.passed_yield_bp += record.length;
-            mux.passed_yield_bp += record.length;
-            channel_mux.passed_reads += 1;
-            channel_mux.passed_yield_bp += record.length;
-            reason.passed_reads += 1;
+            if let Some(value) = &mut mux {
+                value.passed_yield_bp += record.length;
+            }
+            if let Some(value) = &mut channel_mux {
+                value.passed_reads += 1;
+            }
+            if let Some(value) = &mut channel_mux {
+                value.passed_yield_bp += record.length;
+            }
+            if let Some(value) = &mut reason {
+                value.passed_reads += 1;
+            }
             time.metrics.passed_reads += 1;
             time.metrics.passed_yield_bp += record.length;
             update_mean(
@@ -791,14 +930,53 @@ impl Aggregator {
         let length_bin = LENGTH_BOUNDS.partition_point(|bound| *bound <= record.length) - 1;
         self.length_counts[length_bin] += 1;
         self.length_yields[length_bin] += record.length;
-        let quality_bin = QUALITY_BOUNDS.partition_point(|bound| *bound <= record.qscore) - 1;
-        self.quality_counts[quality_bin] += 1;
         let joint_length = JOINT_LENGTH_BOUNDS.partition_point(|bound| *bound <= record.length) - 1;
-        let joint_quality =
-            JOINT_QUALITY_BOUNDS.partition_point(|bound| *bound <= record.qscore) - 1;
-        self.joint_counts[joint_quality][joint_length] += 1;
-        if record.passed == Some(true) {
-            self.joint_passed_counts[joint_quality][joint_length] += 1;
+        if record.qscore < 0.0 {
+            self.negative_quality_count += 1;
+            self.negative_joint[joint_length] += 1;
+            if record.passed == Some(true) {
+                self.negative_passed_joint[joint_length] += 1;
+            }
+        } else {
+            let quality_bin = QUALITY_BOUNDS.partition_point(|bound| *bound <= record.qscore) - 1;
+            self.quality_counts[quality_bin] += 1;
+            let joint_quality =
+                JOINT_QUALITY_BOUNDS.partition_point(|bound| *bound <= record.qscore) - 1;
+            self.joint_counts[joint_quality][joint_length] += 1;
+            if record.passed == Some(true) {
+                self.joint_passed_counts[joint_quality][joint_length] += 1;
+            }
+        }
+        if self.sample_enabled && matches!(self.layout, Some(FlowcellLayout::MinionR95)) {
+            const LIMIT: usize = 16;
+            let sample = self
+                .samples
+                .entry(record.channel)
+                .or_insert_with(|| SampledChannel {
+                    channel: record.channel,
+                    ..SampledChannel::default()
+                });
+            sample.eligible_reads += 1;
+            let point = ReadPoint {
+                start_seconds: record.start_time,
+                length_bp: record.length,
+                qscore: record.qscore,
+                events_per_base: record
+                    .num_events_template
+                    .map(|events| events as f64 / record.length as f64),
+            };
+            if sample.points.len() < LIMIT {
+                sample.points.push(point);
+            } else {
+                let mut hash = sample.eligible_reads ^ (u64::from(record.channel) << 32);
+                hash = hash.wrapping_add(0x9e3779b97f4a7c15);
+                hash = (hash ^ (hash >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+                hash = (hash ^ (hash >> 27)).wrapping_mul(0x94d049bb133111eb);
+                let index = (hash ^ (hash >> 31)) % sample.eligible_reads;
+                if index < LIMIT as u64 {
+                    sample.points[index as usize] = point;
+                }
+            }
         }
         Ok(())
     }
@@ -911,7 +1089,7 @@ impl Aggregator {
             self.comparison.selected_yield,
             self.comparison.mean_qscore,
         );
-        let quality = QualityMetrics {
+        let mut quality = QualityMetrics {
             mean_qscore: (self.overall.basecalled_reads != 0).then_some(self.mean_qscore),
             median_qscore: partition_median_quality(all_q),
             min_qscore: all_q
@@ -934,6 +1112,16 @@ impl Aggregator {
                 })
                 .collect(),
         };
+        if self.negative_quality_count > 0 {
+            quality.histogram.insert(
+                0,
+                QualityBin {
+                    lower_inclusive: -f64::MAX,
+                    upper_exclusive: Some(0.0),
+                    read_count: self.negative_quality_count,
+                },
+            );
+        }
         let yield_by_minimum_length = yield_by_length(all_lengths, selected_lengths);
         let channel_distributions = channel_distributions(&channel_comparisons);
         let mut selected_cumulative = 0;
@@ -1093,7 +1281,28 @@ impl Aggregator {
                 ..reason.metrics
             })
             .collect();
+        let mut joint_q_bounds = JOINT_QUALITY_BOUNDS.to_vec();
+        let mut joint_all: Vec<_> = self.joint_counts.iter().map(|row| row.to_vec()).collect();
+        let mut joint_passed: Vec<_> = self
+            .joint_passed_counts
+            .iter()
+            .map(|row| row.to_vec())
+            .collect();
+        if self.negative_quality_count > 0 {
+            joint_q_bounds.insert(0, -f64::MAX);
+            joint_all.insert(0, self.negative_joint.to_vec());
+            joint_passed.insert(0, self.negative_passed_joint.to_vec());
+        }
+        let minion_sample = (self.sample_enabled
+            && matches!(self.layout, Some(FlowcellLayout::MinionR95)))
+        .then(|| MinionSample {
+            method: "deterministic_splitmix64_reservoir_per_channel",
+            limit_per_channel: 16,
+            eligible_reads: self.overall.basecalled_reads,
+            channels: self.samples.into_values().collect(),
+        });
         let diagnostics = Diagnostics {
+            minion_sample,
             physical_layout: self.layout.map(FlowcellLayout::description),
             channel_activity,
             channel_mux: self.channel_mux.into_values().collect(),
@@ -1102,13 +1311,9 @@ impl Aggregator {
             passed_read_statistics,
             length_quality_histogram: LengthQualityHistogram {
                 length_lower_bounds_bp: JOINT_LENGTH_BOUNDS.to_vec(),
-                qscore_lower_bounds: JOINT_QUALITY_BOUNDS.to_vec(),
-                all_read_counts: self.joint_counts.iter().map(|row| row.to_vec()).collect(),
-                passed_read_counts: self
-                    .joint_passed_counts
-                    .iter()
-                    .map(|row| row.to_vec())
-                    .collect(),
+                qscore_lower_bounds: joint_q_bounds,
+                all_read_counts: joint_all,
+                passed_read_counts: joint_passed,
             },
             channel_read_length_distribution: LENGTH_BOUNDS
                 .iter()
@@ -1140,6 +1345,7 @@ impl Aggregator {
                 diagnostics,
                 comparison,
                 distributions,
+                input: self.input,
                 source: None,
                 collection: None,
             },
@@ -1240,7 +1446,13 @@ fn partition_median_quality(parts: [&[f64]; 4]) -> Option<f64> {
     let values = ascending_quality(parts);
     let len = parts.iter().map(|p| p.len()).sum();
     let (a, b) = middle_pair(values, len)?;
-    Some(if len % 2 == 0 { a + (b - a) / 2.0 } else { a })
+    Some(if len % 2 != 0 {
+        a
+    } else if (b - a).is_finite() {
+        a + (b - a) / 2.0
+    } else {
+        a / 2.0 + b / 2.0
+    })
 }
 
 fn subset_statistics(
@@ -1421,7 +1633,13 @@ fn append_observations<T>(destination: &mut Vec<T>, source: Vec<T>) -> Result<()
 
 fn combine_mean(mean: &mut f64, previous_count: u64, next_mean: Option<f64>, next_count: u64) {
     if let Some(next) = next_mean.filter(|_| next_count > 0) {
-        *mean += (next - *mean) * (next_count as f64 / (previous_count + next_count) as f64);
+        let weight = next_count as f64 / (previous_count + next_count) as f64;
+        let delta = next - *mean;
+        if delta.is_finite() {
+            *mean += delta * weight;
+        } else {
+            *mean = *mean * (1.0 - weight) + next * weight;
+        }
     }
 }
 
@@ -1441,7 +1659,12 @@ fn push_compact<T>(values: &mut Vec<T>, value: T) -> Result<()> {
 
 // An online arithmetic mean avoids overflowing a sum of finite Q-scores.
 fn update_mean(mean: &mut f64, value: f64, count: u64) {
-    *mean += (value - *mean) / count as f64;
+    let delta = value - *mean;
+    if delta.is_finite() {
+        *mean += delta / count as f64;
+    } else {
+        *mean = *mean * ((count - 1) as f64 / count as f64) + value / count as f64;
+    }
 }
 
 #[cfg(test)]
@@ -1568,16 +1791,18 @@ mod tests {
                 aggregator
                     .add(&Record {
                         line: i as u64 + 2,
-                        run_id: "fictional",
+                        run_id: Some("fictional"),
                         flow_cell_id: None,
                         channel: 1,
-                        mux: 1,
+                        mux: Some(1),
                         start_time: 0.0,
                         template_duration: None,
                         passed: Some(passed_flag),
                         length,
                         qscore,
-                        end_reason: "normal",
+                        end_reason: Some("normal"),
+                        is_control: false,
+                        num_events_template: None,
                     })
                     .unwrap();
                 if passed_flag {
@@ -1630,16 +1855,18 @@ mod tests {
             aggregator
                 .add(&Record {
                     line: i as u64 + 2,
-                    run_id: "fictional",
+                    run_id: Some("fictional"),
                     flow_cell_id: None,
                     channel: 1,
-                    mux: 1,
+                    mux: Some(1),
                     start_time: 0.0,
                     template_duration: None,
                     passed: Some(i % 2 == 0),
                     length: 100,
                     qscore: 12.0,
-                    end_reason: "normal",
+                    end_reason: Some("normal"),
+                    is_control: false,
+                    num_events_template: None,
                 })
                 .unwrap();
         }
