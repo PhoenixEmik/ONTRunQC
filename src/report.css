@@ -674,11 +674,11 @@ footer {
     thead th {
         position:static;
     }
-    #channel-table tr[hidden],#channel-mux-table tr.print-only {
-    display:none;
-}
-[hidden] {
-        display:table-row!important;
+    .detail-table {
+        display:none!important;
+    }
+    .print-only {
+        display:block;
     }
     details:not([open]) {
         display:none;
