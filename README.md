@@ -196,6 +196,10 @@ cargo test
 cargo build --release --locked
 ```
 
+[GitHub Actions CI](.github/workflows/ci.yml) runs these checks on stable Rust for
+pushes and pull requests, and can also be started manually. A separate job runs
+tests on the minimum supported Rust version, 1.85. Both jobs use synthetic fixtures.
+
 `src/input.rs` validates borrowed records; `src/metrics.rs` owns all statistical
 calculations; `src/report.rs` serializes JSON and stages both outputs.
 `src/layout.rs` defines the supported coordinate map. `src/html.rs` renders HTML
