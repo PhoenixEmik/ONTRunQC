@@ -25,6 +25,15 @@ It does not analyze FASTQ, BAM, or POD5 files.
 
 ## Installation
 
+[Release automation](.github/workflows/release.yml) produces `.tar.gz` archives for
+Linux (x86-64 and ARM64) and macOS (Intel and Apple Silicon), plus `SHA256SUMS`.
+When available, download the matching archive from
+[GitHub Releases](https://github.com/PhoenixEmik/PoreGauge/releases), verify its
+checksum, extract it, and run the included `poregauge` binary. Linux binaries are
+built on Ubuntu 22.04 and require glibc 2.35 or newer; build from source for older
+systems. macOS builds are tested on macOS 15 (Intel) and macOS 14 (Apple Silicon).
+The archives include the license, README, and metric definitions.
+
 Install Rust 1.85 or newer, including Cargo. Build this checkout from the repository root:
 
 ```sh
@@ -199,6 +208,16 @@ cargo build --release --locked
 [GitHub Actions CI](.github/workflows/ci.yml) runs these checks on stable Rust for
 pushes and pull requests, and can also be started manually. A separate job runs
 tests on the minimum supported Rust version, 1.85. Both jobs use synthetic fixtures.
+
+To publish a release, update `Cargo.toml` and `Cargo.lock`, commit the changes,
+then push a matching stable `vMAJOR.MINOR.PATCH` tag. The release workflow checks
+the version, formatting, and Clippy, then tests, builds, and smoke-tests each
+platform before publishing assets and generated release notes. It can also be
+started manually from the Actions tab with an existing tag (for example,
+`v0.3.0`); use the workflow on `main` when releasing tags that predate automation.
+A failed upload leaves a draft that can be retried; published release assets are
+never overwritten by this workflow. Prereleases and Windows binaries are not
+currently automated. Adding the workflow does not publish existing tags automatically.
 
 `src/input.rs` validates borrowed records; `src/metrics.rs` owns all statistical
 calculations; `src/report.rs` serializes JSON and stages both outputs.
