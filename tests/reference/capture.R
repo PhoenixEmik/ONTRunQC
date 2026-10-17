@@ -21,10 +21,11 @@ ggsave <- function(filename, plot, ...) {
          rows=nrow(built$data[[i]]), groups=unique(built$data[[i]]$group))
   })
   colour <- built$plot$scales$get_scales("colour")
-  labels <- if (is.null(colour)) NULL else colour$get_labels()
+  breaks <- if (is.null(colour)) NULL else colour$get_breaks()
+  labels <- if (is.null(colour)) NULL else colour$get_labels(breaks)
   plots[[length(plots)+1L]] <<- list(file=basename(filename),
       directory=basename(dirname(filename)), labels=lapply(plot$labels, function(x) paste(as.character(x),collapse=" ")),
-      colour_labels=labels, colours=if(is.null(colour)) NULL else colour$map(labels),
+      colour_labels=labels, colours=if(is.null(colour)) NULL else colour$map(breaks),
       panels=as.data.frame(built$layout$layout), layers=layers)
   if (Sys.getenv("PG_REFERENCE_RENDER", "true") == "true")
     original_save(filename=filename, plot=plot, ...)

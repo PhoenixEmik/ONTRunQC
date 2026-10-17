@@ -7,10 +7,15 @@ The normal Rust build never needs R. Use the clean upstream checkout at commit
 git clone https://github.com/roblanf/minion_qc /tmp/minionqc-reference
 git -C /tmp/minionqc-reference checkout 54485d586038d8ee36f168dd94f31c423f52f581
 cargo build --release --locked
-docker build -t poregauge-minionqc-r -f tests/reference/Dockerfile tests/reference
 python3 tests/minionqc_reference.py /tmp/minionqc-reference --execute-r \
-  --docker poregauge-minionqc-r --output benchmark-results/minionqc-r
+  --rscript /path/to/Rscript --output benchmark-results/minionqc-r
 ```
+
+Use an existing R installation; no environment is created by this command. There
+is no automatic R CI build. The optional Dockerfile remains an alternative for
+users who explicitly want a container: build it with `docker build -t
+poregauge-minionqc-r -f tests/reference/Dockerfile tests/reference`, then replace
+`--rscript /path/to/Rscript` with `--docker poregauge-minionqc-r`.
 
 The reference environment is R **4.4.1**, ggplot2 **3.5.1**, mgcv **1.9-1**, with
 transitive R dependencies from the **2024-07-01** CRAN snapshot. These versions

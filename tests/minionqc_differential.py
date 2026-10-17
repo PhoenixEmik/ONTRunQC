@@ -108,7 +108,7 @@ def metrics(reference, pg, rows, cutoff, channel_scope=False):
         basecalled = [r for r in cohort if r[0]>0]
         p = pg["comparison"]["qscore_selected"] if selected else pg["metrics"]
         quality = p if selected else pg["quality"]
-        raw = reference.get("populations",{}).get(name, {})
+        raw = (reference.get("populations") or {}).get(name, {})
         r = summary.get(name)
         if not r:
             results.append(unverified(name, "Reference subset/YAML unavailable.")); continue
@@ -163,7 +163,7 @@ def metrics(reference, pg, rows, cutoff, channel_scope=False):
     channels={c["channel"]:c for c in pg["comparison"]["channels"]}
     by_channel={}
     for row in rows: by_channel.setdefault(row[2],[]).append(row)
-    for population,data in reference.get("channels",{}).items():
+    for population,data in (reference.get("channels") or {}).items():
         selected=population!="All reads"
         for row in data:
             key=f"channel.{row['channel']}.{population}.{row['variable']}"
@@ -307,7 +307,7 @@ def main(argv=None):
         rdir=directory/"minionqc";rdir.mkdir(exist_ok=True)
         capture=directory/"capture.json"
         capture.unlink(missing_ok=True) # Never reuse a stale successful R capture.
-        env=dict(os.environ,PG_REFERENCE_SOURCE=str(upstream/"MinIONQC.R"),PG_REFERENCE_CAPTURE=str(capture),PG_REFERENCE_RENDER=str(not args.capture_only).lower())
+        env=dict(os.environ,TZ="UTC",LC_ALL="C",PG_REFERENCE_SOURCE=str(upstream/"MinIONQC.R"),PG_REFERENCE_CAPTURE=str(capture),PG_REFERENCE_RENDER=str(not args.capture_only).lower())
         cli=[str(harness),"-i",str(inputdir if len(paths)>1 else copied[0]),"-o",str(rdir),"-q",str(cutoff),"-p","1","-m","8","-f","pdf","-s","TRUE"]
         if args.docker:
             # Same absolute paths inside the container; no shell interpolation.
