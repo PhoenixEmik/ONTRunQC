@@ -1,3 +1,4 @@
+mod batch;
 mod cli;
 mod html;
 mod input;
@@ -6,14 +7,9 @@ mod metrics;
 mod record;
 mod report;
 
-use std::fs::File;
-
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
-
 use cli::{Cli, Command};
-use input::SummaryReader;
-use metrics::Aggregator;
 
 fn main() -> std::process::ExitCode {
     match run(Cli::parse()) {
@@ -28,25 +24,28 @@ fn main() -> std::process::ExitCode {
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Analyze {
-            input,
+            mut input,
+            input_paths,
             output,
             flowcell_layout,
             qscore_cutoff,
+            combined_only,
+            group_inputs,
+            split_runs,
         } => {
-            let file = File::open(&input)
-                .with_context(|| format!("cannot open input {}", input.display()))?;
-            let mut reader = SummaryReader::new(file)
-                .with_context(|| format!("invalid input {}", input.display()))?;
-            let mut metrics = Aggregator::new(flowcell_layout, reader.has_template_duration());
-            metrics.set_qscore_cutoff(qscore_cutoff, reader.has_native_filtering());
-            while let Some(record) = reader.next_record()? {
-                metrics
-                    .add(&record)
-                    .with_context(|| format!("line {}", record.line))?;
-            }
-            let report = metrics.finish(reader.run_id().map(str::to_owned))?;
-            report::write(&report, &output)?;
-            eprintln!("JSON and HTML reports written to {}", output.display());
+            input.extend(input_paths);
+            batch::analyze(
+                &input,
+                &output,
+                &batch::AnalysisOptions {
+                    layout: flowcell_layout,
+                    cutoff: qscore_cutoff,
+                    combined_only,
+                    group_inputs,
+                    split_runs,
+                },
+            )?;
+            eprintln!("Reports written to {}", output.display());
             Ok(())
         }
     }

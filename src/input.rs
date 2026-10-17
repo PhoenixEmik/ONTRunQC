@@ -24,6 +24,7 @@ struct Columns {
     required: [usize; REQUIRED.len()],
     template_duration: Option<usize>,
     passes_filtering: Option<usize>,
+    flow_cell_id: Option<usize>,
 }
 
 impl Columns {
@@ -48,6 +49,7 @@ impl Columns {
             required: positions,
             template_duration: headers.iter().position(|h| h == "template_duration"),
             passes_filtering: headers.iter().position(|h| h == "passes_filtering"),
+            flow_cell_id: headers.iter().position(|h| h == "flow_cell_id"),
         })
     }
 
@@ -90,6 +92,18 @@ impl Columns {
         Ok(Record {
             line,
             run_id,
+            flow_cell_id: self
+                .flow_cell_id
+                .map(|i| -> Result<&str> {
+                    let value = std::str::from_utf8(&row[i])
+                        .context("column flow_cell_id: expected UTF-8")?;
+                    ensure!(
+                        !value.trim().is_empty(),
+                        "column flow_cell_id: must not be empty"
+                    );
+                    Ok(value)
+                })
+                .transpose()?,
             channel,
             mux,
             start_time,
@@ -172,6 +186,7 @@ pub struct SummaryReader<R: Read> {
     buffer: ByteRecord,
     run_id: Option<String>,
     next_line: u64,
+    enforce_single_run: bool,
 }
 
 impl<R: Read> SummaryReader<R> {
@@ -197,11 +212,17 @@ impl<R: Read> SummaryReader<R> {
             buffer: ByteRecord::new(),
             run_id: None,
             next_line: 2,
+            enforce_single_run: true,
         })
     }
 
+    #[cfg(test)]
     pub fn run_id(&self) -> Option<&str> {
         self.run_id.as_deref()
+    }
+
+    pub fn allow_multiple_runs(&mut self) {
+        self.enforce_single_run = false;
     }
 
     pub fn has_native_filtering(&self) -> bool {
@@ -230,8 +251,8 @@ impl<R: Read> SummaryReader<R> {
             .with_context(|| format!("line {line}"))?;
         if let Some(run_id) = &self.run_id {
             ensure!(
-                run_id == record.run_id,
-                "line {line}: inconsistent run_id {:?}; expected {:?}; only one run is supported",
+                !self.enforce_single_run || run_id == record.run_id,
+                "line {line}: inconsistent run_id {:?}; expected {:?}; use --split-runs to analyze multiple runs",
                 record.run_id,
                 run_id
             );

@@ -277,9 +277,19 @@ validation is reproducible with `tests/minionqc_reference.py`; its adapters and
 upstream fixture inconsistencies are documented there. No private sequencing
 summary was rerun. The supplied PBM95914 totals remain historical reference values.
 
-Issues #5–#7 are implemented here. Outstanding parity includes #8 multi-flowcell
-combined QC, #9 full legacy MinION/1D2/direct-RNA compatibility, and #10 YAML/export
-controls and the complete parity checklist. This is not a claim of full MinIONQC
+Issues #5–#8 are implemented here. Directory inputs recursively discover only
+sequencing-summary `.txt`/`.tsv` names; explicit file paths can have any name.
+Multiple paths and `-i/--input PATH` are accepted. Canonical paths/inodes remove
+aliases, and directory symlinks are never followed. Run IDs group chunks, not
+filenames or presumed device geometry. Use `--split-runs` for mixed-run single
+files; ordinary single-file commands remain strict. `--group-inputs` explicitly
+groups identity-free sources but rejects conflicting known run/flowcell IDs.
+Collection outputs use opaque `runs/run_001/` names and `combined/`; use
+`--combined-only` to omit individual reports. Exact pooled observations are moved,
+not cloned; channel/mux groups and timelines stay local to each run. Comparison
+charts provide per-run Gaussian densities, absolute yields and unsmoothed means.
+Outstanding parity includes #9 full legacy MinION/1D2/direct-RNA compatibility,
+and #10 YAML/export controls and the complete parity checklist. This is not a claim of full MinIONQC
 parity; event-per-base coloring and individual-channel temporal overview plots
 also remain to be assessed in that checklist.
 

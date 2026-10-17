@@ -19,7 +19,20 @@ pub enum Command {
     /// Analyze a single run from an uncompressed sequencing summary TSV.
     Analyze {
         /// Path to the sequencing summary.
-        input: PathBuf,
+        #[arg(num_args = 0..)]
+        input: Vec<PathBuf>,
+        /// Additional explicit input paths (files or directories).
+        #[arg(short = 'i', long = "input", value_name = "PATH")]
+        input_paths: Vec<PathBuf>,
+        /// Produce only the combined report.
+        #[arg(long)]
+        combined_only: bool,
+        /// Explicitly treat identity-free inputs as chunks of one source.
+        #[arg(long)]
+        group_inputs: bool,
+        /// Split a mixed-run single file into individual and combined reports.
+        #[arg(long)]
+        split_runs: bool,
         /// Explicit physical channel map; requires channel IDs 1–3000.
         #[arg(long, value_enum)]
         flowcell_layout: Option<FlowcellLayout>,

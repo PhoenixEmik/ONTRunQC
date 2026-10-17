@@ -462,3 +462,36 @@ Supplied historical PBM95914 baseline (original summary unavailable here):
 8,860 bp all-basecalled N50; 26,900,272 native passed reads;
 163,423,869,988 bp native passed yield; 8,867 bp native passed N50. Matching
 Q>=9 totals for that run do not establish universal or per-read filter equivalence.
+
+## Multi-run reports (#8)
+
+Directory/multiple-file analysis routes each record by actual `run_id` in one
+streaming pass. Ordinary single-file analysis retains strict run-ID validation;
+`--split-runs` explicitly enables splitting a mixed-run file. Run IDs can recur
+across files (chunks); flowcell IDs must be consistent within a run. Distinct run
+IDs do not necessarily identify distinct physical flowcells. Missing identity is
+reported as a separate source unless explicitly grouped. `--group-inputs` cannot
+merge conflicting known IDs. Output paths use deterministic ordinal identifiers,
+never sample or instrument identifiers. Canonical/inode deduplication covers path
+aliases/hard links, not duplicate read IDs or separately copied overlapping chunks.
+
+`collection.runs` contains compact per-run statistics/distributions/timelines and
+source metadata; top-level metrics are exact pooled statistics. Per-read numeric
+buffers are moved into the existing aggregator, never inferred from histograms.
+Pooled channel/mux/time arrays are deliberately empty: overlapping local IDs and
+relative clocks have no meaningful pooled interpretation. The HTML distinguishes
+pooled statistics from per-run comparisons; `--combined-only` skips all individual
+outputs. Publication remains per file, not atomic across a collection.
+
+`distributions` contains Gaussian KDEs for all/Q-selected length and Q-score
+populations, each with `observations`, `bandwidth`, and 512 `(x,density)` points.
+Length x is log10(bp), Q x is the reported per-read Q-score. Bandwidth uses R's
+`bw.nrd0`: 0.9 × min(sample SD, type-7 IQR/1.34) × n^-0.2, with SD/absolute-first/
+1 fallbacks for degenerate data. Evaluations use 2,048 linear mass bins, Gaussian
+convolution, and a domain extending three bandwidths past each data endpoint.
+This differs numerically from R's FFT implementation and ggplot panel cropping;
+synthetic tests compare against direct Gaussian evaluation within 0.5% of peak.
+Empty or nonrepresentable floating ranges return null, never an invented curve.
+Singleton fallback is defined even though R's automatic density needs two points.
+Exact QC statistics do not depend on density estimation. No additional per-read
+vectors are retained; only bounded density grids and aggregated run summaries.

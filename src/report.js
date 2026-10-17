@@ -2,6 +2,7 @@
 (() => {
   for (const prefix of ['channel', 'channel-mux']) {
     const table = document.getElementById(`${prefix}-table`);
+    if (!table) continue;
     const rows = Array.from(table.querySelectorAll('tbody tr[data-channel]'));
     if (!rows.length) continue;
     const body = table.tBodies[0];

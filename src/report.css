@@ -693,3 +693,13 @@ footer {
 .qselected { fill:#70609c; }
 .qselected-line { fill:none; stroke:#70609c; stroke-width:2; stroke-dasharray:3 3; }
 .legend.qselected-key:before { background:#70609c; }
+
+/* Consistent run identities across combined comparisons. */
+.run0 { fill:#455998; } path.run0 { fill:none; stroke:#455998; } .legend.run0:before { background:#455998; }
+.run1 { fill:#975d8e; } path.run1 { fill:none; stroke:#975d8e; } .legend.run1:before { background:#975d8e; }
+.run2 { fill:#257f8e; } path.run2 { fill:none; stroke:#257f8e; } .legend.run2:before { background:#257f8e; }
+.run3 { fill:#a46a35; } path.run3 { fill:none; stroke:#a46a35; } .legend.run3:before { background:#a46a35; }
+.run4 { fill:#647044; } path.run4 { fill:none; stroke:#647044; } .legend.run4:before { background:#647044; }
+.run5 { fill:#7256a5; } path.run5 { fill:none; stroke:#7256a5; } .legend.run5:before { background:#7256a5; }
+.run6 { fill:#4f748f; } path.run6 { fill:none; stroke:#4f748f; } .legend.run6:before { background:#4f748f; }
+.run7 { fill:#846159; } path.run7 { fill:none; stroke:#846159; } .legend.run7:before { background:#846159; }

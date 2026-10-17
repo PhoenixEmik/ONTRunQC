@@ -29,7 +29,7 @@ const JOINT_QUALITY_BOUNDS: [f64; 26] = [
 // Bound spare capacity; each observation belongs to exactly one pass/fail partition.
 const RESERVE_ELEMENTS: usize = 65_536;
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct OverallMetrics {
     pub total_records: u64,
     pub basecalled_reads: u64,
@@ -55,7 +55,7 @@ impl OverallMetrics {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct QualityMetrics {
     pub mean_qscore: Option<f64>,
     pub median_qscore: Option<f64>,
@@ -64,14 +64,14 @@ pub struct QualityMetrics {
     pub histogram: Vec<QualityBin>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct QualityBin {
     pub lower_inclusive: f64,
     pub upper_exclusive: Option<f64>,
     pub read_count: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct LengthBin {
     pub lower_inclusive_bp: u64,
     pub upper_exclusive_bp: Option<u64>,
@@ -79,7 +79,7 @@ pub struct LengthBin {
     pub yield_bp: u64,
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct ChannelMetrics {
     pub channel: u32,
     pub total_records: u64,
@@ -92,7 +92,7 @@ pub struct ChannelMetrics {
     pub mean_passed_read_length_bp: Option<f64>,
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct MuxMetrics {
     pub mux: u32,
     pub total_records: u64,
@@ -101,7 +101,7 @@ pub struct MuxMetrics {
     pub passed_yield_bp: u64,
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct TimeBin {
     pub start_seconds: u64,
     pub end_seconds: u64,
@@ -118,7 +118,7 @@ pub struct TimeBin {
     pub mean_passed_qscore: Option<f64>,
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct EndReasonMetrics {
     pub end_reason: String,
     pub total_records: u64,
@@ -138,7 +138,7 @@ pub struct Diagnostics {
     pub channel_read_length_distribution: Vec<ChannelLengthBin>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PassedReadStatistics {
     pub read_count: u64,
     pub total_yield_bp: u64,
@@ -151,7 +151,7 @@ pub struct PassedReadStatistics {
     pub median_qscore: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct LengthQualityHistogram {
     pub length_lower_bounds_bp: Vec<u64>,
     pub qscore_lower_bounds: Vec<f64>,
@@ -161,7 +161,7 @@ pub struct LengthQualityHistogram {
     pub passed_read_counts: Vec<Vec<u64>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ChannelLengthBin {
     pub lower_inclusive_bp: u64,
     pub upper_exclusive_bp: Option<u64>,
@@ -169,13 +169,13 @@ pub struct ChannelLengthBin {
     pub passed_channel_count: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ChannelActivity {
     pub start_seconds: u64,
     pub basecalled_producing_channels: u64,
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct ChannelMuxMetrics {
     pub channel: u32,
     pub mux: u32,
@@ -187,7 +187,7 @@ pub struct ChannelMuxMetrics {
     pub passed_yield_bp: u64,
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct SpeedSummary {
     pub eligible_reads: u64,
     pub mean_bp_per_second: Option<f64>,
@@ -204,7 +204,7 @@ impl SpeedSummary {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct SequencingSpeed {
     #[serde(flatten)]
     pub summary: SpeedSummary,
@@ -212,21 +212,21 @@ pub struct SequencingSpeed {
     pub time_bins: Vec<SpeedTimeBin>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct SpeedBin {
     pub lower_inclusive_bp_per_second: f64,
     pub upper_exclusive_bp_per_second: Option<f64>,
     pub read_count: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct SpeedTimeBin {
     pub start_seconds: u64,
     #[serde(flatten)]
     pub summary: SpeedSummary,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct TerminationDiagnostics {
     pub end_reason: String,
     pub passed_reads: u64,
@@ -252,7 +252,7 @@ struct ReasonAccumulator {
 }
 
 /// Additive MinIONQC comparisons; existing native/basecalled metrics stay intact.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ComparisonMetrics {
     pub qscore_cutoff: f64,
     pub native_filtering_available: bool,
@@ -266,7 +266,7 @@ pub struct ComparisonMetrics {
     pub channel_distributions: Vec<ChannelDistribution>,
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct SelectedTimeBin {
     pub start_seconds: u64,
     pub basecalled_reads: u64,
@@ -276,7 +276,7 @@ pub struct SelectedTimeBin {
     pub mean_qscore: Option<f64>,
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct ChannelPopulation {
     pub read_count: u64,
     pub total_yield_bp: u64,
@@ -284,7 +284,7 @@ pub struct ChannelPopulation {
     pub median_read_length_bp: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ChannelComparison {
     pub channel: u32,
     pub all_summary_records: ChannelPopulation,
@@ -292,14 +292,14 @@ pub struct ChannelComparison {
     pub qscore_selected_reads: ChannelPopulation,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ChannelDistribution {
     pub metric: &'static str,
     pub axis_maximum: f64,
     pub bins: Vec<ChannelDistributionBin>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ChannelDistributionBin {
     pub lower_inclusive: f64,
     pub upper_exclusive: Option<f64>,
@@ -307,7 +307,7 @@ pub struct ChannelDistributionBin {
     pub qscore_selected_channels: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct YieldByLength {
     pub thresholds: Vec<LengthThreshold>,
     pub curve: Vec<LengthThreshold>,
@@ -315,7 +315,7 @@ pub struct YieldByLength {
     pub ultralong_qscore_selected: Ultralong,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct LengthThreshold {
     pub minimum_length_bp: u64,
     pub all_read_count: u64,
@@ -324,7 +324,7 @@ pub struct LengthThreshold {
     pub qscore_selected_yield_bp: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Ultralong {
     pub target_n50_bp: u64,
     pub read_count: u64,
@@ -395,6 +395,131 @@ pub struct Aggregator {
     joint_passed_counts: [[u64; JOINT_LENGTH_BOUNDS.len()]; JOINT_QUALITY_BOUNDS.len()],
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct DistributionEstimates {
+    pub method: &'static str,
+    pub length_log10: Option<DensityEstimate>,
+    pub qscore: Option<DensityEstimate>,
+    pub selected_length_log10: Option<DensityEstimate>,
+    pub selected_qscore: Option<DensityEstimate>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct DensityEstimate {
+    pub observations: usize,
+    pub bandwidth: f64,
+    pub points: Vec<DensityPoint>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct DensityPoint {
+    pub x: f64,
+    pub density: f64,
+}
+
+// Gaussian KDE with R's bw.nrd0 rule and type-7 quartiles. Linear binning
+// bounds evaluation cost without another per-read collection.
+fn density_estimate<I: Iterator<Item = f64>>(values: impl Fn() -> I) -> Option<DensityEstimate> {
+    let n = values().count();
+    if n == 0 {
+        return None;
+    }
+    let first = values().next()?;
+    let last = values().last()?;
+    let scale = first.abs().max(last.abs()).max(1.0);
+    let quantile = |p: f64| {
+        let rank = (n - 1) as f64 * p;
+        let mut iter = values();
+        let a = iter.nth(rank.floor() as usize).unwrap() / scale;
+        let b = if rank.fract() == 0.0 {
+            a
+        } else {
+            iter.next().unwrap() / scale
+        };
+        a + (b - a) * rank.fract()
+    };
+    let (mut mean, mut m2) = (0.0, 0.0);
+    for (i, v) in values().enumerate() {
+        let v = v / scale;
+        let delta = v - mean;
+        mean += delta / (i + 1) as f64;
+        m2 += delta * (v - mean);
+    }
+    let sd = if n > 1 {
+        (m2 / (n - 1) as f64).sqrt()
+    } else {
+        0.0
+    };
+    let mut spread = sd.min((quantile(0.75) - quantile(0.25)) / 1.34);
+    if spread <= 0.0 {
+        spread = if sd > 0.0 {
+            sd
+        } else if first != 0.0 {
+            first.abs() / scale
+        } else {
+            1.0 / scale
+        };
+    }
+    let bandwidth = 0.9 * spread * (n as f64).powf(-0.2);
+    let from = first / scale - 3.0 * bandwidth;
+    let to = last / scale + 3.0 * bandwidth;
+    if bandwidth <= 0.0
+        || !bandwidth.is_finite()
+        || !(from * scale).is_finite()
+        || !(to * scale).is_finite()
+    {
+        return None;
+    }
+    let step = (to - from) / 2047.0;
+    if step <= 0.0 {
+        return None;
+    }
+    let mut weights = [0.0; 2048];
+    for v in values() {
+        let position = ((v / scale - from) / step).clamp(0.0, 2047.0);
+        let index = position.floor() as usize;
+        weights[index] += (1.0 - position.fract()) / n as f64;
+        if index < 2047 {
+            weights[index + 1] += position.fract() / n as f64;
+        }
+    }
+    let points: Vec<DensityPoint> = (0..512)
+        .map(|i| {
+            let x = from + (to - from) * i as f64 / 511.0;
+            let density = weights
+                .iter()
+                .enumerate()
+                .filter(|(_, w)| **w != 0.0)
+                .map(|(j, weight)| {
+                    let z = (x - (from + step * j as f64)) / bandwidth;
+                    weight * (-0.5 * z * z).exp()
+                        / (2.0 * std::f64::consts::PI).sqrt()
+                        / bandwidth
+                        / scale
+                })
+                .sum();
+            DensityPoint {
+                x: x * scale,
+                density,
+            }
+        })
+        .collect();
+    if points
+        .iter()
+        .any(|p| !p.x.is_finite() || !p.density.is_finite())
+    {
+        return None;
+    }
+    Some(DensityEstimate {
+        observations: n,
+        bandwidth: bandwidth * scale,
+        points,
+    })
+}
+
+pub struct NumericObservations {
+    lengths: [Vec<u64>; 4],
+    qscores: [Vec<f64>; 4],
+}
+
 impl Aggregator {
     pub fn new(layout: Option<FlowcellLayout>, speed_available: bool) -> Self {
         Self {
@@ -402,6 +527,82 @@ impl Aggregator {
             speed_available,
             ..Self::default()
         }
+    }
+
+    /// Pool exact observations by ownership; instrument-local channel/time groups
+    /// deliberately remain in the individual reports, never conflated across runs.
+    pub fn absorb(&mut self, report: &Report, observations: NumericObservations) -> Result<()> {
+        let m = &report.metrics;
+        let before = self.overall.basecalled_reads;
+        self.overall.total_records = self
+            .overall
+            .total_records
+            .checked_add(m.total_records)
+            .context("combined record count exceeds u64 capacity")?;
+        self.overall.total_yield_bp = self
+            .overall
+            .total_yield_bp
+            .checked_add(m.total_yield_bp)
+            .context("combined yield exceeds u64 capacity")?;
+        combine_mean(
+            &mut self.mean_qscore,
+            before,
+            report.quality.mean_qscore,
+            m.basecalled_reads,
+        );
+        combine_mean(
+            &mut self.passed_mean_qscore,
+            self.overall.passed_reads,
+            report.diagnostics.passed_read_statistics.mean_qscore,
+            m.passed_reads,
+        );
+        let c = &mut self.comparison;
+        combine_mean(
+            &mut c.mean_qscore,
+            c.selected_reads,
+            report.comparison.qscore_selected.mean_qscore,
+            report.comparison.qscore_selected.read_count,
+        );
+        self.overall.basecalled_reads += m.basecalled_reads;
+        self.overall.zero_length_records += m.zero_length_records;
+        self.overall.passed_reads += m.passed_reads;
+        self.overall.failed_reads += m.failed_reads;
+        self.overall.passed_yield_bp += m.passed_yield_bp;
+        self.overall.failed_yield_bp += m.failed_yield_bp;
+        c.selected_reads += report.comparison.qscore_selected.read_count;
+        c.selected_yield += report.comparison.qscore_selected.total_yield_bp;
+        c.unclassified += report.comparison.native_unclassified_reads;
+        c.native_available &= report.comparison.native_filtering_available;
+        for i in 0..LENGTH_BOUNDS.len() {
+            self.length_counts[i] += report.read_length_distribution[i].read_count;
+            self.length_yields[i] += report.read_length_distribution[i].yield_bp;
+            c.length_counts[i] += report.comparison.length_histogram[i].read_count;
+            c.length_yields[i] += report.comparison.length_histogram[i].yield_bp;
+        }
+        for i in 0..QUALITY_BOUNDS.len() {
+            self.quality_counts[i] += report.quality.histogram[i].read_count;
+            c.quality_counts[i] += report.comparison.quality_histogram[i].read_count;
+        }
+        let joint = &report.diagnostics.length_quality_histogram;
+        for q in 0..JOINT_QUALITY_BOUNDS.len() {
+            for l in 0..JOINT_LENGTH_BOUNDS.len() {
+                self.joint_counts[q][l] += joint.all_read_counts[q][l];
+                self.joint_passed_counts[q][l] += joint.passed_read_counts[q][l];
+            }
+        }
+        let destination = &mut self.channel_lengths.entry(0).or_default().partitions;
+        for (to, from) in destination.iter_mut().zip(observations.lengths) {
+            append_observations(to, from)?;
+        }
+        for (to, from) in self.qscores.iter_mut().zip(observations.qscores) {
+            append_observations(to, from)?;
+        }
+        Ok(())
+    }
+
+    pub fn include_input_capabilities(&mut self, native: bool, speed: bool) {
+        self.comparison.native_available &= native;
+        self.speed_available |= speed;
     }
 
     pub fn set_qscore_cutoff(&mut self, cutoff: f64, native_available: bool) {
@@ -602,7 +803,14 @@ impl Aggregator {
         Ok(())
     }
 
-    pub fn finish(mut self, run_id: Option<String>) -> Result<Report> {
+    pub fn finish(self, run_id: Option<String>) -> Result<Report> {
+        self.finish_retaining(run_id).map(|(report, _)| report)
+    }
+
+    pub fn finish_retaining(
+        mut self,
+        run_id: Option<String>,
+    ) -> Result<(Report, NumericObservations)> {
         // Sort channel partitions first, then move their buffers into global
         // partitions. Channel medians never require a second retained length copy.
         let mut channel_comparisons = Vec::with_capacity(self.channels.len());
@@ -678,6 +886,17 @@ impl Aggregator {
             self.overall.n50_bp =
                 n50_descending(descending_lengths(all_lengths), self.overall.total_yield_bp);
         }
+        let distributions = DistributionEstimates {
+            method: "gaussian_bw_nrd0_linear_binning_2048_grid_512",
+            length_log10: density_estimate(|| {
+                ascending_lengths(all_lengths).map(|n| (n as f64).log10())
+            }),
+            qscore: density_estimate(|| ascending_quality(all_q)),
+            selected_length_log10: density_estimate(|| {
+                ascending_lengths(selected_lengths).map(|n| (n as f64).log10())
+            }),
+            selected_qscore: density_estimate(|| ascending_quality(selected_q)),
+        };
         let passed_read_statistics = subset_statistics(
             native_lengths,
             native_q,
@@ -902,24 +1121,33 @@ impl Aggregator {
                 })
                 .collect(),
         };
-        Ok(Report {
-            schema_version: 1,
-            tool: Tool::current(),
-            run: Run { run_id },
-            metrics: self.overall,
-            quality,
-            read_length_distribution: distribution,
-            channels: self.channels.into_values().collect(),
-            muxes: self.muxes.into_values().collect(),
-            time_bins: self
-                .time_bins
-                .into_values()
-                .map(|time| time.metrics)
-                .collect(),
-            end_reasons,
-            diagnostics,
-            comparison,
-        })
+        Ok((
+            Report {
+                schema_version: 1,
+                tool: Tool::current(),
+                run: Run { run_id },
+                metrics: self.overall,
+                quality,
+                read_length_distribution: distribution,
+                channels: self.channels.into_values().collect(),
+                muxes: self.muxes.into_values().collect(),
+                time_bins: self
+                    .time_bins
+                    .into_values()
+                    .map(|time| time.metrics)
+                    .collect(),
+                end_reasons,
+                diagnostics,
+                comparison,
+                distributions,
+                source: None,
+                collection: None,
+            },
+            NumericObservations {
+                lengths,
+                qscores: self.qscores,
+            },
+        ))
     }
 }
 
@@ -992,8 +1220,8 @@ fn partition_median_length(parts: [&[u64]; 4], zeros: u64) -> Option<f64> {
     Some((u128::from(a) + u128::from(b)) as f64 / 2.0)
 }
 
-fn partition_median_quality(parts: [&[f64]; 4]) -> Option<f64> {
-    let values = merge_sorted(
+fn ascending_quality(parts: [&[f64]; 4]) -> impl Iterator<Item = f64> + '_ {
+    merge_sorted(
         merge_sorted(
             parts[0].iter().copied(),
             parts[1].iter().copied(),
@@ -1005,7 +1233,11 @@ fn partition_median_quality(parts: [&[f64]; 4]) -> Option<f64> {
             f64::total_cmp,
         ),
         f64::total_cmp,
-    );
+    )
+}
+
+fn partition_median_quality(parts: [&[f64]; 4]) -> Option<f64> {
+    let values = ascending_quality(parts);
     let len = parts.iter().map(|p| p.len()).sum();
     let (a, b) = middle_pair(values, len)?;
     Some(if len % 2 == 0 { a + (b - a) / 2.0 } else { a })
@@ -1176,6 +1408,23 @@ fn channel_distributions(channels: &[ChannelComparison]) -> Vec<ChannelDistribut
         .collect()
 }
 
+fn append_observations<T>(destination: &mut Vec<T>, source: Vec<T>) -> Result<()> {
+    if destination.is_empty() {
+        *destination = source;
+    } else {
+        for value in source {
+            push_compact(destination, value)?;
+        }
+    }
+    Ok(())
+}
+
+fn combine_mean(mean: &mut f64, previous_count: u64, next_mean: Option<f64>, next_count: u64) {
+    if let Some(next) = next_mean.filter(|_| next_count > 0) {
+        *mean += (next - *mean) * (next_count as f64 / (previous_count + next_count) as f64);
+    }
+}
+
 fn fraction(numerator: u64, denominator: u64) -> Option<f64> {
     (denominator != 0).then(|| numerator as f64 / denominator as f64)
 }
@@ -1320,6 +1569,7 @@ mod tests {
                     .add(&Record {
                         line: i as u64 + 2,
                         run_id: "fictional",
+                        flow_cell_id: None,
                         channel: 1,
                         mux: 1,
                         start_time: 0.0,
@@ -1381,6 +1631,7 @@ mod tests {
                 .add(&Record {
                     line: i as u64 + 2,
                     run_id: "fictional",
+                    flow_cell_id: None,
                     channel: 1,
                     mux: 1,
                     start_time: 0.0,

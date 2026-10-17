@@ -27,6 +27,60 @@ pub struct Report {
     pub end_reasons: Vec<EndReasonMetrics>,
     pub diagnostics: Diagnostics,
     pub comparison: ComparisonMetrics,
+    pub distributions: crate::metrics::DistributionEstimates,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collection: Option<Collection>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SourceMetadata {
+    pub source_id: String,
+    pub input_files: usize,
+    pub grouping: &'static str,
+    pub flow_cell_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Collection {
+    pub unit: &'static str,
+    pub runs: Vec<RunComparison>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RunComparison {
+    pub source: SourceMetadata,
+    pub run_id: Option<String>,
+    pub metrics: OverallMetrics,
+    pub quality: QualityMetrics,
+    pub read_length_distribution: Vec<LengthBin>,
+    pub qscore_selected: crate::metrics::PassedReadStatistics,
+    pub selected_length_histogram: Vec<LengthBin>,
+    pub selected_quality_histogram: Vec<crate::metrics::QualityBin>,
+    pub time_bins: Vec<TimeBin>,
+    pub selected_time_bins: Vec<crate::metrics::SelectedTimeBin>,
+    pub yield_by_minimum_length: crate::metrics::YieldByLength,
+    pub distributions: crate::metrics::DistributionEstimates,
+}
+
+impl RunComparison {
+    pub fn from_report(report: &Report) -> Self {
+        Self {
+            source: report.source.clone().expect("collection source metadata"),
+            run_id: report.run.run_id.clone(),
+            metrics: report.metrics.clone(),
+            quality: report.quality.clone(),
+            read_length_distribution: report.read_length_distribution.clone(),
+            qscore_selected: report.comparison.qscore_selected.clone(),
+            selected_length_histogram: report.comparison.length_histogram.clone(),
+            selected_quality_histogram: report.comparison.quality_histogram.clone(),
+            time_bins: report.time_bins.clone(),
+            selected_time_bins: report.comparison.time_bins.clone(),
+            yield_by_minimum_length: report.comparison.yield_by_minimum_length.clone(),
+            distributions: report.distributions.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

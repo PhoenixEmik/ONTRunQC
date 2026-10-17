@@ -22,26 +22,300 @@ pub fn render(report: &Report) -> String {
 <a class="skip-link" href="#overview">Skip to report</a>
 <header class="masthead"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21h5V11h5v15h6V6h5v15h5"/></svg><h1>PoreGauge</h1></div><span class="edition">SEQUENCING QUALITY CONTROL</span></header>
 <div class="layout"><nav aria-label="Report sections"><span class="nav-label">IN THIS REPORT</span>
-<a href="#overview">01 <span>Run overview</span></a><a href="#yield">02 <span>Sequencing yield</span></a>
-<a href="#length">03 <span>Read length</span></a><a href="#quality">04 <span>Read quality</span></a>
-<a href="#channels">05 <span>Channels</span></a><a href="#mux">06 <span>Mux performance</span></a>
-<a href="#termination">07 <span>Termination reasons</span></a><a href="#speed">08 <span>Sequencing speed</span></a>
-<a href="#qcutoff">09 <span>Q-cutoff comparison</span></a>
-<div class="nav-note">One run.<br>Summary-derived QC.<br>Available offline.</div></nav><main>"##);
+"##);
+    if report.collection.is_some() {
+        out.push_str(r##"<a href="#overview">01 Pooled overview</a><a href="#comparisons">02 Run comparisons</a><a href="#length">03 Pooled length</a><a href="#quality">04 Pooled quality</a><a href="#qcutoff">09 Pooled Q-cutoff</a><div class="nav-note">Independent run/source timelines.<br>Available offline.</div></nav><main>"##);
+    } else {
+        out.push_str(r##"<a href="#overview">01 Run overview</a><a href="#yield">02 Sequencing yield</a><a href="#length">03 Read length</a><a href="#quality">04 Read quality</a><a href="#channels">05 Channels</a><a href="#mux">06 Mux performance</a><a href="#termination">07 Termination reasons</a><a href="#speed">08 Sequencing speed</a><a href="#qcutoff">09 Q-cutoff comparison</a><div class="nav-note">One run.<br>Summary-derived QC.<br>Available offline.</div></nav><main>"##);
+    }
     overview(&mut out, report);
-    sequencing_yield(&mut out, report);
+    if report.collection.is_some() {
+        combined_comparisons(&mut out, report);
+    } else {
+        sequencing_yield(&mut out, report);
+    }
     lengths(&mut out, report);
     quality(&mut out, report);
-    channels(&mut out, report);
-    muxes(&mut out, report);
-    termination(&mut out, report);
-    sequencing_speed(&mut out, report);
+    if report.collection.is_none() {
+        channels(&mut out, report);
+        muxes(&mut out, report);
+        termination(&mut out, report);
+        sequencing_speed(&mut out, report);
+    }
     qscore_comparison(&mut out, report);
     write!(out, "<footer>PoreGauge {} · JSON schema {} · Post-sequencing QC from sequencing summaries. No automatic QC judgment.</footer></main></div><script>",
         escape(report.tool.version), report.schema_version).unwrap();
     out.push_str(SCRIPT);
     out.push_str("</script></body></html>\n");
     out
+}
+
+fn combined_comparisons(out: &mut String, report: &Report) {
+    let collection = report.collection.as_ref().unwrap();
+    section(
+        out,
+        "comparisons",
+        "02",
+        "Run / source comparisons",
+        "Pooled metrics use exact combined observations. Timelines remain relative to each run's own start; yields are absolute, never normalized.",
+    );
+    out.push_str("<p class=\"annotation\">Source labels are deterministic output identifiers, not invented flowcell IDs. Matching run IDs identify chunks; a physical flowcell may have multiple runs. Instrument-local channels and muxes are available only in individual reports.</p><div class=\"table-scroll\"><table><caption>Inputs contributing to pooled statistics</caption><thead><tr><th class=\"label\">Source</th><th class=\"label\">Run ID</th><th class=\"label\">Flowcell ID</th><th>Files</th><th>Basecalled reads</th><th>Yield (bp)</th><th>N50 (bp)</th></tr></thead><tbody>");
+    for r in &collection.runs {
+        write!(out, "<tr><th class=\"label\">{}</th><td class=\"label\">{}</td><td class=\"label\">{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>", escape(&r.source.source_id), escape(r.run_id.as_deref().unwrap_or("Unavailable · source only")), escape(r.source.flow_cell_id.as_deref().unwrap_or("Unavailable")), r.source.input_files, count(r.metrics.basecalled_reads), count(r.metrics.total_yield_bp), r.metrics.n50_bp.map(count).unwrap_or_else(|| "Not available".into())).unwrap();
+    }
+    out.push_str("</tbody></table></div>");
+    for selected in [false, true] {
+        let population = if selected {
+            format!("Q ≥ {}", cutoff_value(report.comparison.qscore_cutoff))
+        } else {
+            "All basecalled reads".into()
+        };
+        for quality in [false, true] {
+            comparison_distribution(out, report, selected, quality, &population);
+        }
+        for kind in [0, 1, 2] {
+            let (name, title, axis) = match kind {
+                0 => ("yield-time", "Cumulative yield by run", "Yield (Gb)"),
+                1 => (
+                    "length-time",
+                    "Mean read length by run",
+                    "Mean read length (kb)",
+                ),
+                _ => (
+                    "quality-time",
+                    "Mean Q-score by run",
+                    "Arithmetic mean read Q-score",
+                ),
+            };
+            let series: Vec<_> = collection
+                .runs
+                .iter()
+                .enumerate()
+                .map(|(i, r)| {
+                    let points = if selected {
+                        r.selected_time_bins
+                            .iter()
+                            .map(|b| {
+                                (
+                                    b.start_seconds,
+                                    match kind {
+                                        0 => Some(b.cumulative_yield_bp as f64 / 1e9),
+                                        1 => b.mean_read_length_bp.map(|v| v / 1000.0),
+                                        _ => b.mean_qscore,
+                                    },
+                                )
+                            })
+                            .collect()
+                    } else {
+                        r.time_bins
+                            .iter()
+                            .map(|b| {
+                                (
+                                    b.start_seconds,
+                                    match kind {
+                                        0 => Some(b.cumulative_yield_bp as f64 / 1e9),
+                                        1 => b.mean_read_length_bp.map(|v| v / 1000.0),
+                                        _ => b.mean_qscore,
+                                    },
+                                )
+                            })
+                            .collect()
+                    };
+                    TimeSeries {
+                        label: &r.source.source_id,
+                        color: run_color(i),
+                        points,
+                    }
+                })
+                .collect();
+            time_series_plot(
+                out,
+                report,
+                &format!("combined-{name}-{selected}"),
+                &format!("{title} · {population}"),
+                axis,
+                &series,
+                false,
+            );
+        }
+        comparison_yield_length(out, report, selected, &population);
+    }
+    out.push_str("<p class=\"annotation\">Distribution curves use Gaussian KDE with R-compatible bw.nrd0 bandwidth and bounded linear binning, normalized within each population. Length density uses log10(bp). Means retain unsmoothed 15-minute bins; gaps are not connected. Cumulative points attribute the entire bin's yield to its read-start interval. Color assignments are consistent across charts (palette repeats after eight sources). Exact histogram counts, thresholds and interval denominators remain in JSON.</p></section>");
+}
+
+fn run_color(index: usize) -> &'static str {
+    [
+        "run0", "run1", "run2", "run3", "run4", "run5", "run6", "run7",
+    ][index % 8]
+}
+
+fn comparison_distribution(
+    out: &mut String,
+    report: &Report,
+    selected: bool,
+    quality: bool,
+    population: &str,
+) {
+    let runs = &report.collection.as_ref().unwrap().runs;
+    let id = format!("combined-distribution-{quality}-{selected}");
+    let title = format!(
+        "{} density by run · {population}",
+        if quality { "Q-score" } else { "Read length" }
+    );
+    figure(out, &id, &title);
+    let estimates: Vec<_> = runs
+        .iter()
+        .map(|r| match (quality, selected) {
+            (false, false) => r.distributions.length_log10.as_ref(),
+            (false, true) => r.distributions.selected_length_log10.as_ref(),
+            (true, false) => r.distributions.qscore.as_ref(),
+            (true, true) => r.distributions.selected_qscore.as_ref(),
+        })
+        .collect();
+    let points: Vec<_> = estimates.iter().flatten().flat_map(|e| &e.points).collect();
+    let Some(xmin) = points.iter().map(|p| p.x).reduce(f64::min) else {
+        empty_chart(
+            out,
+            "Density unavailable: no observations or a nonrepresentable plotting range.",
+        );
+        return;
+    };
+    let xmax = points.iter().map(|p| p.x).reduce(f64::max).unwrap();
+    let maximum = points
+        .iter()
+        .map(|p| p.density)
+        .reduce(f64::max)
+        .unwrap_or(0.0);
+    if xmax <= xmin || maximum <= 0.0 {
+        empty_chart(out, "Density unavailable for this plotting range.");
+        return;
+    }
+    svg_start(
+        out,
+        &id,
+        "Gaussian KDE: bw.nrd0 bandwidth, type-7 quartiles, 2048 linear bins and 512 display points. Length density uses log10(bp) space.",
+        294,
+    );
+    axes(
+        out,
+        maximum,
+        4,
+        if quality {
+            "Density per Q-score unit"
+        } else {
+            "Density per log10(bp)"
+        },
+    );
+    for i in 0..=4 {
+        let value = xmin + (xmax - xmin) * i as f64 / 4.0;
+        x_tick(
+            out,
+            LEFT + (RIGHT - LEFT) * i as f64 / 4.0,
+            &if quality {
+                decimal(value)
+            } else {
+                format!("10^{}", decimal(value))
+            },
+        );
+    }
+    for (i, (run, estimate)) in runs.iter().zip(estimates).enumerate() {
+        if let Some(estimate) = estimate {
+            let mut path = String::new();
+            for (j, point) in estimate.points.iter().enumerate() {
+                let x = LEFT + (point.x - xmin) / (xmax - xmin) * (RIGHT - LEFT);
+                let y = BOTTOM - point.density / maximum * (BOTTOM - TOP);
+                write!(path, " {} {x:.2} {y:.2}", if j == 0 { 'M' } else { 'L' }).unwrap();
+            }
+            write!(out, "<path class=\"cumulative-line {}\" d=\"{path}\"><title>{}: Gaussian bandwidth {}</title></path>", run_color(i), escape(&run.source.source_id), decimal(estimate.bandwidth)).unwrap();
+        }
+    }
+    write!(out, "<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">{}</text></svg></div>", if quality { "Mean read Q-score" } else { "Read length (bp; logarithmic axis)" }).unwrap();
+    run_legend(out, runs);
+    out.push_str("</figure>");
+}
+
+fn run_legend(out: &mut String, runs: &[crate::report::RunComparison]) {
+    out.push_str("<p class=\"annotation\">");
+    for (i, run) in runs.iter().enumerate() {
+        write!(
+            out,
+            "<span class=\"legend {}\">{}</span>",
+            run_color(i),
+            escape(&run.source.source_id)
+        )
+        .unwrap();
+    }
+    out.push_str("</p>");
+}
+
+fn comparison_yield_length(out: &mut String, report: &Report, selected: bool, population: &str) {
+    let runs = &report.collection.as_ref().unwrap().runs;
+    let id = format!("combined-yield-length-{selected}");
+    figure(
+        out,
+        &id,
+        &format!("Yield by minimum length by run · {population}"),
+    );
+    let maximum = runs
+        .iter()
+        .map(|r| {
+            if selected {
+                r.qscore_selected.total_yield_bp
+            } else {
+                r.metrics.total_yield_bp
+            }
+        })
+        .max()
+        .unwrap_or(0);
+    if maximum == 0 {
+        empty_chart(out, "No eligible yield.");
+        return;
+    }
+    let xmax = runs
+        .iter()
+        .filter_map(|r| r.yield_by_minimum_length.curve.last())
+        .map(|p| p.minimum_length_bp)
+        .max()
+        .unwrap_or(1) as f64;
+    let (scale, unit) = bp_scale(maximum);
+    let (ymax, ticks) = plot_scale(maximum as f64 / scale, scale == 1.0);
+    svg_start(
+        out,
+        &id,
+        "Exact retained yield at bounded queries for each source; absolute yield, not normalized density.",
+        294,
+    );
+    axes(out, ymax, ticks, &format!("Retained yield ({unit})"));
+    for i in 0..=4 {
+        x_tick(
+            out,
+            LEFT + (RIGHT - LEFT) * i as f64 / 4.0,
+            &compact(xmax / 1000.0 * i as f64 / 4.0),
+        );
+    }
+    for (i, run) in runs.iter().enumerate() {
+        let mut path = String::new();
+        for (j, point) in run.yield_by_minimum_length.curve.iter().enumerate() {
+            let yield_bp = if selected {
+                point.qscore_selected_yield_bp
+            } else {
+                point.all_yield_bp
+            };
+            let x = LEFT + point.minimum_length_bp as f64 / xmax * (RIGHT - LEFT);
+            let y = BOTTOM - yield_bp as f64 / scale / ymax * (BOTTOM - TOP);
+            write!(path, " {} {x:.2} {y:.2}", if j == 0 { 'M' } else { 'L' }).unwrap();
+        }
+        write!(
+            out,
+            "<path class=\"cumulative-line {}\" d=\"{path}\"><title>{}</title></path>",
+            run_color(i),
+            escape(&run.source.source_id)
+        )
+        .unwrap();
+    }
+    out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Minimum read length (kb; inclusive)</text></svg></div>");
+    run_legend(out, runs);
+    out.push_str("</figure>");
 }
 
 fn section(out: &mut String, id: &str, number: &str, title: &str, note: &str) {
@@ -60,7 +334,11 @@ fn overview(out: &mut String, report: &Report) {
     if !report.comparison.native_filtering_available {
         out.push_str("<p class=\"notice\">Native filtering unavailable: passes_filtering is absent. Native count fields in JSON count observed TRUE/FALSE only; no reads are inferred to fail. Q-cutoff comparisons remain available.</p>");
     }
-    let run_id = report.run.run_id.as_deref().unwrap_or("Not available");
+    let run_id = if report.collection.is_some() {
+        "Pooled runs / sources"
+    } else {
+        report.run.run_id.as_deref().unwrap_or("Not available")
+    };
     write!(
         out,
         "<dl class=\"overview\"><div class=\"run-identity\"><dt>Run ID</dt><dd>{}</dd></div>",
@@ -376,7 +654,9 @@ fn lengths(out: &mut String, report: &Report) {
         empty_row(out, 3, "No histogram intervals.");
     }
     out.push_str("</tbody></table></div></details>");
-    read_time_plot(out, report, false);
+    if report.collection.is_none() {
+        read_time_plot(out, report, false);
+    }
     out.push_str("</section>");
 }
 
@@ -454,7 +734,9 @@ fn quality(out: &mut String, report: &Report) {
         empty_row(out, 2, "No histogram intervals.");
     }
     out.push_str("</tbody></table></div></details>");
-    read_time_plot(out, report, true);
+    if report.collection.is_none() {
+        read_time_plot(out, report, true);
+    }
     length_quality_heatmaps(out, report);
     out.push_str("</section>");
 }
@@ -535,59 +817,61 @@ fn qscore_comparison(out: &mut String, report: &Report) {
         &rows,
     );
     out.push_str("</div>");
-    for (id, title, axis, cumulative) in [
-        (
-            "qcutoff-yield-time",
-            "Cumulative yield · All vs Q-cutoff",
-            "Cumulative yield (Gb)",
-            true,
-        ),
-        (
-            "qcutoff-reads-time",
-            "Read count over time · All vs Q-cutoff",
-            "Basecalled reads per 15 min",
-            false,
-        ),
-    ] {
-        let all = TimeSeries {
-            label: "All basecalled reads",
-            color: "primary",
-            points: report
-                .time_bins
-                .iter()
-                .map(|b| {
-                    (
-                        b.start_seconds,
-                        Some(if cumulative {
-                            b.cumulative_yield_bp as f64 / 1e9
-                        } else {
-                            b.basecalled_reads as f64
-                        }),
-                    )
-                })
-                .collect(),
-        };
-        let selected = TimeSeries {
-            label: &label,
-            color: "qselected",
-            points: comparison
-                .time_bins
-                .iter()
-                .map(|b| {
-                    (
-                        b.start_seconds,
-                        Some(if cumulative {
-                            b.cumulative_yield_bp as f64 / 1e9
-                        } else {
-                            b.basecalled_reads as f64
-                        }),
-                    )
-                })
-                .collect(),
-        };
-        time_series_plot(out, report, id, title, axis, &[all, selected], !cumulative);
+    if report.collection.is_none() {
+        for (id, title, axis, cumulative) in [
+            (
+                "qcutoff-yield-time",
+                "Cumulative yield · All vs Q-cutoff",
+                "Cumulative yield (Gb)",
+                true,
+            ),
+            (
+                "qcutoff-reads-time",
+                "Read count over time · All vs Q-cutoff",
+                "Basecalled reads per 15 min",
+                false,
+            ),
+        ] {
+            let all = TimeSeries {
+                label: "All basecalled reads",
+                color: "primary",
+                points: report
+                    .time_bins
+                    .iter()
+                    .map(|b| {
+                        (
+                            b.start_seconds,
+                            Some(if cumulative {
+                                b.cumulative_yield_bp as f64 / 1e9
+                            } else {
+                                b.basecalled_reads as f64
+                            }),
+                        )
+                    })
+                    .collect(),
+            };
+            let selected = TimeSeries {
+                label: &label,
+                color: "qselected",
+                points: comparison
+                    .time_bins
+                    .iter()
+                    .map(|b| {
+                        (
+                            b.start_seconds,
+                            Some(if cumulative {
+                                b.cumulative_yield_bp as f64 / 1e9
+                            } else {
+                                b.basecalled_reads as f64
+                            }),
+                        )
+                    })
+                    .collect(),
+            };
+            time_series_plot(out, report, id, title, axis, &[all, selected], !cumulative);
+        }
+        out.push_str("<p class=\"annotation\">Read-start-attributed, unsmoothed 15-minute bins; means are shown with the length and quality sections. Cumulative points include each entire interval and do not reconstruct within-bin throughput. Exact cutoff histograms and time-bin values are retained in JSON.</p>");
     }
-    out.push_str("<p class=\"annotation\">Read-start-attributed, unsmoothed 15-minute bins; means are shown with the length and quality sections. Cumulative points include each entire interval and do not reconstruct within-bin throughput. Exact cutoff histograms and time-bin values are retained in JSON.</p>");
     yield_length_plot(out, report, &label);
     out.push_str("</section>");
 }
@@ -1562,7 +1846,7 @@ struct TimeSeries<'a> {
 // Shared only by start-time diagnostics: common axes, bin midpoints and gaps.
 fn time_series_plot(
     out: &mut String,
-    report: &Report,
+    _report: &Report,
     id: &str,
     title: &str,
     axis: &str,
@@ -1588,7 +1872,11 @@ fn time_series_plot(
     } else {
         plot_scale(maximum, integer_ticks)
     };
-    let end = report.time_bins.last().map_or(900, |b| b.end_seconds) as f64;
+    let end = series
+        .iter()
+        .flat_map(|s| s.points.iter().map(|(start, _)| *start))
+        .max()
+        .map_or(900, |start| start + 900) as f64;
     svg_start(out, id, title, 294);
     axes(out, ymax, ticks, axis);
     for i in 0..=4 {
@@ -1623,7 +1911,11 @@ fn time_series_plot(
             "qselected" => "qselected-line",
             _ => "cumulative-line",
         };
-        write!(out, "<path class=\"{class}\" d=\"{path}\"/>").unwrap();
+        if s.color.starts_with("run") {
+            write!(out, "<path class=\"{class} {}\" d=\"{path}\"/>", s.color).unwrap();
+        } else {
+            write!(out, "<path class=\"{class}\" d=\"{path}\"/>").unwrap();
+        }
     }
     out.push_str("</svg></div>");
     if series.len() > 1 {
@@ -1632,6 +1924,7 @@ fn time_series_plot(
             let key = match s.color {
                 "passed" => "pass",
                 "qselected" => "qselected-key",
+                color if color.starts_with("run") => color,
                 _ => "all",
             };
             write!(

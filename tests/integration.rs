@@ -2004,3 +2004,211 @@ fn signed_zero_quality_retains_original_exact_median_serialization() {
     let raw = fs::read_to_string(directory.0.join("output/report.json")).unwrap();
     assert_eq!(raw.matches("\"median_qscore\": -0.0").count(), 3);
 }
+
+fn run_collection(directory: &TestDirectory, inputs: &[&Path], args: &[&str]) -> Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .arg("analyze")
+        .args(inputs)
+        .args(args)
+        .arg("--output")
+        .arg(directory.0.join("output"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&fs::read(directory.0.join("output/combined/report.json")).unwrap())
+        .unwrap()
+}
+
+#[test]
+fn multiple_runs_chunks_and_duplicate_paths_have_exact_pooled_statistics() {
+    let directory = TestDirectory::new();
+    let input = directory.0.join("summaries with spaces");
+    fs::create_dir_all(input.join("nested")).unwrap();
+    let row = |run: &str, length: u64, q: u64| {
+        format!("{run}\t1\t1\t0\t1\tTRUE\t{length}\t{q}\tnormal\n")
+    };
+    let a = input.join("sequencing_summary_a.tsv");
+    fs::write(
+        &a,
+        format!("{HEADER}{}{}", row("a", 10, 6), row("a", 20, 7)),
+    )
+    .unwrap();
+    fs::write(
+        input.join("nested/sequencing_summary_chunk.tsv"),
+        format!("{HEADER}{}", row("a", 30, 9)),
+    )
+    .unwrap();
+    fs::write(
+        input.join("sequencing_summary_b.txt"),
+        format!("{HEADER}{}", row("b", 1000, 12)),
+    )
+    .unwrap();
+    fs::write(input.join("unrelated.tsv"), "invalid unrelated file").unwrap();
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&input, input.join("nested/cycle")).unwrap();
+        std::os::unix::fs::symlink(&a, input.join("sequencing_summary_alias.txt")).unwrap();
+        fs::hard_link(&a, input.join("sequencing_summary_hardlink.txt")).unwrap();
+    }
+    let report = run_collection(&directory, &[&input, &a], &[]);
+    assert_eq!(report["metrics"]["total_records"], 4);
+    assert_eq!(report["metrics"]["total_yield_bp"], 1060);
+    assert_eq!(report["metrics"]["n50_bp"], 1000);
+    assert_eq!(report["metrics"]["median_read_length_bp"], 25.0);
+    assert_eq!(report["metrics"]["mean_read_length_bp"], 265.0);
+    assert_eq!(report["quality"]["median_qscore"], 8.0);
+    assert_eq!(report["comparison"]["qscore_selected"]["read_count"], 3);
+    assert_eq!(
+        report["comparison"]["qscore_selected"]["median_read_length_bp"],
+        30.0
+    );
+    assert_eq!(report["collection"]["runs"].as_array().unwrap().len(), 2);
+    assert!(report["channels"].as_array().unwrap().is_empty());
+    let runs = report["collection"]["runs"].as_array().unwrap();
+    let chunked = runs.iter().find(|r| r["run_id"] == "a").unwrap();
+    assert_eq!(chunked["source"]["input_files"], 2);
+    assert_eq!(chunked["metrics"]["total_yield_bp"], 60);
+    assert_eq!(chunked["metrics"]["median_read_length_bp"], 20.0);
+    for id in ["run_001", "run_002"] {
+        assert!(
+            directory
+                .0
+                .join(format!("output/runs/{id}/report.html"))
+                .exists()
+        );
+    }
+    let html = fs::read_to_string(directory.0.join("output/combined/report.html")).unwrap();
+    assert!(html.contains("Pooled runs / sources"));
+    for family in [
+        "combined-distribution-false-false",
+        "combined-distribution-true-true",
+        "combined-yield-time",
+        "combined-length-time",
+        "combined-quality-time",
+        "combined-yield-length",
+    ] {
+        assert!(html.contains(family));
+    }
+    assert!(!html.contains("https://"));
+    let before = fs::read(directory.0.join("output/combined/report.json")).unwrap();
+    assert_eq!(report, run_collection(&directory, &[&input], &[]));
+    assert_eq!(
+        before,
+        fs::read(directory.0.join("output/combined/report.json")).unwrap()
+    );
+}
+
+#[test]
+fn combined_only_skips_individual_outputs_and_explicit_grouping_rejects_conflicts() {
+    let directory = TestDirectory::new();
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv");
+    fs::write(&a, format!("{HEADER}{ROW}")).unwrap();
+    fs::write(
+        &b,
+        format!("{HEADER}{}", ROW.replace("synthetic-run", "other-run")),
+    )
+    .unwrap();
+    let report = run_collection(&directory, &[&a, &b], &["--combined-only"]);
+    assert_eq!(report["metrics"]["basecalled_reads"], 2);
+    assert!(!directory.0.join("output/runs").exists());
+    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .arg("analyze")
+        .args([&a, &b])
+        .arg("--group-inputs")
+        .arg("--output")
+        .arg(directory.0.join("invalid"))
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("different known run_id"));
+}
+
+#[test]
+fn flowcell_metadata_conflicts_are_rejected_without_invented_ids() {
+    let directory = TestDirectory::new();
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv");
+    fs::write(
+        &a,
+        format!(
+            "{}\tflow_cell_id\n{}\tfictional-cell-a\n",
+            HEADER.trim_end(),
+            ROW.trim_end()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        &b,
+        format!(
+            "{}\tflow_cell_id\n{}\tfictional-cell-b\n",
+            HEADER.trim_end(),
+            ROW.trim_end()
+        ),
+    )
+    .unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .arg("analyze")
+        .args([a, b])
+        .arg("--output")
+        .arg(directory.0.join("invalid"))
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("conflicting flow_cell_id"));
+}
+
+#[test]
+fn mixed_run_single_files_require_explicit_splitting() {
+    let directory = TestDirectory::new();
+    let file = directory.0.join("mixed.tsv");
+    fs::write(
+        &file,
+        format!("{HEADER}{ROW}{}", ROW.replace("synthetic-run", "second")),
+    )
+    .unwrap();
+    assert!(!directory.run(&file).status.success());
+    let report = run_collection(&directory, &[&file], &["--split-runs"]);
+    assert_eq!(report["collection"]["runs"].as_array().unwrap().len(), 2);
+    assert_eq!(report["metrics"]["total_yield_bp"], 20);
+}
+
+#[test]
+fn gaussian_density_matches_independent_direct_kernel_evaluation() {
+    let directory = TestDirectory::new();
+    let mut data = HEADER.to_owned();
+    let qscores = [1.0_f64, 2.0, 3.0, 4.0, 5.0];
+    for q in qscores {
+        data += &format!("fictional\t1\t1\t0\t1\tTRUE\t10\t{q}\tnormal\n");
+    }
+    let report = directory.analyze(&data);
+    let estimate = &report["distributions"]["qscore"];
+    let bandwidth = 0.9 * 2.5_f64.sqrt().min(2.0 / 1.34) * 5.0_f64.powf(-0.2);
+    assert!((estimate["bandwidth"].as_f64().unwrap() - bandwidth).abs() < 1e-12);
+    assert_eq!(estimate["observations"], 5);
+    let points = estimate["points"].as_array().unwrap();
+    assert_eq!(points.len(), 512);
+    let reference: Vec<f64> = points
+        .iter()
+        .map(|p| {
+            let x = p["x"].as_f64().unwrap();
+            qscores
+                .iter()
+                .map(|q| {
+                    (-0.5 * ((x - q) / bandwidth).powi(2)).exp()
+                        / (2.0 * std::f64::consts::PI).sqrt()
+                        / bandwidth
+                        / 5.0
+                })
+                .sum()
+        })
+        .collect();
+    let peak = reference.iter().copied().reduce(f64::max).unwrap();
+    for (p, reference) in points.iter().zip(reference) {
+        assert!((p["density"].as_f64().unwrap() - reference).abs() < peak * 0.005);
+    }
+}

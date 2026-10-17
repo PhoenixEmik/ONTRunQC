@@ -2,6 +2,7 @@
 #[derive(Debug)]
 pub struct Record<'a> {
     pub line: u64,
+    pub flow_cell_id: Option<&'a str>,
     pub run_id: &'a str,
     pub channel: u32,
     pub mux: u32,
