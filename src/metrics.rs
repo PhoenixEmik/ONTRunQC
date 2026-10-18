@@ -136,7 +136,10 @@ pub struct Diagnostics {
     pub passed_read_statistics: PassedReadStatistics,
     pub length_quality_histogram: LengthQualityHistogram,
     pub channel_read_length_distribution: Vec<ChannelLengthBin>,
-    pub minion_sample: Option<MinionSample>,
+    /// Deprecated display payload; retained as null for schema-1 consumers.
+    pub minion_sample: Option<()>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minion_read_visualization: Option<crate::minion::Visualization>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -381,29 +384,6 @@ pub struct InputSummary {
     pub read_representation: Option<crate::input::ReadRepresentation>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct MinionSample {
-    pub method: &'static str,
-    pub limit_per_channel: usize,
-    pub eligible_reads: u64,
-    pub channels: Vec<SampledChannel>,
-}
-
-#[derive(Default, Debug, Serialize)]
-pub struct SampledChannel {
-    pub channel: u32,
-    pub eligible_reads: u64,
-    pub points: Vec<ReadPoint>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ReadPoint {
-    pub start_seconds: f64,
-    pub length_bp: u64,
-    pub qscore: f64,
-    pub events_per_base: Option<f64>,
-}
-
 #[derive(Default)]
 pub struct Aggregator {
     overall: OverallMetrics,
@@ -414,8 +394,7 @@ pub struct Aggregator {
     negative_quality_count: u64,
     negative_joint: [u64; JOINT_LENGTH_BOUNDS.len()],
     negative_passed_joint: [u64; JOINT_LENGTH_BOUNDS.len()],
-    samples: BTreeMap<u32, SampledChannel>,
-    sample_enabled: bool,
+    minion: Option<crate::minion::Tracker>,
     channel_lengths: BTreeMap<u32, ChannelLengths>,
     qscores: [Vec<f64>; 4],
     comparison: ComparisonAccumulator,
@@ -581,7 +560,8 @@ impl Aggregator {
         Self {
             layout,
             speed_available,
-            sample_enabled: true,
+            minion: matches!(layout, Some(FlowcellLayout::MinionR95))
+                .then(crate::minion::Tracker::default),
             ..Self::default()
         }
     }
@@ -709,8 +689,13 @@ impl Aggregator {
     pub fn set_density_domain(&mut self, bounds: crate::density::Bounds) {
         self.reference_domain = bounds;
     }
-    pub fn set_sampling_enabled(&mut self, enabled: bool) {
-        self.sample_enabled = enabled;
+    pub fn enable_minion_visualization(&mut self, enabled: bool) {
+        if !enabled {
+            self.minion = None;
+        }
+    }
+    pub fn take_minion_visualization(&mut self) -> Option<crate::minion::Renderer> {
+        self.minion.take().map(crate::minion::Tracker::prepare)
     }
 
     pub fn include_input_format(
@@ -838,6 +823,9 @@ impl Aggregator {
         }
         if let Some(value) = &mut channel_mux {
             value.total_records += 1;
+        }
+        if let Some(view) = &mut self.minion {
+            view.observe(record);
         }
         if record.length == 0 {
             if self.reference_density {
@@ -989,37 +977,6 @@ impl Aggregator {
             self.joint_counts[joint_quality][joint_length] += 1;
             if record.passed == Some(true) {
                 self.joint_passed_counts[joint_quality][joint_length] += 1;
-            }
-        }
-        if self.sample_enabled && matches!(self.layout, Some(FlowcellLayout::MinionR95)) {
-            const LIMIT: usize = 16;
-            let sample = self
-                .samples
-                .entry(record.channel)
-                .or_insert_with(|| SampledChannel {
-                    channel: record.channel,
-                    ..SampledChannel::default()
-                });
-            sample.eligible_reads += 1;
-            let point = ReadPoint {
-                start_seconds: record.start_time,
-                length_bp: record.length,
-                qscore: record.qscore,
-                events_per_base: record
-                    .num_events_template
-                    .map(|events| events as f64 / record.length as f64),
-            };
-            if sample.points.len() < LIMIT {
-                sample.points.push(point);
-            } else {
-                let mut hash = sample.eligible_reads ^ (u64::from(record.channel) << 32);
-                hash = hash.wrapping_add(0x9e3779b97f4a7c15);
-                hash = (hash ^ (hash >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-                hash = (hash ^ (hash >> 27)).wrapping_mul(0x94d049bb133111eb);
-                let index = (hash ^ (hash >> 31)) % sample.eligible_reads;
-                if index < LIMIT as u64 {
-                    sample.points[index as usize] = point;
-                }
             }
         }
         Ok(())
@@ -1364,16 +1321,9 @@ impl Aggregator {
             joint_all.insert(0, self.negative_joint.to_vec());
             joint_passed.insert(0, self.negative_passed_joint.to_vec());
         }
-        let minion_sample = (self.sample_enabled
-            && matches!(self.layout, Some(FlowcellLayout::MinionR95)))
-        .then(|| MinionSample {
-            method: "deterministic_splitmix64_reservoir_per_channel",
-            limit_per_channel: 16,
-            eligible_reads: self.overall.basecalled_reads,
-            channels: self.samples.into_values().collect(),
-        });
         let diagnostics = Diagnostics {
-            minion_sample,
+            minion_sample: None,
+            minion_read_visualization: None,
             physical_layout: self.layout.map(FlowcellLayout::description),
             channel_activity,
             channel_mux: self.channel_mux.into_values().collect(),

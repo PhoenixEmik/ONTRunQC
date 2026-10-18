@@ -160,7 +160,8 @@ Schema version remains **1**: no previous fields, definitions, or array ordering
 are removed or changed. Consumers should ignore unfamiliar fields. The additive
 `diagnostics` object contains the following independently ordered groups. It has
 no complete read records and does not imply automatic run-level QC judgments.
-The later explicit MinION extension includes a bounded numeric visualization sample.
+The explicit MinION extension includes bounded complete-data visualization metadata
+(see below), not full input records.
 The v0.4.0 additions follow the same contract: tolerant consumers can continue
 reading old fields, but strict consumers rejecting unknown keys (including keys
 inside `channels`/`time_bins` entries) must update. No incompatible field change
@@ -324,8 +325,8 @@ original records or private identifiers are used in public regression fixtures.
 The additive top-level `comparison` object retains schema version **1**. Existing
 fields are unchanged for previously accepted inputs. Consumers must tolerate new
 fields; strict consumers that reject unknown properties must update. No complete per-read
-records are serialized; explicit MinION reports may include the documented bounded
-numeric visualization sample. Source behavior was reviewed in [MinIONQC.R at
+records are serialized; explicit MinION reports may include all small-input numeric
+points or bounded full-count pixel metadata and actual extrema. Source behavior was reviewed in [MinIONQC.R at
 54485d5](https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R)
 (`add_cols`, `summary.stats`, `binSearch`, `channel.summary`, plotting functions),
 its README/options, public YAML summaries and example plots.
@@ -527,16 +528,79 @@ right block starts: 1,449,385,321,257,193,129,65. Each block contains 32 channel
 edges are tested. No layout is inferred from channel maxima. Total/native/Q-cutoff
 spatial yields remain distinct; absent observations differ from observed zero.
 
-MinION-only scatter and physical time/length panels use deterministic SplitMix64
-reservoir replacement, at most 16 positive-length reads per channel (8,192 total).
-Sampling is channel-stratified, not proportional to run read density. Coordinates
-are actual sampled values; overview x is relative start time, y is log10 length,
-color is per-read Q. Scatter x is logarithmic length, y is Q; optional event color
-uses log10(1+events/length), with missing events gray. This intentionally differs
-from upstream's full scatter and log(events/base) color transform. JSON includes
-bounded numeric sample points without read identifiers; no complete record objects
-are retained. Sampling is disabled for `--combined-only`; pooled reports retain
-aggregate histograms, not spatial/scatter overlays across distinct instruments.
+### Complete-data MinION read-level plots (#14)
+
+Only explicit `--flowcell-layout minion-r9.5` enables these two plots. Population:
+**every positive-length summary record after control exclusion**, regardless of
+native passing or Q cutoff, including signed legacy Q values. Zero lengths are
+counted separately, never plotted as valid Q0 reads. Original MinIONQC includes
+these rows at nonfinite logarithmic coordinates; this is an intentional difference.
+Combined-only analysis skips these plots; pooled reports never overlay distinct
+instruments into one physical map.
+
+- **Exact points**: at most 4,096 eligible reads per run, all retained. Canonical
+  time/channel/length/Q/events ordering makes output deterministic, rather than
+  reproducing R's merge-dependent overplot order. Overview alpha is 0.35, scatter
+  alpha 0.05; point sizes and palette interpolation are not pixel-identical to R.
+- **Full-count pixel aggregation**: larger runs retain no read-point array.
+  One additional streaming pass counts every eligible read in both fixed grids.
+  Overview uses 64×40 pixels/channel (1024×1280 physical atlas); scatter uses
+  512×256 pixels. Bins include both domain extrema; constant domains map centrally.
+  Overview X is start time (hours), Y is log10 length, shared across all panels;
+  scatter X is log10 length and Y is per-read Q. No clipping of rare long/short or
+  low/high-Q reads. Per-channel min/max length, Q and positive events/base
+  representatives are overlaid as actual extrema, not added to raster counts.
+- Overview color is the **minimum Q per occupied pixel**, preserving low-Q
+  observations. Scatter color is the arithmetic mean of quantized per-read mapped
+  RGB colors, including missing/zero categories; it is **not** mean events/base.
+  Positive events/base = template events / selected template length, using
+  **natural log**, inferno anchors; Q uses viridis anchors. Missing events are gray,
+  zero events slate (log undefined). The existing optional-event parser treats
+  negative/malformed/absent counts as unavailable, counted with missing events;
+  these values never enter a logarithm. 2D observations never borrow template events. R colors missing/zero
+  event observations gray; explicitly distinguishing these categories is intentional.
+- Both raster opacities are `0.25 + 0.75*ln(1+count)/ln(1+max_count)`, quantized to
+  8-bit alpha; empty pixels are transparent. Legends show the corresponding count
+  levels. Overlap cannot be resolved into individual reads, and mixed pixel colors
+  cannot recover the original event-color distribution. Exact count metadata
+  preserves density; extrema preserve rare tails. This is full-data aggregation,
+  not a claim of independent-point or ggplot pixel equivalence.
+
+`diagnostics.minion_read_visualization` is an additive optional schema-1 field:
+`method`, `population`, `eligible_reads`, `zero_length_records`, missing/zero event
+counts, `additional_input_passes`, exact `bounds`, per-channel counts/`extrema`,
+`points` (all exact points or empty), and nullable `overview`/`scatter`. Each raster
+has dimensions, total/max read counts, `color_reduction`, an embedded PNG data URI,
+and sorted sparse `[pixel_index, count]` pairs, indexed from the top left in
+row-major order. Overview indices address the physical atlas, not channel order.
+Both count sums equal `eligible_reads`. Empty/zero-only reports have null bounds
+and rasters. Deprecated `diagnostics.minion_sample` remains **null**; it is never
+silently relabeled as complete data. Consumers of its former non-null sample need
+to migrate; strict unknown-field consumers also need updating. Existing scientific
+fields and schema version stay unchanged.
+
+Accumulation memory is bounded by grids, 512 channels and at most six extrema per
+channel (plus the 4,096-point small-input limit). Grids use approximately 28 MiB;
+PNG buffers/serialization add temporary overhead. Only one run's grids are live
+at once. Each dense run rescans its contributing files; interleaved runs in one
+file can require repeated scans. Existing exact-statistics arrays remain separate
+and unchanged. PNG/base64 crates only encode embedded images; they add no runtime
+service or frontend dependency. SVG exports embed the PNG, not an external asset.
+
+Reproduce full-count/semantic checks against actual pinned R with:
+
+```sh
+cargo build --release --locked
+python3 tests/minion_visualization.py /path/to/pinned/minion_qc \
+  --rscript /path/to/Rscript --render-reference
+```
+
+Requires the existing R 4.4.1 / ggplot2 3.5.1 / mgcv 1.9-1 environment; does not
+install R or modify #12's reference capture. Optional `--baseline /path/to/old/binary`
+compares all scientific JSON after removing only the changed visualization fields.
+Independent Python and actual R plot-data calculations compare every pixel count,
+channel position, population, axis/alpha and natural-log color transformation.
+See [measured rendering costs](benchmark.md#complete-data-minion-rendering-14).
 
 Optional public validation now reads original files without adapters or Q clipping:
 99 short-run records / 1,089,633 bp; 75,160 PromethION / 623,196,506 bp;

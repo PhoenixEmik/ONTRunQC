@@ -21,7 +21,7 @@ Validation keys below:
 | Single summary | Complete | Existing positional input or `--input`; U `complete_synthetic_metrics`, P short/MinION/PromethION. |
 | Recursive directory / multiple summaries | Complete | Deterministic discovery, path/inode deduplication, no directory symlinks; U `multiple_runs_chunks_and_duplicate_paths_have_exact_pooled_statistics`. |
 | Individual and combined QC | Complete | Exact pooled observations, not averages of run summaries; U pooled/chunk and `collection_exports` tests, P multiple MinION inputs. |
-| Combined-only | Complete | No individual outputs or MinION samples; U `combined_only_skips_individual_outputs_and_explicit_grouping_rejects_conflicts`. |
+| Combined-only | Complete | No individual outputs or MinION display accumulators; U `combined_only_skips_individual_outputs_and_explicit_grouping_rejects_conflicts`. |
 | Run/chunk/flowcell identity | Complete | Run-ID grouping; explicit unknown sources, optional real flowcell ID; U ambiguity/conflicting metadata tests. Multiple runs on one physical flowcell remain separately labeled. |
 | Albacore/Guppy minimal template headers | Complete | Optional absent metadata stays unavailable; U `minimal_legacy_inputs_keep_missing_metadata_unavailable`, P original files. |
 | 2D/1D2 field substitution | Complete | Complete 2D pair selected, no row-level template mixing; U `legacy_2d_substitution_is_consistent_and_never_falls_back_per_row`, P 1D2. |
@@ -39,7 +39,7 @@ Validation keys below:
 
 ## Plot families
 
-All plots are offline Rust-generated SVG. All/Q comparisons use native Q selection,
+All plots use offline Rust-generated SVG; dense MinION plots embed PNG rasters. All/Q comparisons use native Q selection,
 not native passing. Fixed histogram bins, unsmoothed 15-minute means and bounded
 KDE differences are intentional and documented in [metrics](metrics.md).
 
@@ -51,8 +51,8 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 | `length_by_hour`, `q_by_hour` | Partial | Unchanged 15-minute means plus opt-in interpolated LOESS/cubic-shrinkage REML fits; U temporal/fitting tests. Exact unique-time knots, singular two-row LOESS solves and GAM ribbons are implemented; public GAM numerical parity remains incomplete; LOESS pointwise Student-t intervals are verified against actual R. |
 | `channel_summary` | Complete | Four channel distributions and exact values, All-summary/Q; U channel summary tests, V. |
 | `gb_per_channel_overview` | Complete | Explicit-layout yield heatmaps including All/Q (native maps additionally available); U layout/yield conservation, V. |
-| MinION `flowcell_overview` | Partial | Exact physical panels, actual start/length/Q values, deterministic <=16 reads/channel; U sample bound/mapping tests, V. Full-read panels not reproduced. |
-| MinION `length_vs_q` | Partial | Actual bounded points, optional events/base color, missing gray; U MinION samples, V. Uses log10(1+events/base); original uses log(events/base). No claim of point-for-point parity. |
+| MinION `flowcell_overview` | Complete | All positive-length reads: exact points ≤4,096, otherwise 64×40 full-count pixels/channel plus actual extrema; exact R9.5 layout, shared time/log-length axes, Q color. U count/extrema/order/mapping tests; actual R plot-data/pixel validation below. Explicit aggregation and zero-length differences, not ggplot pixel identity. |
+| MinION `length_vs_q` | Complete | Every positive-length read: exact points or 512×256 full-count pixels plus extrema, log-length X/Q Y, natural-log positive events/base inferno colors. Missing/zero events explicit. U legacy/control/event/count tests; actual R axes/alpha/population/pixel validation below. Dense mixed colors are documented reductions. |
 | PromethION physical read-level overview | Not applicable | Upstream omits the per-read channel panels for PromethION. |
 | PromethION `length_vs_q` | Complete | Bounded logarithmic-length/Q count heatmaps, matching the upstream bin2d analysis family; fixed documented bins, no individual read points; U joint count conservation, V. |
 | `combined_length_histogram`, `combined_q_histogram`, `combined_yield_by_length` | Complete | Pooled All/Q observations and exact yield queries; U pooled conservation/exact median/N50, P multiple inputs, V. |
@@ -88,7 +88,7 @@ bug corrected. Required malformed rows fail rather than silently disappearing.
 Legacy finite signed Q values remain unmodified; modern validation stays strict.
 YAML retains full available precision, null unavailable values and integer bases;
 upstream rounds several fields to one decimal. No private input identifiers enter
-output paths. Detailed numeric MinION samples are bounded and explicitly labeled.
+output paths. Complete-data MinION display modes and bounded extrema are explicitly labeled.
 
 Earlier public comparisons: short 99 /1,089,633 bp; PromethION 75,160 /623,196,506;
 1D2 159,799 /930,249,488; RNA 963 retained /197,413 (37 excluded); pooled MinION
@@ -98,8 +98,8 @@ stale (Q>=7 labels, Q8 invocation/results). This fast check did not execute R. T
 PBM95914 baseline was not rerun; its historical totals remain in metrics.md.
 
 Issues should remain open wherever their required acceptance criteria exceed
-these implemented, tested behaviors. In particular, sampling, smoothing/KDE and
-six static export formats prevent an unqualified full-parity claim.
+these implemented, tested behaviors. Strict GAM smoothing differences and six
+static export formats still prevent an unqualified full-parity claim.
 
 Earlier baseline checks (before #11–#13): rustfmt, Clippy with warnings denied, **17 unit +76
 integration tests**, and the locked release build. Existing JSON subtrees match
@@ -340,3 +340,52 @@ ignored by routine tests and executed by the paired suite. Chrome `file://`
 inspection verified the constant-domain points/axes/legend; no new mobile rendering
 check was performed. No private PBM95914 raw summary or large benchmark was run.
 No runtime dependencies were added; fits and KDE remain bounded as documented.
+
+
+## Complete-data MinION plots (#14)
+
+The 16-reads/channel reservoir is removed. Every eligible observation contributes;
+small inputs render all points, dense inputs use fixed-resolution full-count
+pixels plus actual per-channel extrema. Exact pixel counts remain accessible in
+JSON. SVG/HTML embed compressed PNGs, without external resources or JavaScript
+rendering. Zero-length exclusions, resolution, color reductions and missing/zero
+event treatment are explicit; this is scientific full-data representation, not
+point-for-point overplotting or ggplot pixel parity. See [definitions](metrics.md#complete-data-minion-read-level-plots-14)
+and [measurements](benchmark.md#complete-data-minion-rendering-14).
+
+`tests/minion_visualization.py` executes the unmodified pinned R script through
+`tests/reference/minion_plots.R`, with installed versions checked. It captures
+actual `ggplot_build()` axes, alpha, colors, channel arrangement and complete
+plot populations. Independent R and Python calculations of **every occupied
+pixel count** agree with Rust for the 150,002-positive-read synthetic input
+(all 512 channels) and the public MinION file (237,702 positive reads; 719 zero
+lengths). Public 1D2 also agrees (159,067 positive /732 zero lengths, all events
+unavailable); short-run exact points (98 positive /1 zero) and direct-RNA exact
+points (689 positive /274 zero, after 37 control exclusions) match their actual
+source observations and R pixel counts. Original R merges all run IDs in these
+file-level figures; production reports preserve separate run identities. Rare
+1 Mb /1 bp reads and Q -3 /100 outliers are preserved. Template
+missing/zero events and 2D unavailability have regression coverage. The optional
+capture renders original reference figures (75 dpi, only rendering resolution
+overridden) for offline inspection. No private sequencing summary was processed.
+
+Original R uses All summary records, alpha 0.35 (overview) / 0.05 (scatter),
+log10 length axes, Q viridis and natural-log events/base inferno colors. PoreGauge
+preserves these point-mode meanings, with canonical draw order and documented
+zero-length exclusion. Dense mode uses minimum pixel Q, mean mapped event RGB
+and count opacity instead of independent alpha blending; extrema overlays are
+not additional observations. Missing/zero events are distinguished, whereas R's
+actual event-color layer renders both gray. Palette interpolation/point sizes
+are not asserted identical. Full-count validation is separate from fit parity.
+
+Validation executed: rustfmt, locked Clippy with warnings denied, 42 unit +85
+integration tests (two optional probes ignored by default), 11 Python reference
+logic tests, locked release build, five public statistical checks and the five-case
+actual R visualization suite. Chrome inspected HTML at 1440/390 px, the disabled-JS
+fallback, original reference figures and both standalone raster-containing SVGs;
+26 exported SVGs passed XML/external-reference checks. No full private-run
+benchmark was performed. Added `png` and `base64` only for embedded-image encoding.
+
+The 18-case R evidence, solver/KDE implementations and strict tolerances are
+unchanged. **#12 remains Partial/open, with 1,542 primary strict GAM differences**;
+this feature neither reclassifies them nor substitutes canonical-R targets.

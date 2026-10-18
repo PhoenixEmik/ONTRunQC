@@ -15,7 +15,7 @@ pub fn render(report: &Report) -> String {
     out.push_str(r##"<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <title>PoreGauge · Sequencing QC report</title><style>"##);
     out.push_str(CSS);
     out.push_str(r##"</style></head><body>
@@ -1806,92 +1806,211 @@ fn physical_heatmaps(out: &mut String, report: &Report) {
 }
 
 fn minion_read_plots(out: &mut String, report: &Report) {
-    let Some(sample) = &report.diagnostics.minion_sample else {
+    let Some(view) = &report.diagnostics.minion_read_visualization else {
         return;
     };
-    let points: Vec<_> = sample.channels.iter().flat_map(|c| &c.points).collect();
-    write!(out, "<h3>MinION read-level diagnostics</h3><p class=\"annotation\">Deterministic channel-stratified reservoir sample: at most {} reads per channel (8,192 total), {} plotted from {} basecalled reads. Points are observed reads, not reconstructed histogram observations. Sampling is not proportional to channel yield; density and point counts are not exact full-run measurements. No identifiers are embedded.</p>", sample.limit_per_channel, count(points.len() as u64), count(sample.eligible_reads)).unwrap();
+    write!(out,r##"<h3>MinION read-level diagnostics</h3><p class="annotation">{} · {} positive-length observations, including all Q-scores and native filtering states; {} zero-length records explicitly excluded from logarithmic length axes. Missing/invalid events: {}; zero events: {}. No read identifiers. {}</p>"##,
+        if view.method=="exact_points" {"Exact points"} else {"Full-count pixel aggregation"}, count(view.eligible_reads),count(view.zero_length_records),count(view.missing_events_reads),count(view.zero_events_reads),
+        if view.method=="exact_points" {"Every eligible observation is plotted. Canonical time/channel/length/Q/events order; point opacity follows MinIONQC."} else {"Every eligible observation contributes to both rasters. Opacity encodes log(1 + count), minimum 25%; colors are aggregated, not independent read points. Outlined actual extrema are overlays, not additional counts. Exact sparse pixel counts and per-channel extrema are in JSON."}).unwrap();
     figure(
         out,
         "minion-length-quality",
-        "MinION read length vs Q-score · sampled basecalled reads",
+        "MinION read length vs Q-score · all eligible reads",
     );
-    if points.is_empty() {
-        empty_chart(out, "No sampled basecalled reads.");
+    let Some(bounds) = &view.bounds else {
+        empty_chart(
+            out,
+            "No positive-length observations; logarithmic axes unavailable.",
+        );
+        figure(
+            out,
+            "minion-flowcell-overview",
+            "MinION physical flowcell overview · all eligible reads",
+        );
+        empty_chart(
+            out,
+            "No positive-length observations; logarithmic axes unavailable.",
+        );
         return;
-    }
-    let max_length = report.metrics.max_read_length_bp.unwrap_or(1) as f64;
-    let log_max = max_length.log10().max(1.0);
-    let qmin = report.quality.min_qscore.unwrap_or(0.0);
-    let qmax = report.quality.max_qscore.unwrap_or(0.0);
-    let max_events = points
-        .iter()
-        .filter_map(|p| p.events_per_base)
-        .reduce(f64::max)
-        .unwrap_or(0.0);
+    };
+    let log_length = bounds.log_length();
     svg_start(
         out,
         "minion-length-quality",
-        "Observed sampled reads; X is log10 read length, Y is per-read Q-score, color is log10(1+events/base). Gray indicates missing events.",
-        324,
+        "All positive-length reads: logarithmic length X, Q-score Y. Positive events/base use a natural-log inferno color scale; missing gray, zero slate. Dense colors are averaged mapped colors, not a mean events/base estimate.",
+        408,
     );
     for i in 0..=4 {
-        let fraction = i as f64 / 4.0;
-        let q = qmin * (1.0 - fraction) + qmax * fraction;
-        let y = BOTTOM - (BOTTOM - TOP) * fraction;
-        write!(out, "<line class=\"grid-line\" x1=\"{LEFT}\" x2=\"{RIGHT}\" y1=\"{y}\" y2=\"{y}\"/><text class=\"tick\" x=\"68\" y=\"{}\" text-anchor=\"end\">{}</text>", y+4.0, decimal(q)).unwrap();
+        let f = i as f64 / 4.0;
+        let q = bounds.qscore[0] * (1.0 - f) + bounds.qscore[1] * f;
+        let y = BOTTOM - (BOTTOM - TOP) * f;
+        write!(out,r##"<line class="grid-line" x1="{LEFT}" x2="{RIGHT}" y1="{y}" y2="{y}"/><text class="tick" x="68" y="{}" text-anchor="end">{}</text>"##,y+4.0,compact(q)).unwrap();
         x_tick(
             out,
-            LEFT + (RIGHT - LEFT) * fraction,
-            &format!("10^{}", compact(log_max * fraction)),
+            LEFT + (RIGHT - LEFT) * f,
+            &format!(
+                "10^{}",
+                compact(log_length[0] * (1.0 - f) + log_length[1] * f)
+            ),
         );
     }
-    out.push_str("<text class=\"axis-label\" x=\"80\" y=\"17\">Mean read Q-score</text><text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Read length (bp; logarithmic axis)</text>");
-    for point in &points {
-        let x = LEFT + (point.length_bp as f64).log10() / log_max * (RIGHT - LEFT);
-        let y = BOTTOM - plot_fraction(point.qscore, qmin, qmax) * (BOTTOM - TOP);
-        let color = point.events_per_base.map_or_else(
-            || "#9aa6b6".into(),
-            |v| {
-                format!(
-                    "hsl(260 38% {:.2}%)",
-                    90.0 - if max_events == 0.0 {
-                        0.0
-                    } else {
-                        (1.0 + v).log10() / (1.0 + max_events).log10() * 55.0
-                    }
-                )
-            },
-        );
-        write!(out, "<circle cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"2\" fill=\"{color}\"><title>{} bp; Q {}; events/base {}</title></circle>", count(point.length_bp), cutoff_value(point.qscore), optional(point.events_per_base, 1.0, "")).unwrap();
+    out.push_str(r##"<text class="axis-label" x="80" y="17">Mean Q-score of read</text><text class="axis-label" x="397" y="286" text-anchor="middle">Read length (bp; logarithmic axis)</text>"##);
+    if let Some(raster) = &view.scatter {
+        write!(out,r##"<image x="{LEFT}" y="{TOP}" width="{}" height="{}" preserveAspectRatio="none" href="{}"><title>{} reads; {} × {} counting pixels; maximum {} reads/pixel. Mean mapped event colors; log-count opacity.</title></image>"##,RIGHT-LEFT,BOTTOM-TOP,raster.png_data_uri,count(raster.total_reads),raster.width,raster.height,count(raster.maximum_pixel_reads)).unwrap();
     }
-    write!(out, "<text class=\"tick\" x=\"80\" y=\"313\">Events/base: light 0 → dark {} (log10(1+ratio)); gray = unavailable</text></svg></div><p class=\"annotation\">Events/base palette: light 0 → dark {} (log10(1+ratio)); gray = unavailable. Template event counts are never used for 2D reads.</p></figure>", decimal(max_events), decimal(max_events)).unwrap();
-    let layout = report.diagnostics.physical_layout.as_ref().unwrap();
+    let points: Vec<_> = if view.scatter.is_some() {
+        view.channels.iter().flat_map(|c| &c.extrema).collect()
+    } else {
+        view.points.iter().collect()
+    };
+    for p in points {
+        let x = LEFT
+            + crate::minion::fraction((p.length_bp as f64).log10(), log_length) * (RIGHT - LEFT);
+        let y = BOTTOM - crate::minion::fraction(p.qscore, bounds.qscore) * (BOTTOM - TOP);
+        minion_point(
+            out,
+            p,
+            x,
+            y,
+            crate::minion::events_color(p.events_per_base, bounds),
+            if view.scatter.is_some() { 1.0 } else { 0.05 },
+            view.scatter.is_some(),
+        );
+    }
+    if let Some(range) = bounds.positive_events_per_base {
+        minion_color_legend(
+            out,
+            true,
+            range,
+            "Positive events/base (natural-log color scale)",
+            315.0,
+        );
+    } else {
+        out.push_str(
+            r##"<text class="tick" x="80" y="315">Positive events/base unavailable</text>"##,
+        );
+    }
+    out.push_str(r##"<text class="tick" x="80" y="351">Gray = missing/invalid events; slate = zero events (log undefined)</text>"##);
+    if let Some(raster) = &view.scatter {
+        minion_density_legend(out, raster.maximum_pixel_reads, 380.0);
+    }
+    out.push_str("</svg></div>");
+    if let Some(raster) = &view.scatter {
+        write!(out,r##"<p class="annotation">{} × {} full-count pixels; color = average of per-read mapped colors, including missing/zero categories; opacity = log-count density (maximum {} reads/pixel). Outlined extrema preserve rare lengths, Q-scores and positive events/base. Overlapping reads cannot be individually resolved.</p>"##,raster.width,raster.height,count(raster.maximum_pixel_reads)).unwrap();
+    }
+    out.push_str(r##"</figure>"##);
     figure(
         out,
         "minion-flowcell-overview",
-        "MinION physical flowcell overview · sampled reads",
+        "MinION physical flowcell overview · all eligible reads",
     );
-    let end = report.time_bins.last().map_or(900, |b| b.end_seconds) as f64;
-    let sampled: std::collections::BTreeMap<_, _> =
-        sample.channels.iter().map(|c| (c.channel, c)).collect();
-    write!(out, "<p class=\"annotation\">Each physical panel: X = 0–{} h from run start; Y = 1–{} bp on a logarithmic axis. Indigo light → dark represents Q {}–{}. Channel labels identify panels; blank panels mean no sampled basecalled reads, not dead pores.</p>", decimal(end/3600.0), count(max_length as u64), cutoff_value(qmin), cutoff_value(qmax)).unwrap();
-    out.push_str("<p class=\"scroll-hint\">Scroll the physical overview horizontally to read all channel panels.</p><div class=\"plot-scroll\" tabindex=\"0\" role=\"group\" aria-label=\"Scrollable MinION flowcell overview\"><svg class=\"plot minion-overview\" viewBox=\"0 0 1320 2240\" role=\"img\" aria-labelledby=\"minion-flowcell-overview-caption\"><title>Exact R9.5 physical panels; sampled observations on shared time and logarithmic length scales, colored by per-read Q-score.</title><g>");
+    write!(out,r##"<p class="annotation">Shared per-channel axes: X = {}–{} h from run start; Y = {}–{} bp (logarithmic). Q uses viridis. {} Blank panels mean no positive-length observations, not dead pores.</p>"##,compact(bounds.start_seconds[0]/3600.0),compact(bounds.start_seconds[1]/3600.0),count(bounds.length_bp[0]),count(bounds.length_bp[1]),if view.overview.is_some(){"64 × 40 pixels/channel: minimum Q in a pixel exposes low-Q observations; opacity encodes full read count. Actual min/max length, Q and positive events/base are outlined."}else{"All observed points, opacity 0.35."}).unwrap();
+    out.push_str(r##"<p class="scroll-hint">Scroll horizontally to inspect all 16 physical columns. Every panel uses the same time and length scales.</p><div class="plot-scroll" tabindex="0" role="group" aria-label="Scrollable MinION flowcell overview"><svg class="plot minion-overview" viewBox="0 0 1320 2300" role="img" aria-labelledby="minion-flowcell-overview-caption"><title>All eligible reads in the exact R9.5 physical layout; shared time and logarithmic length axes, Q color and explicitly labeled count aggregation.</title>"##);
+    let layout = report.diagnostics.physical_layout.as_ref().unwrap();
+    if let Some(raster) = &view.overview {
+        write!(
+            out,
+            r##"<defs><image id="minion-atlas" width="{}" height="{}" href="{}"/>"##,
+            raster.width, raster.height, raster.png_data_uri
+        )
+        .unwrap();
+        for c in &layout.channel_coordinates {
+            write!(out,r##"<clipPath id="minion-clip-{}"><rect x="{}" y="{}" width="64" height="40"/></clipPath>"##,c.channel,58+c.column*76,45+c.row*66).unwrap();
+        }
+        out.push_str(r##"</defs>"##);
+    }
+    let channels: std::collections::BTreeMap<_, _> =
+        view.channels.iter().map(|c| (c.channel, c)).collect();
     for c in &layout.channel_coordinates {
         let x0 = 55 + c.column * 76;
         let y0 = 30 + c.row * 66;
-        write!(out, "<g data-channel=\"{}\" data-row=\"{}\" data-column=\"{}\"><rect x=\"{x0}\" y=\"{y0}\" width=\"70\" height=\"59\" fill=\"#f0f2f7\" stroke=\"#d7ddeb\"/><text x=\"{}\" y=\"{}\" font-size=\"10\">ch {}</text>", c.channel,c.row,c.column,x0+2,y0+11,c.channel).unwrap();
-        if let Some(channel) = sampled.get(&c.channel) {
-            for point in &channel.points {
-                let x = x0 as f64 + 3.0 + point.start_seconds / end * 64.0;
-                let y = y0 as f64 + 55.0 - (point.length_bp as f64).log10() / log_max * 40.0;
-                let light = 90.0 - plot_fraction(point.qscore, qmin, qmax) * 55.0;
-                write!(out, "<circle cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"2\" fill=\"hsl(228 45% {light:.2}%)\"><title>Channel {}: {} s; {} bp; Q {}</title></circle>",c.channel,cutoff_value(point.start_seconds),count(point.length_bp),cutoff_value(point.qscore)).unwrap();
-            }
+        let channel = channels.get(&c.channel);
+        write!(out,r##"<g data-channel="{}" data-row="{}" data-column="{}"><title>Channel {}: {} positive-length observations; {} zero-length records; {} missing events; {} zero events.</title><rect x="{x0}" y="{y0}" width="70" height="59" fill="#f0f2f7" stroke="#d7ddeb"/><text x="{}" y="{}" font-size="10">ch {}</text>"##,c.channel,c.row,c.column,c.channel,count(channel.map_or(0,|v|v.eligible_reads)),count(channel.map_or(0,|v|v.zero_length_records)),count(channel.map_or(0,|v|v.missing_events_reads)),count(channel.map_or(0,|v|v.zero_events_reads)),x0+2,y0+11,c.channel).unwrap();
+        if view.overview.is_some() {
+            write!(out,r##"<g clip-path="url(#minion-clip-{})"><use href="#minion-atlas" transform="translate({} {})"/></g>"##,c.channel,x0 as i32+3-c.column as i32*64,y0 as i32+15-c.row as i32*40).unwrap();
         }
-        out.push_str("</g>");
+        let points: Vec<_> = if view.overview.is_some() {
+            channel.into_iter().flat_map(|v| &v.extrema).collect()
+        } else {
+            view.points
+                .iter()
+                .filter(|p| p.channel == c.channel)
+                .collect()
+        };
+        for p in points {
+            let x = x0 as f64
+                + 3.0
+                + crate::minion::fraction(p.start_seconds, bounds.start_seconds) * 63.0;
+            let y = y0 as f64
+                + 15.0
+                + (1.0 - crate::minion::fraction((p.length_bp as f64).log10(), log_length)) * 39.0;
+            minion_point(
+                out,
+                p,
+                x,
+                y,
+                crate::minion::quality_color(p.qscore, bounds),
+                if view.overview.is_some() { 1.0 } else { 0.35 },
+                view.overview.is_some(),
+            );
+        }
+        out.push_str(r##"</g>"##);
     }
-    write!(out, "</g><text class=\"axis-label\" x=\"80\" y=\"2158\">Each channel: X = 0–{} h from run start; Y = 1–{} bp (logarithmic)</text><text class=\"tick\" x=\"80\" y=\"2182\">Indigo light → dark: Q {}–{}; at most 16 sampled reads/channel; blank = no sampled reads</text><text class=\"tick\" x=\"80\" y=\"2206\">Physical columns 0–15; rows 0–31 (top to bottom)</text></svg></div></figure>", decimal(end/3600.0), count(max_length.max(10.0) as u64), cutoff_value(qmin), cutoff_value(qmax)).unwrap();
+    write!(out,r##"<text class="axis-label" x="80" y="2158">Per channel: time {}–{} h; length {}–{} bp (log10)</text>"##,compact(bounds.start_seconds[0]/3600.0),compact(bounds.start_seconds[1]/3600.0),count(bounds.length_bp[0]),count(bounds.length_bp[1])).unwrap();
+    minion_color_legend(out, false, bounds.qscore, "Read Q-score", 2182.0);
+    if let Some(raster) = &view.overview {
+        minion_density_legend(out, raster.maximum_pixel_reads, 2220.0);
+    }
+    out.push_str(r##"<text class="tick" x="80" y="2270">Physical columns 0–15; rows 0–31 (top to bottom)</text></svg></div></figure>"##);
+}
+fn minion_density_legend(out: &mut String, maximum: u64, y: f64) {
+    let mut levels = vec![1, (maximum / 2).max(1), maximum];
+    levels.dedup();
+    write!(
+        out,
+        r##"<text class="tick" x="80" y="{}">Reads/pixel (log-count opacity):</text>"##,
+        y + 11.0
+    )
+    .unwrap();
+    for (i, n) in levels.into_iter().enumerate() {
+        let x = 315 + i * 125;
+        let alpha = crate::minion::density_alpha(n, maximum) as f64 / 255.0;
+        write!(out,r##"<rect x="{x}" y="{y}" width="14" height="14" fill="#475569" fill-opacity="{alpha:.4}"/><text class="tick" x="{}" y="{}">{}</text>"##,x+20,y+11.0,count(n)).unwrap();
+    }
+}
+fn minion_point(
+    out: &mut String,
+    p: &crate::minion::Point,
+    x: f64,
+    y: f64,
+    color: [u8; 3],
+    alpha: f64,
+    extreme: bool,
+) {
+    write!(out,r##"<circle class="minion-point" cx="{x:.2}" cy="{y:.2}" r="{}" fill="#{:02x}{:02x}{:02x}" fill-opacity="{alpha}" {}><title>{}Channel {}: {} s; {} bp; Q {}; events/base {}</title></circle>"##,if extreme{1.7}else{1.0},color[0],color[1],color[2],if extreme{r##"stroke="#253047" stroke-width="0.5""##}else{""},if extreme{"Actual extremum overlay · "}else{""},p.channel,compact(p.start_seconds),count(p.length_bp),compact(p.qscore),optional(p.events_per_base,1.0,"")).unwrap();
+}
+fn minion_color_legend(out: &mut String, inferno: bool, range: [f64; 2], label: &str, y: f64) {
+    for i in 0..64 {
+        let color = crate::minion::palette(i as f64 / 63.0, inferno);
+        write!(
+            out,
+            r##"<rect x="{}" y="{y}" width="3" height="9" fill="#{:02x}{:02x}{:02x}"/>"##,
+            80 + i * 3,
+            color[0],
+            color[1],
+            color[2]
+        )
+        .unwrap();
+    }
+    write!(
+        out,
+        r##"<text class="tick" x="282" y="{}">{}: {} → {}</text>"##,
+        y + 9.0,
+        label,
+        compact(range[0]),
+        compact(range[1])
+    )
+    .unwrap();
 }
 
 fn plot_fraction(value: f64, minimum: f64, maximum: f64) -> f64 {

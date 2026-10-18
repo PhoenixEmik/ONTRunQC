@@ -83,7 +83,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
                 let mut aggregator = Aggregator::new(options.layout, false);
                 aggregator.set_qscore_cutoff(options.cutoff, true);
                 aggregator.enable_reference_density(options.minionqc_density);
-                aggregator.set_sampling_enabled(!options.combined_only);
+                aggregator.enable_minion_visualization(!options.combined_only);
                 groups.push(Group {
                     trends: options
                         .minionqc_trends
@@ -151,7 +151,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             let mut aggregator = Aggregator::new(options.layout, speed);
             aggregator.set_qscore_cutoff(options.cutoff, native);
             aggregator.enable_reference_density(options.minionqc_density);
-            aggregator.set_sampling_enabled(!options.combined_only);
+            aggregator.enable_minion_visualization(!options.combined_only);
             aggregator.include_input_format(schema, representation)?;
             groups.push(Group {
                 trends: options
@@ -224,8 +224,43 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
     pooled.enable_reference_density(options.minionqc_density);
     pooled.set_density_domain(domain);
     let mut runs = Vec::new();
-    for (index, group) in groups.into_iter().enumerate() {
+    for (index, mut group) in groups.into_iter().enumerate() {
+        let mut visualization = group.aggregator.take_minion_visualization();
+        if let Some(renderer) = visualization.as_mut().filter(|v| v.needs_pass()) {
+            // Only dense explicit MinION reports need this bounds-dependent pass.
+            // One run's pixel grids are alive at a time, even in collections.
+            for &file_index in &group.files {
+                let path = &files[file_index];
+                let mut reader = SummaryReader::with_options(
+                    File::open(path)?,
+                    options.input_schema,
+                    options.read_representation,
+                )?;
+                reader.allow_multiple_runs();
+                while let Some(record) = reader
+                    .next_record()
+                    .with_context(|| format!("MinION visualization input {}", path.display()))?
+                {
+                    let belongs = if options.group_inputs {
+                        true
+                    } else if let Some(id) = record.run_id {
+                        known.get(id).copied() == Some(index)
+                    } else {
+                        group.run_id.is_none()
+                    };
+                    if belongs {
+                        renderer.add(&record).with_context(|| {
+                            format!("input {} line {}", path.display(), record.line)
+                        })?;
+                    }
+                }
+            }
+        }
+        let visualization = visualization
+            .map(crate::minion::Renderer::finish)
+            .transpose()?;
         let (mut report, observations) = group.aggregator.finish_retaining(group.run_id)?;
+        report.diagnostics.minion_read_visualization = visualization;
         report.fitted_trends = fits.next().map(crate::trends::Plan::finish);
         if !collection {
             drop(observations);

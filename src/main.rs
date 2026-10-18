@@ -6,6 +6,7 @@ mod html;
 mod input;
 mod layout;
 mod metrics;
+mod minion;
 mod record;
 mod report;
 mod trend_knots;

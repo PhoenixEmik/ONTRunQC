@@ -6,7 +6,8 @@ modern MinKNOW/Dorado output. It streams TSV records, validates them, calculates
 run metrics, and writes deterministic JSON and standalone HTML reports.
 
 Current release: **[v0.4.0 — Advanced Read Quality Diagnostics](https://github.com/PhoenixEmik/PoreGauge/tree/v0.4.0)**.
-Unreleased development: **MinIONQC scientific parity, issues #11–#13** (on the 0.4.1 codebase).
+Unreleased development: **complete-data MinION visualization, issue #14** (on the 0.4.1 codebase).
+Strict GAM numerical parity remains Partial; existing reference evidence is preserved.
 
 PoreGauge is not a basecaller or a replacement for MinKNOW instrument monitoring.
 It does not analyze FASTQ, BAM, or POD5 files.
@@ -196,7 +197,8 @@ The JSON schema has `schema_version: 1`, tool version, run ID, overall metrics,
 quality metrics, and ordered arrays of distributions and grouped statistics.
 Unavailable values are `null`; integer yields are in base pairs. No complete
 read records, sample IDs, filenames, or experiment IDs appear in reports. Explicit
-MinION plots retain a bounded numeric sample without read identifiers.
+MinION plots retain all small-input numeric points or bounded full-count rasters and
+per-channel extrema, without read identifiers.
 The run ID and unknown termination-reason strings are preserved. Schema version 1
 is retained: the new `comparison` section is additive; existing fields, definitions and ordering are preserved for previously accepted inputs.
 The v0.4.0 additions remain available.
@@ -305,11 +307,16 @@ complete 2D/1D2 field pairs, excludes and counts YHR174W controls, and supports
 `--flowcell-layout minion-r9.5`. Explicit `--input-schema modern` retains strict
 modern validation; `--read-representation template` overrides 2D auto-selection.
 Unrelated modern metadata is optional for legacy inputs and is never invented.
-MinION read-level plots use at most 16 sampled reads/channel (8,192 points);
-PromethION remains aggregated. Full point-for-point scatter parity is not claimed.
-MinION physical time/length panels and length/Q scatter plots use actual sampled
-values; optional events-per-base coloring is available. These are bounded
-representations, not full point-for-point replicas. See the complete
+MinION read-level plots process every positive-length observation after control
+exclusion. Up to 4,096 reads are rendered as exact points; larger runs use
+full-count pixel aggregation (64×40 pixels/channel; 512×256 length/Q pixels),
+with actual per-channel extrema overlaid. Dense mode makes one additional input
+pass per run and uses embedded PNGs inside SVG; reports remain offline and
+independent SVG exports remain self-contained. Positive events/base use a natural-log
+color scale; missing and zero events are explicitly distinguished. Pixel colors
+are reductions, not independent read points; exact pixel counts and coverage are
+available in JSON. Zero-length exclusions and the rendering method are labeled.
+PromethION remains aggregated without MinION read-level panels. See the complete
 [MinIONQC parity matrix](docs/minionqc-parity.md) for tested functionality and
 remaining differences; full format and rendering parity is not claimed.
 

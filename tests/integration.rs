@@ -2354,7 +2354,7 @@ fn identity_free_sources_are_separate_unless_explicitly_grouped() {
 }
 
 #[test]
-fn minion_physical_maps_and_bounded_samples_preserve_observations() {
+fn minion_physical_maps_and_exact_points_preserve_all_observations() {
     let directory = TestDirectory::new();
     let mut input = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\tnum_events_template\n".to_owned();
     for i in 0..100 {
@@ -2370,14 +2370,15 @@ fn minion_physical_maps_and_bounded_samples_preserve_observations() {
     let report = directory.analyze_with_args(&input, &["--flowcell-layout", "minion-r9.5"]);
     assert_eq!(report["diagnostics"]["physical_layout"]["rows"], 32);
     assert_eq!(report["diagnostics"]["physical_layout"]["columns"], 16);
-    let sample = &report["diagnostics"]["minion_sample"];
-    assert_eq!(sample["eligible_reads"], 101);
-    assert_eq!(
-        sample["channels"][0]["points"].as_array().unwrap().len(),
-        16
-    );
-    assert_eq!(sample["channels"][1]["points"].as_array().unwrap().len(), 1);
-    assert_eq!(sample["channels"][0]["points"][0]["events_per_base"], 2.0);
+    assert!(report["diagnostics"]["minion_sample"].is_null());
+    let view = &report["diagnostics"]["minion_read_visualization"];
+    assert_eq!(view["eligible_reads"], 101);
+    assert_eq!(view["zero_length_records"], 1);
+    assert_eq!(view["points"].as_array().unwrap().len(), 101);
+    assert_eq!(view["method"], "exact_points");
+    assert_eq!(view["channels"][0]["eligible_reads"], 100);
+    assert_eq!(view["channels"][2]["eligible_reads"], 1);
+    assert_eq!(view["points"][0]["events_per_base"], 2.0);
     let html = directory.html();
     assert!(html.contains("MinION physical flowcell overview"));
     assert!(html.contains("data-channel=\"1\" data-row=\"0\" data-column=\"15\""));
@@ -2395,6 +2396,120 @@ fn minion_physical_maps_and_bounded_samples_preserve_observations() {
     );
     let no_map = directory.analyze(&input);
     assert!(no_map["diagnostics"]["minion_sample"].is_null());
+}
+
+#[test]
+fn dense_minion_reports_embed_complete_offline_rasters_and_preserve_metrics() {
+    let directory = TestDirectory::new();
+    let header = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\tnum_events_template\n";
+    let mut rows = Vec::new();
+    for i in 0..6000 {
+        rows.push(format!(
+            "{}\t{}\t{}\t{}\t{}\n",
+            i % 512 + 1,
+            i % 4 * 900,
+            100 + i % 7,
+            5 + i % 9,
+            if i % 3 == 0 {
+                "NA"
+            } else if i % 3 == 1 {
+                "0"
+            } else {
+                "200"
+            }
+        ));
+    }
+    rows.push("512\t10000\t1000000\t100\t2000000\n".into());
+    rows.push("33\t0\t1\t-3\t1\n".into());
+    rows.push("1\t0\t0\t0\t0\n".into());
+    let data = format!("{header}{}", rows.concat());
+    let original = directory.analyze(&data);
+    let report = directory.analyze_with_args(
+        &data,
+        &["--flowcell-layout", "minion-r9.5", "--format", "svg"],
+    );
+    for field in [
+        "metrics",
+        "quality",
+        "comparison",
+        "time_bins",
+        "channels",
+        "input",
+        "distributions",
+    ] {
+        assert_eq!(report[field], original[field], "{field}");
+    }
+    let view = &report["diagnostics"]["minion_read_visualization"];
+    assert_eq!(view["method"], "full_count_pixel_aggregation");
+    assert_eq!(view["eligible_reads"], 6002);
+    assert_eq!(view["zero_length_records"], 1);
+    assert_eq!(view["missing_events_reads"], 2000);
+    assert_eq!(view["zero_events_reads"], 2000);
+    assert!(view["points"].as_array().unwrap().is_empty());
+    for field in ["overview", "scatter"] {
+        assert_eq!(view[field]["total_reads"], 6002);
+        assert_eq!(
+            view[field]["counts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r[1].as_u64().unwrap())
+                .sum::<u64>(),
+            6002
+        );
+        assert!(
+            view[field]["png_data_uri"]
+                .as_str()
+                .unwrap()
+                .starts_with("data:image/png;base64,iVBORw0KGgo")
+        );
+    }
+    let html = directory.html();
+    assert!(html.contains("img-src data:"));
+    assert!(html.contains("Full-count pixel aggregation"));
+    assert!(html.contains("natural-log color scale"));
+    assert!(!html.contains("log10(1+"));
+    assert!(!html.contains("reservoir"));
+    assert!(!html.contains("NaN"));
+    assert!(!html.contains("Infinity"));
+    assert!(html.matches("<circle class=\"minion-point\"").count() <= 512 * 6 * 2);
+    for href in html.split("href=\"").skip(1) {
+        assert!(href.starts_with('#') || href.starts_with("data:image/png;base64,"));
+    }
+    let figure = fs::read_to_string(
+        directory
+            .0
+            .join("output/figures/minion-flowcell-overview.svg"),
+    )
+    .unwrap();
+    assert!(figure.contains("data:image/png;base64,"));
+    assert!(figure.contains("href=\"#minion-atlas\""));
+    rows.reverse();
+    let reversed = format!("{header}{}", rows.concat());
+    let reordered = directory.analyze_with_args(&reversed, &["--flowcell-layout", "minion-r9.5"]);
+    assert_eq!(view, &reordered["diagnostics"]["minion_read_visualization"]);
+    let combined = directory.0.join("combined");
+    let input = directory.0.join("input.tsv");
+    let output = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .args(["analyze"])
+        .arg(input)
+        .args([
+            "--flowcell-layout",
+            "minion-r9.5",
+            "--combined-only",
+            "--output",
+        ])
+        .arg(&combined)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let pooled: Value =
+        serde_json::from_slice(&fs::read(combined.join("combined/report.json")).unwrap()).unwrap();
+    assert!(
+        pooled["diagnostics"]
+            .get("minion_read_visualization")
+            .is_none()
+    );
 }
 
 // Read the emitted YAML mapping subset independently: keys/scalars use JSON
@@ -3016,4 +3131,52 @@ fn optional_reference_views_keep_untrusted_metadata_escaped_and_offline() {
     assert!(html.contains("&lt;script&gt;alert(&#39;fictional&#39;)&lt;/script&gt;&amp;"));
     assert!(!html.contains("src=\"https://"));
     assert!(!html.contains("<link"));
+}
+
+#[test]
+fn minion_visualizations_keep_legacy_event_and_control_semantics() {
+    let directory = TestDirectory::new();
+    let header = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\tnum_events_template\tcalibration_strand_genome_template\n";
+    let data = format!(
+        "{header}1\t0\t10\t-1\tNA\t\n2\t1\t20\t8\t0\t\n512\t2\t1000000\t40\t2000000\tYHR174W\n3\t0\t0\t0\t0\t\n"
+    );
+    let report = directory.analyze_with_args(&data, &["--flowcell-layout", "minion-r9.5"]);
+    let view = &report["diagnostics"]["minion_read_visualization"];
+    assert_eq!(view["eligible_reads"], 2);
+    assert_eq!(view["zero_length_records"], 1);
+    assert_eq!(view["missing_events_reads"], 1);
+    assert_eq!(view["zero_events_reads"], 1);
+    assert!(view["bounds"]["positive_events_per_base"].is_null());
+    assert_eq!(view["bounds"]["length_bp"], json!([10, 20]));
+    let html = directory.html();
+    assert!(html.contains("Positive events/base unavailable"));
+    assert!(!html.contains("NaN"));
+    assert!(!html.contains("Infinity"));
+
+    // Template events cannot color a 2D read: they describe another signal.
+    let two_d = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\tnum_events_template\tsequence_length_2d\tmean_qscore_2d\n1\t0\t100\t20\t1000\t10\t8\n";
+    let report = directory.analyze_with_args(two_d, &["--flowcell-layout", "minion-r9.5"]);
+    let view = &report["diagnostics"]["minion_read_visualization"];
+    assert_eq!(view["eligible_reads"], 1);
+    assert_eq!(view["missing_events_reads"], 1);
+    assert_eq!(view["points"][0]["length_bp"], 10);
+    assert!(view["points"][0]["events_per_base"].is_null());
+    for invalid_events in ["-1", "not-a-count", "inf"] {
+        // Optional legacy event metadata remains unavailable, never log-mapped.
+        let report = directory.analyze_with_args(
+            &format!("{header}1\t0\t10\t8\t{invalid_events}\t\n"),
+            &["--flowcell-layout", "minion-r9.5"],
+        );
+        let view = &report["diagnostics"]["minion_read_visualization"];
+        assert_eq!(view["missing_events_reads"], 1);
+        assert!(view["points"][0]["events_per_base"].is_null());
+    }
+    for input in [header.to_owned(), format!("{header}1\t0\t0\t0\t0\t\n")] {
+        let report = directory.analyze_with_args(&input, &["--flowcell-layout", "minion-r9.5"]);
+        assert_eq!(
+            report["diagnostics"]["minion_read_visualization"]["eligible_reads"],
+            0
+        );
+        assert!(directory.html().contains("No positive-length observations"));
+    }
 }

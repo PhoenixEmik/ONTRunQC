@@ -224,3 +224,93 @@ initial parsing or retained row storage. Full-list sorting and substring search
 still scale with aggregated row count. These measurements do not remeasure or
 predict the supplied real-report baseline of 9,052,704 HTML bytes; that private
 report was not regenerated for this comparison.
+
+
+## Complete-data MinION rendering (#14)
+
+Measured on 2026-10-18, macOS arm64, Rust 1.98.1 release builds; baseline
+`b1ed887` versus the full-count implementation. These are single executions,
+not throughput guarantees: filesystem caches and competing work were uncontrolled.
+The old binary samples ≤16 reads/channel; the new binary represents every
+positive-length read. This is an information-coverage comparison, not a claim
+of speed or file-size optimization. No private run was processed.
+
+Reproduce with a separately retained baseline executable and the existing pinned
+R environment (R 4.4.1, ggplot2 3.5.1, mgcv 1.9-1):
+
+```sh
+cargo build --release --locked
+python3 tests/minion_visualization.py /path/to/pinned/minion_qc \
+  --baseline /path/to/baseline-poregauge --rscript /path/to/Rscript \
+  --render-reference
+```
+
+The standard-library helper generates fictional data, runs before/after CLI
+analysis, verifies unchanged scientific JSON, executes actual pinned MinIONQC,
+and checks independent full pixel counts. It writes ignored `measurements.json`,
+reference captures, reports and optionally original R figures. Public inputs
+stay in the pinned upstream checkout; routine CI needs no R or public downloads.
+The extra ignored Rust probe measures the display-only phases on the source-file
+population, irrespective of run-ID grouping, as R does. Normal CLI output still
+splits known run IDs. `os.wait4` measures the specific CLI child's CPU and peak RSS
+(macOS bytes, Linux KiB converted); wall time uses `perf_counter`.
+
+| Input | Bytes | Positive-length reads | CLI wall before /after (s) | Peak RSS before /after (MiB) |
+| --- | ---: | ---: | ---: | ---: |
+| Synthetic, all 512 channels | 3,936,781 | 150,002 | 0.151 /0.469 | 17.02 /50.41 |
+| Public MinION `RB7_A2` | 62,885,923 | 237,702 | 0.314 /0.633 | 23.23 /56.73 |
+| Public 1D2 | 62,666,661 | 159,067 | 0.317 /0.667 | 20.03 /56.59 |
+| Public short run | 25,369 | 98 | 0.049 /0.154 | 6.02 /6.30 |
+| Public direct RNA (controls excluded) | 93,877 | 689 | 0.058 /0.172 | 6.72 /7.73 |
+
+Synthetic CPU before/after: user 0.106934/0.237880 s, system 0.010213/0.021699 s;
+MinION: user 0.251835/0.468176 s, system 0.015814/0.035045 s. CLI timings include
+all QC and individual/combined JSON/HTML writes. Display probe phases:
+
+| Input | Bounds tracking +first parse (s) | Additional pixel pass incl. allocation (s) | PNG/count finalization (s) |
+| --- | ---: | ---: | ---: |
+| Synthetic | 0.025922 | 0.035558 | 0.065449 |
+| Public MinION | 0.140394 | 0.146482 | 0.067916 |
+| Public 1D2 | 0.092894 | 0.107417 | 0.061995 |
+
+Small exact-point inputs need no second parse or PNG. Fixed grids occupy about
+28 MiB, with temporary PNG/serialization storage in addition. Only one run's
+grids are alive at once; sparse JSON counts and finalized compressed images
+remain with their reports. Counts/PNG size can grow to the fixed resolution;
+this is not a bound on the existing exact-statistics arrays or whole-process RSS.
+Interleaved dense runs rescan their contributing file once per run.
+
+The following refers to the dense individual HTML (synthetic `run_001`, public
+MinION `run_002`, 237,262 positive reads). That public file also contains a
+440-positive-read run, rendered with exact points, plus 719 zero lengths overall.
+Combined reports do not overlay unrelated physical instruments.
+
+| Structural measure | Synthetic before /after | Public MinION dense run before /after |
+| --- | ---: | ---: |
+| HTML bytes | 3,750,635 /3,833,803 | 4,029,279 /4,273,832 |
+| JSON bytes | 2,464,591 /9,568,380 | 2,493,902 /9,830,305 |
+| Source elements (HTMLParser) | 58,168 /39,820 | 57,396 /40,302 |
+| SVG roots | 27 /27 | 33 /33 |
+| SVG circles, whole report | 19,386 /8,860 | 18,395 /8,495 |
+| Embedded PNG images | 0 /2 | 0 /2 |
+| Compressed PNG bytes, both images | 0 /436,942 | 0 /590,328 |
+
+Full-count coverage costs an extra parse, bounded image memory, and larger JSON
+(exact sparse numeric pixel counts plus compressed images). HTML increases
+slightly while source element counts decrease. Counts are source structure,
+not post-pagination browser DOM. Chrome's actual synthetic report had **31,540**
+DOM elements after initialization at 1440 px; viewport/document widths were both
+1440. At 390 px the document also stayed within its viewport, with intentional
+chart/map scroll containers. Both MinION families and their legends rendered
+with JavaScript disabled. Both standalone SVGs displayed embedded rasters;
+all 26 exported SVGs parsed as XML without external references. Browser loading
+speed and browser RSS were not benchmarked.
+
+Synthetic input SHA-256:
+`0196b5b7cc4d22f3ef0133bcebd572db06a3d523f106a0641a2e81b9605ce61c`.
+Public MinION input SHA-256:
+`6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06`.
+All five actual-R population/axis/count checks passed, including no-events 1D2
+and exact small-input point preservation; existing scientific JSON is unchanged
+when only the old/new visualization payloads are excluded. #12's 18-case strict
+reference evidence was hash-checked unchanged, not rerun or reclassified.
