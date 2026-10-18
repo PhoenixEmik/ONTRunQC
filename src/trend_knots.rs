@@ -247,7 +247,7 @@ impl Selection {
                 continue;
             }
             for k in 0..K {
-                let rank = (self.counts[i] - 1) as f64 * k as f64 / (K - 1) as f64;
+                let rank = reference_rank(self.counts[i], k);
                 if self.indexes[i] == rank.floor() as u64 {
                     self.lower[i][k] = time;
                 }
@@ -262,8 +262,7 @@ impl Selection {
         std::array::from_fn(|i| {
             (self.counts[i] >= K as u64).then(|| {
                 std::array::from_fn(|k| {
-                    let fraction =
-                        ((self.counts[i] - 1) as f64 * k as f64 / (K - 1) as f64).fract();
+                    let fraction = reference_rank(self.counts[i], k).fract();
                     if self.lower[i][k] == self.upper[i][k] {
                         self.lower[i][k]
                     } else {
@@ -273,6 +272,12 @@ impl Selection {
             })
         })
     }
+}
+// Same type-7 quantiles, including the arithmetic order of R's seq()/quantile().
+// One-ulp knot differences can rotate cs's numerical null space.
+fn reference_rank(count: u64, k: usize) -> f64 {
+    let probability = k as f64 * (1.0 / (K - 1) as f64);
+    (1.0 + (count - 1) as f64 * probability) - 1.0
 }
 fn quantiles(entries: impl Iterator<Item = Entry>, counts: [u64; 3]) -> [Option<[f64; K]>; 3] {
     let mut selection = Selection::new(counts);
@@ -285,6 +290,27 @@ fn quantiles(entries: impl Iterator<Item = Entry>, counts: [u64; 3]) -> [Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn type7_arithmetic_matches_pinned_r_sequence_and_one_based_indices() {
+        // Actual R 4.4.1 quantile((0:5999)/3600, seq(0,1,length=10)).
+        let reference = [
+            0.0,
+            0.18515432098765433,
+            0.370_308_641_975_308_6,
+            0.555_462_962_962_962_9,
+            0.740_617_283_950_617_3,
+            0.9257716049382716,
+            1.1109259259259259,
+            1.2960802469135801,
+            1.4812345679012346,
+            1.666_388_888_888_889,
+        ];
+        let mut times = Times::default();
+        for i in 0..6000 {
+            times.add(i as f64 / 3600.0, 7).unwrap();
+        }
+        assert_eq!(times.finish().unwrap()[0].unwrap(), reference);
+    }
     #[test]
     fn exact_unique_cohort_quantiles_ignore_duplicates_and_input_order() {
         let mut times = Times::default();

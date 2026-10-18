@@ -267,6 +267,75 @@ def fitted_comparisons(reference, probe):
     return checks
 
 
+def gam_intermediate_comparisons(reference, probe):
+    """Validation-only common nodal coordinates, never compare unlike bases."""
+    def array(x): return x if isinstance(x,list) else [x] if x is not None else []
+    def transpose(a): return list(map(list,zip(*a)))
+    def multiply(a,b): return [[sum(x*y for x,y in zip(row,column)) for column in zip(*b)] for row in a]
+    def inverse(a):
+        n=len(a);a=[list(row)+[float(i==j) for j in range(n)] for i,row in enumerate(a)]
+        for i in range(n):
+            pivot=max(range(i,n),key=lambda j:abs(a[j][i]));a[i],a[pivot]=a[pivot],a[i]
+            scale=a[i][i]
+            if not scale: raise ValueError("singular reference nodal transform")
+            a[i]=[v/scale for v in a[i]]
+            for j in range(n):
+                if i!=j:
+                    f=a[j][i];a[j]=[x-f*y for x,y in zip(a[j],a[i])]
+        return [row[n:] for row in a]
+    sources={s["source_id"]:s for s in probe.get("reference_sources",[])}
+    checks=[]
+    def matrix(key, a,b,atol,rtol):
+        checks.append(comparison(key+".rows",len(a),len(b)))
+        for i,(r,p) in enumerate(zip(a,b)):
+            checks.append(comparison(f"{key}.{i}.columns",len(r),len(p)))
+            for j,(x,y) in enumerate(zip(r,p)):
+                checks.append(comparison(f"{key}.{i}.{j}",x,y,atol,rtol))
+    for plot in reference.get("plots",[]):
+        family=plot["file"].rsplit(".",1)[0]
+        if family not in ("length_by_hour","q_by_hour"):continue
+        combined=plot['directory']=='combinedQC'
+        predictions=iter(array(plot.get("smooth_predictions")))
+        panels={str(p['PANEL']):p for p in array(plot['panels'])}
+        legends=dict(zip(array(plot.get('colours')),array(plot.get('colour_labels'))))
+        for layer in plot['layers']:
+            if layer['stat']!='StatSmooth':continue
+            groups={}
+            for row in array(layer.get('data')):groups.setdefault((str(row['PANEL']),row['group']),[]).append(row)
+            for (panel,group),rows in groups.items():
+                r=next(predictions,None)
+                if not r or r.get('method')!='gam':continue
+                label=legends.get(rows[0].get('colour'));source=label if combined else plot['directory']
+                selected=(panels[panel].get('Q_cutoff') if combined else label)!='All reads'
+                quality=family=='q_by_hour'
+                candidates=sources.get(source,{}).get('gam_audit') or []
+                d=next((d for d in candidates if d['quality']==quality and d['population'].startswith('qscore')==selected and (not d['single'] if combined or selected or not quality else d['single'])),None)
+                key=f"gam.{plot['directory']}.{source}.{family}.{'selected' if selected else 'all'}"
+                if not d or not d.get('fit') or not r.get('audit'):
+                    checks.append(unverified(key,'Intermediate audit missing; enable PG_GAM_AUDIT.'));continue
+                ra=r['audit'];b=d['basis'];f=d['fit'];maximum=b['raw_eigenvalues'][-1]
+                raw=b['raw_penalty'];raw=[[(raw[i][j]+raw[j][i])/2 for j in range(10)] for i in range(10)]
+                matrix(key+'.raw_penalty',ra['raw_penalty'],raw,1e-12,1e-10)
+                matrix(key+'.second_derivatives',ra['second_derivatives'],b['second'],1e-12,1e-10)
+                if 'basis_at_predictions' in d:
+                    matrix(key+'.basis_at_predictions',ra['basis_at_predictions'],d['basis_at_predictions'],1e-12,1e-10)
+                for i,(rv,pv) in enumerate(zip(reversed(ra['raw_eigenvalues'][:8]),b['raw_eigenvalues'][2:])):
+                    checks.append(comparison(f'{key}.positive_eigenvalues.{i}',rv,pv,1e-12,1e-10))
+                ru=ra['raw_eigenvectors'];pu=b['shrink_eigenvectors']
+                rp=[[sum(ru[i][k]*ru[j][k] for k in [8,9]) for j in range(10)] for i in range(10)]
+                pp=[[sum(pu[i][k]*pu[j][k] for k in [0,1]) for j in range(10)] for i in range(10)]
+                matrix(key+'.null_projector',rp,pp,1e-11,1e-10)
+                matrix(key+'.normalized_shrink_penalty',[[v/maximum for v in row] for row in ra['shrink_penalty']],b['normalized_shrink_penalty'],1e-12,1e-10)
+                transform=inverse(ra['model_transform'])
+                xx=multiply(multiply(transpose(transform),ra['model_crossproduct']),transform)
+                matrix(key+'.nodal_crossproduct',xx,f['nodal_crossproduct'],1e-7,1e-10)
+                matrix(key+'.nodal_covariance',ra['nodal_covariance'],f['nodal_covariance'],1e-6,1e-6)
+                matrix(key+'.nodal_coefficients',ra['nodal_coefficients'],[[x] for x in f['nodal_coefficients']],1e-6,1e-6)
+                for name,rv,pv in [('normalized_lambda',r['smoothing_parameter']*maximum/ra['penalty_scale'],math.exp(f['log_lambda'])),('reml',ra['reml'],f['reml']),('edf',ra['edf'],f['edf']),('residual_variance',r['residual_variance'],f['residual_variance'])]:
+                    checks.append(comparison(key+'.'+name,rv,pv,1e-6,1e-6))
+    return checks
+
+
 def density_comparisons(reference,probe):
     checks=[];sources={s["source_id"]:s for s in probe.get("reference_sources",[])}
     def array(x): return x if isinstance(x,list) else [x] if x is not None else []
@@ -368,7 +437,7 @@ def main(argv=None):
         if result.returncode: raise RuntimeError(result.stderr)
         pg=json.loads((pgdir/"combined/report.json").read_text())
         probe=directory/"source-population.json"
-        probe_env=dict(os.environ,PG_PROBE_INPUTS=json.dumps(list(map(str,copied))),PG_PROBE_CUTOFF=str(cutoff),PG_PROBE_OUTPUT=str(probe),PG_PROBE_CURVES="1" if available else "0")
+        probe_env=dict(os.environ,PG_PROBE_INPUTS=json.dumps(list(map(str,copied))),PG_PROBE_CUTOFF=str(cutoff),PG_PROBE_OUTPUT=str(probe),PG_PROBE_CURVES="1" if available else "0",PG_GAM_AUDIT="1")
         checked=subprocess.run(["cargo","test","reference_probe::export_report","--","--ignored","--exact"],env=probe_env,capture_output=True,text=True,cwd=Path(__file__).resolve().parents[1])
         if checked.returncode: raise RuntimeError(checked.stderr)
         source_population=json.loads(probe.read_text())
@@ -409,7 +478,7 @@ def main(argv=None):
             for item in inventory:
                 if not item["labels"].get("x") or not item["labels"].get("y"):
                     checks.append(unverified(f"plot.{item['file']}.axes","Reference axis metadata missing; inspect inventory."))
-        report["cases"].append(dict(name=name,qscore_cutoff=cutoff,inputs=[dict(sha256=digest(p),bytes=p.stat().st_size) for p in paths],excluded_controls=excluded,reference_executed=available is not None,reference_completed=bool(reference is not None and returncode==0 and not reference.get("error")),reference_returncode=returncode,reference_capture_sha256=digest(capture) if capture.exists() else None,reference_environment=reference.get("session") if reference else None,checks=checks))
+        report["cases"].append(dict(name=name,qscore_cutoff=cutoff,inputs=[dict(sha256=digest(p),bytes=p.stat().st_size) for p in paths],excluded_controls=excluded,reference_executed=available is not None,reference_completed=bool(reference is not None and returncode==0 and not reference.get("error")),reference_returncode=returncode,reference_capture_sha256=digest(capture) if capture.exists() else None,reference_environment=reference.get("session") if reference else None,checks=checks,gam_diagnostics=gam_intermediate_comparisons(reference,source_population) if reference else []))
         save_comparison(output,report)
         print(name,dict(Counter(c["status"] for c in checks)),flush=True)
     statuses=save_comparison(output,report)

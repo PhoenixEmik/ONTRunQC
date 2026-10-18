@@ -151,6 +151,17 @@ pub struct Plan {
     combined_gam: bool,
 }
 impl Plan {
+    #[cfg(test)]
+    pub fn audit(&self) -> serde_json::Value {
+        serde_json::json!(self.datasets.iter().map(|d| {
+            serde_json::json!({"population":d.population,"quality":d.quality,"single":d.single,
+                "basis":d.basis.as_ref().map(|b| &b.audit),
+                "basis_at_predictions":d.basis.as_ref().map(|b|(0..80).map(|i|
+                    b.evaluate(d.tracker.min+(d.tracker.max-d.tracker.min)*i as f64/79.0)).collect::<Vec<_>>()),
+                "nodal_rhs":d.rhs,"nodal_yy":d.yy,
+                "fit":d.gam().map(|f| f.audit)})
+        }).collect::<Vec<_>>())
+    }
     pub fn add(&mut self, r: &Record<'_>, cutoff: f64) {
         if r.is_control {
             return;
@@ -188,7 +199,7 @@ impl Plan {
             }
         }
         Trends {
-            verification: "R_differential_partial; exact_unique_time_knots; singular_LOESS_and_null_space_orientation_require_verification",
+            verification: "R_differential_partial; canonical_cs_null_space; LOESS_intervals_unavailable",
             single,
             combined,
         }
@@ -356,56 +367,35 @@ impl Dataset {
             }
         }
         let centered_yy = (self.yy - n * ymean * ymean).max(0.0);
-        let objective = |log_lambda: f64| -> Option<(f64, [f64; K], f64)> {
-            let lambda = log_lambda.exp();
-            let mut a = xx;
-            for i in 0..K - 1 {
-                for j in 0..K - 1 {
-                    a[i][j] += lambda * penalty[i][j];
-                }
-            }
-            let (beta, logdet) = solve(a, rhs, K - 1)?;
-            let rss = (centered_yy - dot(&beta, &rhs)).max(1e-300);
-            let mut trace = 0.0;
-            for j in 0..K - 1 {
-                let mut e = [0.0; K];
-                e[j] = 1.0;
-                let inverse_column = solve(a, e, K - 1)?.0;
-                trace += dot(&inverse_column, &xx[j]);
-            }
-            let beta_penalty_beta: f64 = (0..K - 1)
-                .map(|i| {
-                    (0..K - 1)
-                        .map(|j| beta[i] * penalty[i][j] * beta[j])
-                        .sum::<f64>()
-                })
-                .sum();
-            // Analytical REML score avoids comparing nearly equal O(n) log
-            // likelihoods, whose roundoff moved the fitted smoothing parameter.
-            let score = (n - 1.0) * lambda * beta_penalty_beta.max(0.0) / rss - trace;
-            Some((
-                (n - 1.0) * (rss / (n - 1.0)).ln() + logdet - (K - 1) as f64 * log_lambda,
-                beta,
-                score,
-            ))
+        let reml = GaussianReml {
+            xx,
+            penalty,
+            rhs,
+            yy: centered_yy,
+            n,
+            scale: self.scale,
         };
-        let (mut lo, mut hi) = (-30.0, 30.0);
-        for _ in 0..60 {
-            let middle = (lo + hi) / 2.0;
-            if objective(middle)?.2 > 0.0 {
-                hi = middle;
-            } else {
-                lo = middle;
-            }
-        }
-        let optimum = (lo + hi) / 2.0;
-        let (_, beta, _) = objective(optimum)?;
+        let (optimum, optimized, _iterations) = if centered_yy > 0.0 {
+            reml.optimize().or_else(|| reml.profile_fallback())?
+        } else {
+            (
+                [30.0, 0.0],
+                RemlPoint {
+                    score: 0.0,
+                    gradient: [0.0; 2],
+                    hessian: [[0.0; 2]; 2],
+                    beta: [0.0; K],
+                },
+                0,
+            )
+        };
+        let beta = optimized.beta;
         let coefficients =
             std::array::from_fn(|i| ymean + (1..K).map(|a| q[i][a] * beta[a - 1]).sum::<f64>());
         let mut a = xx;
         for i in 0..K - 1 {
             for j in 0..K - 1 {
-                a[i][j] += optimum.exp() * penalty[i][j];
+                a[i][j] += optimum[0].exp() * penalty[i][j];
             }
         }
         let mut inverse = [[0.0; K]; K];
@@ -448,12 +438,275 @@ impl Dataset {
             .then_some(GamFit {
                 coefficients,
                 covariance,
+                #[cfg(test)]
+                audit: serde_json::json!({"n":self.n,"offset":self.offset,"response_scale":self.scale,
+                    "nodal_crossproduct":self.xx,"centered_crossproduct":xx,
+                    "centered_penalty":penalty,"centered_rhs":rhs,"centered_yy":centered_yy,
+                    "transform":q,"mean":mean,"log_lambda":optimum[0],"optimized_log_variance":optimum[1]+2.0*self.scale.ln(),
+                    "reml_gradient":optimized.gradient,"reml_hessian":optimized.hessian,"reml":optimized.score,"iterations":_iterations,"edf":edf,"residual_sum_squares":rss*self.scale*self.scale,
+                    "residual_variance":variance*self.scale*self.scale,
+                    "nodal_coefficients":coefficients.map(|v|v*self.scale+self.offset),
+                    "nodal_covariance":covariance.map(|r|r.map(|v|v*self.scale*self.scale))}),
             })
     }
 }
+// Gaussian identity-link REML only: one cs penalty and one estimated variance.
+// Match mgcv's joint log(lambda)/log(variance) Newton stopping rule; solving a
+// profiled score to machine precision gives different finite-tolerance curves.
+struct GaussianReml {
+    xx: Matrix,
+    penalty: Matrix,
+    rhs: [f64; K],
+    yy: f64,
+    n: f64,
+    scale: f64,
+}
+struct RemlPoint {
+    score: f64,
+    gradient: [f64; 2],
+    hessian: [[f64; 2]; 2],
+    beta: [f64; K],
+}
+impl GaussianReml {
+    fn profile_fallback(&self) -> Option<([f64; 2], RemlPoint, usize)> {
+        // Degenerate/noiseless responses can make the joint Hessian singular.
+        // Retain a finite profiled REML fit rather than losing existing views.
+        let at = |rho: f64| {
+            let mut a = self.xx;
+            for (i, row) in a.iter_mut().enumerate().take(K - 1) {
+                for (j, value) in row.iter_mut().enumerate().take(K - 1) {
+                    *value += rho.exp() * self.penalty[i][j];
+                }
+            }
+            let beta = solve(a, self.rhs, K - 1)?.0;
+            let rss = (self.yy - dot(&beta, &self.rhs)).max(1e-300);
+            let parameters = [rho, (rss / (self.n - 1.0)).ln()];
+            Some((parameters, self.evaluate(parameters)?))
+        };
+        let (mut lo, mut hi) = (-30.0, 30.0);
+        let left = at(lo)?;
+        let right = at(hi)?;
+        if left.1.gradient[0] >= 0.0 {
+            return Some((left.0, left.1, 0));
+        }
+        if right.1.gradient[0] <= 0.0 {
+            return Some((right.0, right.1, 0));
+        }
+        for _ in 0..60 {
+            let mid = (lo + hi) / 2.0;
+            if at(mid)?.1.gradient[0] > 0.0 {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        let result = at((lo + hi) / 2.0)?;
+        Some((result.0, result.1, 0))
+    }
+    fn evaluate(&self, parameters: [f64; 2]) -> Option<RemlPoint> {
+        let [rho, log_variance] = parameters;
+        let lambda = rho.exp();
+        let variance = log_variance.exp();
+        let mut a = self.xx;
+        for (i, row) in a.iter_mut().enumerate().take(K - 1) {
+            for (j, value) in row.iter_mut().enumerate().take(K - 1) {
+                *value += lambda * self.penalty[i][j];
+            }
+        }
+        let (beta, logdet) = solve(a, self.rhs, K - 1)?;
+        let rss = (self.yy - dot(&beta, &self.rhs)).max(1e-300);
+        let mut inverse = [[0.0; K]; K];
+        for j in 0..K - 1 {
+            let mut e = [0.0; K];
+            e[j] = 1.0;
+            let column = solve(a, e, K - 1)?.0;
+            for i in 0..K - 1 {
+                inverse[i][j] = column[i];
+            }
+        }
+        let h: Matrix = std::array::from_fn(|i| {
+            std::array::from_fn(|j| (0..K - 1).map(|k| inverse[i][k] * self.xx[k][j]).sum())
+        });
+        let trace: f64 = (0..K - 1).map(|i| h[i][i]).sum();
+        let trace2: f64 = (0..K - 1)
+            .map(|i| (0..K - 1).map(|j| h[i][j] * h[j][i]).sum::<f64>())
+            .sum();
+        let pb: [f64; K] = std::array::from_fn(|i| dot(&self.penalty[i], &beta));
+        let t = lambda * dot(&beta, &pb);
+        let u = lambda * lambda * dot(&pb, &solve(a, pb, K - 1)?.0);
+        let penalty_logdet = solve(self.penalty, [0.0; K], K - 1)?.1;
+        let score = 0.5
+            * (rss / variance
+                + (self.n - 1.0)
+                    * (log_variance + 2.0 * self.scale.ln() + (2.0 * std::f64::consts::PI).ln())
+                + self.n.ln()
+                + logdet
+                - (K - 1) as f64 * rho
+                - penalty_logdet);
+        let gradient = [
+            0.5 * (t / variance - trace),
+            0.5 * (self.n - 1.0 - rss / variance),
+        ];
+        let cross = -0.5 * t / variance;
+        let hessian = [
+            [0.5 * ((t - 2.0 * u) / variance + trace - trace2), cross],
+            [cross, 0.5 * rss / variance],
+        ];
+        (score.is_finite()
+            && gradient.iter().all(|g| g.is_finite())
+            && hessian.iter().flatten().all(|h| h.is_finite()))
+        .then_some(RemlPoint {
+            score,
+            gradient,
+            hessian,
+            beta,
+        })
+    }
+    fn optimize(&self) -> Option<([f64; 2], RemlPoint, usize)> {
+        let mut lambda = (0..K - 1).map(|i| self.xx[i][i]).sum::<f64>()
+            / (0..K - 1).map(|i| self.penalty[i][i]).sum::<f64>();
+        if !lambda.is_finite() || lambda <= 0.0 {
+            return None;
+        }
+        let fraction = |lambda: f64| {
+            (0..K - 1)
+                .map(|i| self.xx[i][i] / (self.xx[i][i] + lambda * self.penalty[i][i]))
+                .sum::<f64>()
+                / (K - 1) as f64
+        };
+        while fraction(lambda) > 0.4 {
+            lambda *= 10.0;
+            if !lambda.is_finite() {
+                return None;
+            }
+        }
+        while fraction(lambda) < 0.4 {
+            lambda /= 10.0;
+            if lambda == 0.0 {
+                return None;
+            }
+        }
+        let mut parameters = [lambda.ln(), (self.yy / self.n / 10.0).ln()];
+        let mut point = self.evaluate(parameters)?;
+        let scale =
+            |p: &RemlPoint, x: [f64; 2]| p.score.abs() + (x[1] + 2.0 * self.scale.ln()).abs();
+        let mut active = point
+            .gradient
+            .map(|g| g.abs() > scale(&point, parameters) * 1e-6);
+        if !active.iter().any(|v| *v) {
+            active = [true; 2];
+        }
+        for iteration in 0..200 {
+            if !active.iter().any(|v| *v) {
+                active[usize::from(point.gradient[1].abs() > point.gradient[0].abs())] = true;
+            }
+            let score_scale = scale(&point, parameters);
+            let (mut step, positive) = newton_step(point.gradient, point.hessian, active);
+            let maximum = step[0].abs().max(step[1].abs());
+            if maximum > 5.0 {
+                step = step.map(|v| v * 5.0 / maximum);
+            }
+            let grad_max = point.gradient[0].abs().max(point.gradient[1].abs());
+            if grad_max == 0.0 {
+                return Some((parameters, point, iteration));
+            }
+            let steepest = point.gradient.map(|g| -g / grad_max);
+            let trial = |step: [f64; 2]| -> Option<([f64; 2], RemlPoint, f64)> {
+                let x = std::array::from_fn(|i| parameters[i] + step[i]);
+                let p = self.evaluate(x)?;
+                let change = p.score - point.score;
+                let predicted = (0..2).map(|i| point.gradient[i] * step[i]).sum::<f64>()
+                    + 0.5
+                        * (0..2)
+                            .map(|i| {
+                                (0..2)
+                                    .map(|j| step[i] * point.hessian[i][j] * step[j])
+                                    .sum::<f64>()
+                            })
+                            .sum::<f64>();
+                let error = (predicted - change).abs()
+                    / (predicted.abs().max(change.abs()) + score_scale * 1e-6);
+                Some((x, p, error))
+            };
+            let mut candidate = trial(step)?;
+            let mut halves = 0;
+            let mut steepest_unused = true;
+            while (candidate.1.score >= point.score || candidate.2 >= 0.8) && halves < 30 {
+                if halves == 3 && iteration < 9 {
+                    let length = (step[0] * step[0] + step[1] * step[1]).sqrt().min(2.0);
+                    let norm = (steepest[0] * steepest[0] + steepest[1] * steepest[1]).sqrt();
+                    step = steepest.map(|v| v * length / norm);
+                    steepest_unused = false;
+                } else {
+                    step = step.map(|v| v / 2.0);
+                }
+                candidate = trial(step)?;
+                if halves > 4 {
+                    candidate.2 = 0.4;
+                }
+                if candidate.1.score < point.score && candidate.2 < 0.8 {
+                    break;
+                }
+                halves += 1;
+            }
+            if !positive && steepest_unused {
+                for k in 1..=40 {
+                    let alternate = trial(steepest.map(|v| v * 2.0_f64.powi(1 - k)))?;
+                    if alternate.2 < 0.8 && alternate.1.score <= candidate.1.score {
+                        candidate = alternate;
+                    } else if candidate.1.score < point.score
+                        && alternate.1.score > candidate.1.score
+                    {
+                        break;
+                    }
+                }
+            }
+            let change = (point.score - candidate.1.score).abs();
+            parameters = candidate.0;
+            point = candidate.1;
+            let score_scale = scale(&point, parameters);
+            active = std::array::from_fn(|i| {
+                point.gradient[i].abs() > score_scale * 1e-7
+                    || point.hessian[i][i].abs() > score_scale * 1e-7
+            });
+            if (positive
+                && change <= score_scale * 1e-6
+                && point.gradient.iter().all(|g| g.abs() <= score_scale * 5e-6))
+                || halves == 30
+            {
+                return Some((parameters, point, iteration + 1));
+            }
+        }
+        None
+    }
+}
+fn newton_step(g: [f64; 2], h: [[f64; 2]; 2], active: [bool; 2]) -> ([f64; 2], bool) {
+    if !active[0] || !active[1] {
+        let i = usize::from(!active[0]);
+        let mut step = [0.0; 2];
+        step[i] = -g[i] / h[i][i].abs();
+        return (step, h[i][i] > 0.0);
+    }
+    let angle = 0.5 * (2.0 * h[0][1]).atan2(h[0][0] - h[1][1]);
+    let (s, c) = angle.sin_cos();
+    let eigen = [
+        c * c * h[0][0] + 2.0 * c * s * h[0][1] + s * s * h[1][1],
+        s * s * h[0][0] - 2.0 * c * s * h[0][1] + c * c * h[1][1],
+    ];
+    let floor = eigen[0].abs().max(eigen[1].abs()) * f64::EPSILON.powf(0.7);
+    let a = -(c * g[0] + s * g[1]) / eigen[0].abs().max(floor);
+    let b = -(-s * g[0] + c * g[1]) / eigen[1].abs().max(floor);
+    (
+        [c * a - s * b, s * a + c * b],
+        eigen.iter().all(|e| *e > 0.0),
+    )
+}
+
 struct GamFit {
     coefficients: [f64; K],
     covariance: Matrix,
+    #[cfg(test)]
+    audit: serde_json::Value,
 }
 fn dot(a: &[f64; K], b: &[f64; K]) -> f64 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
@@ -490,6 +743,8 @@ struct Basis {
     knots: [f64; K],
     second: Matrix,
     penalty: Matrix,
+    #[cfg(test)]
+    audit: serde_json::Value,
 }
 impl Basis {
     #[allow(clippy::needless_range_loop)] // Column-wise tridiagonal solves share neighboring rows.
@@ -528,25 +783,63 @@ impl Basis {
         for i in 1..K - 2 {
             let off = widths[i] / 6.0;
             lower[i] = off / diagonal[i];
-            diagonal[i + 1] -= lower[i] * off;
+            diagonal[i + 1] = (-lower[i]).mul_add(off, diagonal[i + 1]);
         }
         let mut second = [[0.0; K]; K];
         for column in 0..K {
             let mut rhs: [f64; K] = std::array::from_fn(|i| difference[i][column]);
             for i in 2..K - 1 {
-                rhs[i] -= lower[i - 1] * rhs[i - 1];
+                rhs[i] = (-lower[i - 1]).mul_add(rhs[i - 1], rhs[i]);
             }
             second[K - 2][column] = rhs[K - 2] / diagonal[K - 2];
             for i in (1..K - 2).rev() {
-                second[i][column] = rhs[i] / diagonal[i] - lower[i] * second[i + 1][column];
+                second[i][column] =
+                    (-lower[i]).mul_add(second[i + 1][column], rhs[i] / diagonal[i]);
             }
         }
         let raw: Matrix = std::array::from_fn(|i| {
-            std::array::from_fn(|j| (1..K - 1).map(|k| difference[k][i] * second[k][j]).sum())
+            std::array::from_fn(|j| {
+                if i == 0 {
+                    difference[1][i] * second[1][j]
+                } else if i == K - 1 {
+                    difference[K - 2][i] * second[K - 2][j]
+                } else if i == 1 {
+                    second[1][j].mul_add(difference[1][i], second[2][j] * difference[2][i])
+                } else if i == K - 2 {
+                    second[K - 3][j].mul_add(
+                        difference[K - 3][i],
+                        second[K - 2][j] * difference[K - 2][i],
+                    )
+                } else {
+                    second[i + 1][j].mul_add(
+                        difference[i + 1][i],
+                        second[i - 1][j]
+                            .mul_add(difference[i - 1][i], second[i][j] * difference[i][i]),
+                    )
+                }
+            })
         });
         let penalty =
             std::array::from_fn(|i| std::array::from_fn(|j| (raw[i][j] + raw[j][i]) / 2.0));
-        let (eigen, vectors) = symmetric_eigen(penalty);
+        let (eigen, mut vectors) = symmetric_eigen(penalty);
+        // The mathematical null space is two-dimensional. Fix an explicit
+        // endpoint-zero linear / orthogonal constant convention; numerical
+        // sorting of roundoff-size eigenvalues rotates or swaps these axes.
+        // This matches the verified PromethION case, but not every pinned-R
+        // null-space ordering: those comparisons deliberately remain Partial.
+        let mut linear = knots.map(|x| x - knots[0]);
+        let linear_norm = dot(&linear, &linear).sqrt();
+        for v in &mut linear {
+            *v /= linear_norm;
+        }
+        let projection: f64 = linear.iter().sum();
+        let mut constant = linear.map(|v| 1.0 - projection * v);
+        let constant_norm = dot(&constant, &constant).sqrt();
+        for i in 0..K {
+            constant[i] /= constant_norm;
+            vectors[i][0] = constant[i];
+            vectors[i][1] = linear[i];
+        }
         let maximum = eigen[K - 1];
         if maximum <= 0.0 {
             return None;
@@ -565,6 +858,9 @@ impl Basis {
             knots,
             second,
             penalty,
+            #[cfg(test)]
+            audit: serde_json::json!({"knots":knots,"second":second,"raw_penalty":raw,
+                "raw_eigenvalues":eigen,"shrink_eigenvectors":vectors,"null_space_convention":"endpoint_zero_linear_high","normalized_shrink_penalty":penalty}),
         })
     }
     fn evaluate(&self, x: f64) -> [f64; K] {
@@ -922,6 +1218,114 @@ mod tests {
         eprintln!(
             "Actual R fitted values compared: {compared}; max absolute error: {maximum_error:e}"
         );
+    }
+    #[test]
+    fn actual_r_promethion_gam_endpoint_basis_and_uncertainty_regression() {
+        let golden: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/reference/gam-golden.json")).unwrap();
+        for case in golden["cases"].as_array().unwrap() {
+            let knots: [f64; K] = serde_json::from_value(case["knots"].clone()).unwrap();
+            let population = Population {
+                count: case["n"].as_u64().unwrap(),
+                min: knots[0],
+                max: knots[K - 1],
+                knots: Some(knots),
+                ..Population::default()
+            };
+            let selected = case["selected"].as_bool().unwrap();
+            let quality = case["quality"].as_bool().unwrap();
+            let mut dataset = Dataset::new(
+                if selected {
+                    "qscore_selected_summary_records"
+                } else {
+                    "all_summary_records"
+                },
+                population,
+                quality,
+                quality && !selected,
+            );
+            dataset.n = case["n"].as_u64().unwrap();
+            dataset.scale = case["scale"].as_f64().unwrap();
+            dataset.offset = case["offset"].as_f64().unwrap();
+            dataset.xx = serde_json::from_value(case["xx"].clone()).unwrap();
+            dataset.rhs = serde_json::from_value(case["rhs"].clone()).unwrap();
+            dataset.yy = case["yy"].as_f64().unwrap();
+            let basis = dataset.basis.as_ref().unwrap();
+            for (field, actual) in [
+                ("second", basis.second),
+                ("normalized_shrink_penalty", basis.penalty),
+            ] {
+                let reference: Matrix = serde_json::from_value(case[field].clone()).unwrap();
+                for (a, r) in actual.iter().flatten().zip(reference.iter().flatten()) {
+                    assert!(
+                        (a - r).abs() <= 1e-12 + 1e-10 * r.abs(),
+                        "{field}: {a} != {r}"
+                    );
+                }
+            }
+            let curve = dataset.fit(true);
+            let reference = case["points"].as_array().unwrap();
+            assert_eq!(curve.points.len(), 80);
+            for (point, row) in curve.points.iter().zip(reference) {
+                assert!((point.hours - row[0].as_f64().unwrap()).abs() < 1e-10);
+                for (actual, expected) in [
+                    Some(point.value),
+                    point.standard_error,
+                    point.lower,
+                    point.upper,
+                ]
+                .iter()
+                .zip(&row.as_array().unwrap()[1..])
+                {
+                    let (a, r) = (actual.unwrap(), expected.as_f64().unwrap());
+                    assert!(
+                        (a - r).abs() <= 1e-6 + 1e-6 * r.abs(),
+                        "quality={quality}, selected={selected}, time={}: {a} != {r}",
+                        point.hours
+                    );
+                }
+            }
+            if selected && !quality {
+                // Previously 11961.667995 bp versus actual R 11750.650904 bp.
+                let reference = 11750.65090436984_f64;
+                assert!((curve.points[79].value - reference).abs() <= 1e-6 + 1e-6 * reference);
+            }
+        }
+    }
+    #[test]
+    fn gaussian_reml_gradient_and_hessian_match_finite_differences() {
+        let xx = std::array::from_fn(|i| {
+            std::array::from_fn(|j| if i == j { 100.0 + i as f64 } else { 5.0 })
+        });
+        let penalty = std::array::from_fn(|i| {
+            std::array::from_fn(|j| if i == j { 1.0 + i as f64 } else { 0.05 })
+        });
+        let reml = GaussianReml {
+            xx,
+            penalty,
+            rhs: std::array::from_fn(|i| 3.0 + i as f64),
+            yy: 500.0,
+            n: 1500.0,
+            scale: 100.0,
+        };
+        let parameters = [2.0, -1.0];
+        let point = reml.evaluate(parameters).unwrap();
+        let step = 1e-4;
+        for i in 0..2 {
+            let mut left = parameters;
+            let mut right = parameters;
+            left[i] -= step;
+            right[i] += step;
+            let a = reml.evaluate(left).unwrap();
+            let b = reml.evaluate(right).unwrap();
+            assert!(((b.score - a.score) / (2.0 * step) - point.gradient[i]).abs() < 1e-5);
+            for j in 0..2 {
+                assert!(
+                    ((b.gradient[j] - a.gradient[j]) / (2.0 * step) - point.hessian[j][i]).abs()
+                        < 1e-5
+                );
+            }
+        }
     }
     fn population(n: usize) -> Population {
         let mut p = Population::default();

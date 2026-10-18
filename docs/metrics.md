@@ -602,7 +602,7 @@ Single-run Q fits exclude negative Q values to model upstream's pre-fit y scale
 limit; combined Q plots have no such limit.
 
 The largest All group selects LOESS below 1,000 observations, otherwise a cubic
-shrinkage regression spline (`cs`, k=10) with profiled Gaussian REML. Combined
+shrinkage regression spline (`cs`, k=10) with Gaussian REML. Combined
 selection uses the largest run/source across panels, so a small run can use LOESS
 alone and GAM in a collection. LOESS uses degree 2, span .75, tricube weights and
 a median-split interpolated surface (cell .2, padded range, vertex derivatives
@@ -613,11 +613,20 @@ neighborhoods use a direct minimum-norm solve, preserving responses with tiny
 weights that QR previously lost. Actual R goldens cover the four-read N50-tie
 and ultralong endpoint cases. GAM uses natural cubic basis functions, integrated
 second-derivative penalty, .1/.01 null-space shrinkage, a centered smooth and an
-unpenalized intercept. Its smoothing parameter uses the analytical profiled REML
-score. Penalty/null-space and REML numerical differences from mgcv remain Partial.
+unpenalized intercept. The two mathematical null directions use an explicit endpoint-zero linear /
+orthogonal constant convention, weighted .1/.01. R can swap these directions
+when sorting roundoff-size eigenvalues, so some shrinkage penalties remain
+different; this is explicitly Partial. Smoothing uses Gaussian joint Newton
+optimization of log(lambda) and log(variance), with analytical derivatives and
+the pinned mgcv initialization, step limits and stopping rule. Original response
+units enter the likelihood/convergence scale. Singular/noiseless optimization
+can fall back to a bracket-checked profiled REML fit; this does not claim complete
+mgcv behavior on degenerate data.
 
 Knots are exact type-7 quantiles of each population's **unique** start times,
-including endpoints; `exact_knots=true` and `knots_hours` expose the result. Knot
+including endpoints; `exact_knots=true` and `knots_hours` expose the result.
+R's probability/index arithmetic is retained because one-ulp changes can alter
+its numerical null-space ordering; the bounded sorting algorithm is unchanged. Knot
 selection uses at most 262,144 numeric (time, cohort-flags) elements (4 MiB) per
 tracker, then sorted temporary runs with deduplication and at most 64 merge readers.
 On disk each entry is 9 bytes before deduplication; intermediate merges require
@@ -649,9 +658,12 @@ constant intercepts, method selection, exact populations/knots, forced scratch
 merges, cleanup, unchanged QC metrics and deterministic reports. Five synthetic
 actual-R goldens verify 1,598 fitted values and 960 GAM uncertainty values at
 absolute 1e-6 + relative 1e-6. The 18-case paired run verifies all captured knots,
-but large public GAM predictions and bands still exceed tolerance; LOESS intervals
-remain unverified. See the parity matrix for errors, including the PromethION
-regression. Optional fitting is not yet full R parity.
+and all public PromethION/1D2 fitted values and GAM bands meet the point target.
+Four public PromethION aggregate-model snapshots guard the earlier 211 bp endpoint
+error and its uncertainty, without embedding reads. Some MinION selected/combined
+fits and some intermediate penalties still differ; LOESS intervals remain
+unavailable. See the parity matrix for measured errors and the R-only null-space
+sensitivity experiment. Optional fitting is not yet full R parity.
 
 ## Optional R-grid density estimates (#13)
 

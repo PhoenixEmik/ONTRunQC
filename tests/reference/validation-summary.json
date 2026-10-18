@@ -1,9 +1,9 @@
 {
   "reference_commit": "54485d586038d8ee36f168dd94f31c423f52f581",
   "reference_source_sha256": "841253a28a785b9efdc09c855c163646882e01152e26eda509adae2732c6651d",
-  "capture_script_sha256": "f0ea8abe8f0f21f0a2db2e1f1ddc8b70e30a4a55d9bb4d5ae7c7509585a40afe",
-  "poregauge_binary_sha256": "50bf419874c2616e2087bc78b527e63183ec19fbe40f9a65e6a6c9e70b1cace3",
-  "comparison_sha256": "d09b26688cfb9904a39041b1fd1b860e5afd015fa8bba871a2ad549970f65942",
+  "capture_script_sha256": "33e0b0f28dfff0d84bb8feedb4a516595b41a67f4882ff51b79602e56734c820",
+  "poregauge_binary_sha256": "2baa9ec70b376d48ddb29885e78fa9458275a632b9345c5d5f90bc3f210c1f96",
+  "comparison_sha256": "e56f71faf5c1db252d7714f4f7ef5d291b470430100d6a9cbfac24d3205c0501",
   "environment": {
     "r": "4.4.1",
     "ggplot2": "3.5.1",
@@ -398,16 +398,16 @@
       }
     ]
   },
-  "command": "python3 tests/minionqc_reference.py /path/to/pinned/minion_qc --execute-r --rscript /path/to/Rscript --output benchmark-results/issue12-paired --capture-only",
+  "command": "PG_GAM_AUDIT=1 python3 tests/minionqc_reference.py /path/to/pinned/minion_qc --execute-r --rscript /path/to/Rscript --output benchmark-results/gam-paired --capture-only",
   "case_count": 18,
   "reference_completed": 18,
   "suite_exit_code": 1,
   "status_counts": {
     "intentional_semantic_difference": 36,
-    "exact_match": 58763,
-    "rounding_tolerance": 49956,
+    "exact_match": 58864,
+    "rounding_tolerance": 54615,
     "upstream_minionqc_defect": 8954,
-    "suspected_poregauge_defect": 6302,
+    "suspected_poregauge_defect": 1542,
     "not_yet_verified": 112
   },
   "density": {
@@ -422,31 +422,34 @@
     "maximum_plotted_integral_absolute_error": 6.687583820053078e-11,
     "maximum_error_divided_by_reference_peak": 9.212027642994249e-08
   },
+  "unchanged_non_fit_checks": 92299,
   "unverified_reasons": {
     "Uncensored reference or Rust confidence intervals unavailable; no uncertainty match claimed.": 112
   },
   "previous_validation": {
-    "comparison_sha256": "2eaeeb47879578a1a5e808c23ea111ec7bf4c5aee8e0f77ea0decbf76d9a721d",
-    "poregauge_binary_sha256": "978d295e09ed5f16b6304924e529ff323074a3bea4e5081e36f6e822216e6bf9",
+    "comparison_sha256": "d09b26688cfb9904a39041b1fd1b860e5afd015fa8bba871a2ad549970f65942",
+    "poregauge_binary_sha256": "50bf419874c2616e2087bc78b527e63183ec19fbe40f9a65e6a6c9e70b1cace3",
     "status_counts": {
       "intentional_semantic_difference": 36,
-      "exact_match": 58185,
-      "rounding_tolerance": 45656,
+      "exact_match": 58763,
+      "rounding_tolerance": 49956,
       "upstream_minionqc_defect": 8954,
-      "suspected_poregauge_defect": 2400,
-      "not_yet_verified": 604
+      "suspected_poregauge_defect": 6302,
+      "not_yet_verified": 112
     },
-    "note": "Before exact knots / two-row LOESS / uncensored R predictions / GAM uncertainty; comparison scope differs."
+    "note": "Before explicit cs null-space convention and joint Gaussian REML Newton correction; same primary fitted/SE/bound tolerances."
   },
   "fitting": {
+    "status": "Partial",
     "failed_checks_by_field": {
-      "fitted": 1625,
-      "standard_error": 1435,
-      "lower": 1641,
-      "upper": 1601
+      "fitted": 390,
+      "standard_error": 381,
+      "lower": 381,
+      "upper": 390
     },
     "knot_coordinates_compared": 320,
-    "maximum_knot_absolute_error_hours": 1.4210854715202004e-14,
+    "maximum_knot_absolute_error_hours": 0.0,
+    "null_space_convention": "endpoint-zero linear eigenvector receives .1 times the smallest positive eigenvalue; orthogonal constant complement receives .01. Pinned R can swap these weights.",
     "uncertainty_convention": "GAM: pointwise 95% Bayesian normal, conditional on smoothing parameter; LOESS: unavailable.",
     "tolerance": {
       "hours_absolute": 1e-10,
@@ -454,9 +457,14 @@
       "knots_relative": 1e-12,
       "fitted_and_uncertainty_absolute": 1e-06,
       "fitted_and_uncertainty_relative": 1e-06
+    },
+    "intermediate_comparison_note": "Raw penalties/bases and eigenspace projectors in common nodal coordinates; model X crossproducts are transformed using the inverse of the knot lpmatrix; posterior covariance is transformed using the knot lpmatrix. Matrix diagnostics have separate per-scalar tolerances and never replace/widen curve tolerances.",
+    "intermediate_status_counts": {
+      "exact_match": 18114,
+      "rounding_tolerance": 30534,
+      "suspected_poregauge_defect": 1912
     }
   },
-  "unchanged_non_fit_checks": 92299,
   "cases": [
     {
       "name": "minion",
@@ -470,52 +478,64 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "f8bb3712cdb26bc3e8f0453a23e5f794d38c0136ab58828ad386c6b9eefe2e80",
+      "reference_capture_sha256": "6469550c120bf5d0e65c94ac169d47a6ecc3636373c6bfa65f9134b4884e5f16",
       "status_counts": {
         "intentional_semantic_difference": 3,
-        "exact_match": 2613,
-        "rounding_tolerance": 979,
+        "exact_match": 2634,
+        "rounding_tolerance": 1495,
         "upstream_minionqc_defect": 976,
-        "suspected_poregauge_defect": 1051
+        "suspected_poregauge_defect": 514
       },
       "failures_by_family": {
-        "fit": 1051
+        "fit": 514
       },
-      "maximum_fit_absolute_error": 2.350896982316044,
-      "failed_fit_values": 267,
+      "maximum_fit_absolute_error": 1.7154256188077852,
+      "failed_fit_values": 130,
       "maximum_errors_by_field": {
         "fitted": {
-          "metric": "fit.source_001.length_by_hour.All reads.0.fitted",
-          "reference": 21344.06284608871,
-          "poregauge": 21346.413743071025,
-          "absolute_difference": 2.350896982316044,
-          "relative_difference": 0.00011014290012488625,
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.fitted",
+          "reference": 23021.752152997884,
+          "poregauge": 23023.46757861669,
+          "absolute_difference": 1.7154256188077852,
+          "relative_difference": 7.451325196307455e-05,
           "status": "suspected_poregauge_defect"
         },
         "standard_error": {
           "metric": "fit.source_001.length_by_hour.Q>=7.79.standard_error",
           "reference": 1850.557633135447,
-          "poregauge": 1849.9862516210294,
-          "absolute_difference": 0.5713815144176806,
-          "relative_difference": 0.0003087618046510523,
+          "poregauge": 1850.0909187434859,
+          "absolute_difference": 0.46671439196120446,
+          "relative_difference": 0.00025220203013641803,
           "status": "suspected_poregauge_defect"
         },
         "lower": {
           "metric": "fit.source_001.length_by_hour.Q>=7.79.lower",
           "reference": 19394.725840736723,
-          "poregauge": 19397.671924350187,
-          "absolute_difference": 2.9460836134639976,
-          "relative_difference": 0.00015190127654581418,
+          "poregauge": 19397.35600975484,
+          "absolute_difference": 2.630169018117158,
+          "relative_difference": 0.0001356125907483954,
           "status": "suspected_poregauge_defect"
         },
         "upper": {
-          "metric": "fit.source_001.length_by_hour.All reads.0.upper",
-          "reference": 21767.565376033832,
-          "poregauge": 21770.120948846743,
-          "absolute_difference": 2.555572812911123,
-          "relative_difference": 0.00011740278569347117,
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.upper",
+          "reference": 26648.778465259045,
+          "poregauge": 26649.579147478544,
+          "absolute_difference": 0.8006822194984125,
+          "relative_difference": 3.004573813926331e-05,
           "status": "suspected_poregauge_defect"
         }
+      },
+      "intermediate_status_counts": {
+        "exact_match": 2214,
+        "rounding_tolerance": 3785,
+        "suspected_poregauge_defect": 321
+      },
+      "intermediate_failures_by_quantity": {
+        "normalized_shrink_penalty": 200,
+        "nodal_covariance": 102,
+        "nodal_coefficients": 15,
+        "normalized_lambda": 2,
+        "edf": 2
       }
     },
     {
@@ -530,52 +550,54 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "7503a72186f0d50b3914ca4d6e6cef3fc8e5b54b8f00168dd74fc36316b4da56",
+      "reference_capture_sha256": "e0ffae3a9876635e69e1ab2dc3a48f46f3ed22480ed1cefab18d5a55a576e11a",
       "status_counts": {
-        "exact_match": 15754,
-        "rounding_tolerance": 2503,
-        "upstream_minionqc_defect": 5610,
-        "suspected_poregauge_defect": 531
+        "exact_match": 15768,
+        "rounding_tolerance": 3020,
+        "upstream_minionqc_defect": 5610
       },
-      "failures_by_family": {
-        "fit": 531
-      },
-      "maximum_fit_absolute_error": 211.01709097690582,
-      "failed_fit_values": 129,
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 1.3421413314063102e-08,
+      "failed_fit_values": 0,
       "maximum_errors_by_field": {
         "fitted": {
-          "metric": "fit.source_001.length_by_hour.Q>=7.79.fitted",
-          "reference": 11750.65090436984,
-          "poregauge": 11961.667995346746,
-          "absolute_difference": 211.01709097690582,
-          "relative_difference": 0.017957906561451215,
-          "status": "suspected_poregauge_defect"
+          "metric": "fit.source_001.length_by_hour.All reads.16.fitted",
+          "reference": 8096.670043128247,
+          "poregauge": 8096.670043141668,
+          "absolute_difference": 1.3421413314063102e-08,
+          "relative_difference": 1.6576460745679066e-12,
+          "status": "rounding_tolerance"
         },
         "standard_error": {
           "metric": "fit.source_001.length_by_hour.Q>=7.79.standard_error",
           "reference": 708.1549793492298,
-          "poregauge": 685.8827957301669,
-          "absolute_difference": 22.272183619062957,
-          "relative_difference": 0.03145100192549706,
-          "status": "suspected_poregauge_defect"
+          "poregauge": 708.1549793476232,
+          "absolute_difference": 1.6066223906818777e-09,
+          "relative_difference": 2.268744042664656e-12,
+          "status": "rounding_tolerance"
         },
         "lower": {
-          "metric": "fit.source_001.length_by_hour.Q>=7.79.lower",
-          "reference": 10362.692649372644,
-          "poregauge": 10617.362418099976,
-          "absolute_difference": 254.66976872733176,
-          "relative_difference": 0.02457563659795984,
-          "status": "suspected_poregauge_defect"
+          "metric": "fit.source_001.length_by_hour.All reads.16.lower",
+          "reference": 7856.239710651644,
+          "poregauge": 7856.239710666054,
+          "absolute_difference": 1.4410034054890275e-08,
+          "relative_difference": 1.834215169803547e-12,
+          "status": "rounding_tolerance"
         },
         "upper": {
-          "metric": "fit.source_001.length_by_hour.Q>=7.79.upper",
-          "reference": 13138.609159367037,
-          "poregauge": 13305.973572593517,
-          "absolute_difference": 167.36441322647988,
-          "relative_difference": 0.012738366077900957,
-          "status": "suspected_poregauge_defect"
+          "metric": "fit.source_001.length_by_hour.All reads.16.upper",
+          "reference": 8337.10037560485,
+          "poregauge": 8337.100375617283,
+          "absolute_difference": 1.2432792573235929e-08,
+          "relative_difference": 1.4912609916051225e-12,
+          "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {
+        "exact_match": 2220,
+        "rounding_tolerance": 4100
+      },
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "short",
@@ -589,7 +611,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "59a69da397f36f5102f7606d3412d783b98ccb330cc6ef4007ab0d16f31a54cd",
+      "reference_capture_sha256": "28a63e855b8f317f3c3aa474e2f82c53d016102fb23ae7319db314cd71741fb3",
       "status_counts": {
         "intentional_semantic_difference": 4,
         "exact_match": 907,
@@ -609,7 +631,9 @@
           "relative_difference": 2.176605005847888e-15,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "1d2",
@@ -623,52 +647,60 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "47784afc91562252361d8ceba5c74f3baadfd381981ac7f5d14784028357bb0c",
+      "reference_capture_sha256": "935a47cf843bca1e5500c69ec2171068cf1496c31c98d2e20c7928821e1f1a2e",
       "status_counts": {
         "intentional_semantic_difference": 4,
-        "exact_match": 2562,
-        "rounding_tolerance": 1568,
-        "upstream_minionqc_defect": 948,
-        "suspected_poregauge_defect": 436
+        "exact_match": 2566,
+        "rounding_tolerance": 2000,
+        "upstream_minionqc_defect": 948
       },
-      "failures_by_family": {
-        "fit": 436
-      },
-      "maximum_fit_absolute_error": 0.19787907105137492,
-      "failed_fit_values": 101,
+      "failures_by_family": {},
+      "maximum_fit_absolute_error": 0.0006222096612873429,
+      "failed_fit_values": 0,
       "maximum_errors_by_field": {
         "fitted": {
           "metric": "fit.source_001.length_by_hour.All reads.0.fitted",
           "reference": 4033.9642008089736,
-          "poregauge": 4034.162079880025,
-          "absolute_difference": 0.19787907105137492,
-          "relative_difference": 4.9053254119531386e-05,
-          "status": "suspected_poregauge_defect"
+          "poregauge": 4033.9635785993123,
+          "absolute_difference": 0.0006222096612873429,
+          "relative_difference": 1.542427325365368e-07,
+          "status": "rounding_tolerance"
         },
         "standard_error": {
-          "metric": "fit.source_001.length_by_hour.All reads.0.standard_error",
-          "reference": 56.09760375092347,
-          "poregauge": 56.102145662255914,
-          "absolute_difference": 0.004541911332445636,
-          "relative_difference": 8.096444462426558e-05,
-          "status": "suspected_poregauge_defect"
+          "metric": "fit.source_001.length_by_hour.Q>=8.79.standard_error",
+          "reference": 101.53550113760555,
+          "poregauge": 101.53545133074435,
+          "absolute_difference": 4.9806861198931074e-05,
+          "relative_difference": 4.905364196846829e-07,
+          "status": "rounding_tolerance"
         },
         "lower": {
           "metric": "fit.source_001.length_by_hour.All reads.0.lower",
           "reference": 3924.0149178381644,
-          "poregauge": 3924.2038949265834,
-          "absolute_difference": 0.18897708841905114,
-          "relative_difference": 4.815911569550384e-05,
-          "status": "suspected_poregauge_defect"
+          "poregauge": 3924.014314465266,
+          "absolute_difference": 0.0006033728982401954,
+          "relative_difference": 1.537641703392423e-07,
+          "status": "rounding_tolerance"
         },
         "upper": {
           "metric": "fit.source_001.length_by_hour.All reads.0.upper",
           "reference": 4143.913483779783,
-          "poregauge": 4144.1202648334665,
-          "absolute_difference": 0.2067810536836987,
-          "relative_difference": 4.989994470036275e-05,
-          "status": "suspected_poregauge_defect"
+          "poregauge": 4143.912842733359,
+          "absolute_difference": 0.0006410464238797431,
+          "relative_difference": 1.5469589951357434e-07,
+          "status": "rounding_tolerance"
         }
+      },
+      "intermediate_status_counts": {
+        "exact_match": 2540,
+        "rounding_tolerance": 3239,
+        "suspected_poregauge_defect": 541
+      },
+      "intermediate_failures_by_quantity": {
+        "normalized_shrink_penalty": 400,
+        "nodal_covariance": 136,
+        "normalized_lambda": 4,
+        "edf": 1
       }
     },
     {
@@ -683,7 +715,7 @@
       "excluded_controls": 37,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "b9d5d9ba77763a06857c2a9b3097ee62ad0339be4d4a5b6ef355c187f24f206d",
+      "reference_capture_sha256": "10cb60705f7f248b2fa4f2653608dd991184cd37c739ae986a362bcacb7a04fb",
       "status_counts": {
         "intentional_semantic_difference": 5,
         "exact_match": 2095,
@@ -703,7 +735,9 @@
           "relative_difference": 5.603470569616093e-15,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "combined",
@@ -721,52 +755,64 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "c0546c7ab3e42abb86d22358d71354384157629cd2d3b9939d757af510fc9feb",
+      "reference_capture_sha256": "c7b9038a27c043043ce66b1e94699cdd58a3b3e78d247534a98ccdccaa30b9a1",
       "status_counts": {
         "intentional_semantic_difference": 5,
-        "exact_match": 6531,
-        "rounding_tolerance": 7201,
+        "exact_match": 6585,
+        "rounding_tolerance": 10403,
         "upstream_minionqc_defect": 1014,
-        "suspected_poregauge_defect": 4284
+        "suspected_poregauge_defect": 1028
       },
       "failures_by_family": {
-        "fit": 4284
+        "fit": 1028
       },
-      "maximum_fit_absolute_error": 7.44092888628802,
-      "failed_fit_values": 1128,
+      "maximum_fit_absolute_error": 1.7154256188077852,
+      "failed_fit_values": 260,
       "maximum_errors_by_field": {
         "fitted": {
-          "metric": "fit.source_002.length_by_hour.All reads.79.fitted",
-          "reference": 9262.436446787651,
-          "poregauge": 9269.87737567394,
-          "absolute_difference": 7.44092888628802,
-          "relative_difference": 0.0008033446630415093,
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.fitted",
+          "reference": 23021.752152997884,
+          "poregauge": 23023.46757861669,
+          "absolute_difference": 1.7154256188077852,
+          "relative_difference": 7.451325196307455e-05,
           "status": "suspected_poregauge_defect"
         },
         "standard_error": {
           "metric": "fit.source_001.length_by_hour.Q>=7.79.standard_error",
           "reference": 1850.557633135447,
-          "poregauge": 1849.9862516210294,
-          "absolute_difference": 0.5713815144176806,
-          "relative_difference": 0.0003087618046510523,
+          "poregauge": 1850.0909187434859,
+          "absolute_difference": 0.46671439196120446,
+          "relative_difference": 0.00025220203013641803,
           "status": "suspected_poregauge_defect"
         },
         "lower": {
-          "metric": "fit.source_002.length_by_hour.All reads.79.lower",
-          "reference": 8632.657712235949,
-          "poregauge": 8640.030738691898,
-          "absolute_difference": 7.373026455949002,
-          "relative_difference": 0.0008540853467986409,
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.lower",
+          "reference": 19394.725840736723,
+          "poregauge": 19397.35600975484,
+          "absolute_difference": 2.630169018117158,
+          "relative_difference": 0.0001356125907483954,
           "status": "suspected_poregauge_defect"
         },
         "upper": {
-          "metric": "fit.source_002.length_by_hour.All reads.79.upper",
-          "reference": 9892.215181339354,
-          "poregauge": 9899.724012655981,
-          "absolute_difference": 7.508831316627038,
-          "relative_difference": 0.0007590646967315951,
+          "metric": "fit.source_001.length_by_hour.Q>=7.79.upper",
+          "reference": 26648.778465259045,
+          "poregauge": 26649.579147478544,
+          "absolute_difference": 0.8006822194984125,
+          "relative_difference": 3.004573813926331e-05,
           "status": "suspected_poregauge_defect"
         }
+      },
+      "intermediate_status_counts": {
+        "exact_match": 9104,
+        "rounding_tolerance": 15534,
+        "suspected_poregauge_defect": 642
+      },
+      "intermediate_failures_by_quantity": {
+        "normalized_shrink_penalty": 400,
+        "nodal_covariance": 204,
+        "nodal_coefficients": 30,
+        "normalized_lambda": 4,
+        "edf": 4
       }
     },
     {
@@ -781,7 +827,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "539c60a4db422a2bbd560867ae9ffd672f05f5105d12cddc66e08b563a8dfed8",
+      "reference_capture_sha256": "05b40d2d6a426350bacc77edbfb082c0b1ad6593a255a99e746ae84cbfe77c16",
       "status_counts": {
         "intentional_semantic_difference": 11,
         "exact_match": 308,
@@ -801,7 +847,9 @@
           "relative_difference": 3.324833899815396e-16,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "n50-tie",
@@ -815,7 +863,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "b9215be0eca086d55697725e619906cb501719421569ece4a43135e19f927374",
+      "reference_capture_sha256": "9f97c731aa0bfcb37f73afcce269e1faa01c2c430af90ad7fcea40f831dce8de",
       "status_counts": {
         "exact_match": 494,
         "intentional_semantic_difference": 2,
@@ -834,7 +882,9 @@
           "relative_difference": 5.6843418860808e-16,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "ultralong-endpoint",
@@ -848,7 +898,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "f7340e6230369fd3608abc90350a7b56465f7386d309d4c7feffa60f4fdc8dba",
+      "reference_capture_sha256": "97db457df0b79ca69059d950c65b41731b42f392607fcb8de7fbfdd640ec6543",
       "status_counts": {
         "exact_match": 502,
         "upstream_minionqc_defect": 4,
@@ -867,7 +917,9 @@
           "relative_difference": 5.820766091346739e-16,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "fit-small",
@@ -881,7 +933,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "6764caedf2b529e094cae92dacd9c879d425392468779e132b0ba83cb00a2e9e",
+      "reference_capture_sha256": "b922d07099ffa8d5893a50000881796da902d140f3d1b4008bd04c11fbb1225e",
       "status_counts": {
         "exact_match": 334,
         "rounding_tolerance": 404,
@@ -900,7 +952,9 @@
           "relative_difference": 1.5047658092999599e-15,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "fit-large",
@@ -914,48 +968,58 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "8c5738bbbda1999eead953ffe87773d987eebdd9abf380d31f7a06ff8707e278",
+      "reference_capture_sha256": "a7065d68bfced35312953295eae180db17998869331f2060b5631ee284d849f6",
       "status_counts": {
-        "exact_match": 319,
-        "rounding_tolerance": 1423,
+        "exact_match": 327,
+        "rounding_tolerance": 1415,
         "upstream_minionqc_defect": 8
       },
       "failures_by_family": {},
-      "maximum_fit_absolute_error": 6.692701617794228e-06,
+      "maximum_fit_absolute_error": 6.074630846342188e-06,
       "failed_fit_values": 0,
       "maximum_errors_by_field": {
         "fitted": {
           "metric": "fit.source_001.length_by_hour.Q>=7.79.fitted",
           "reference": 891.9970763353069,
-          "poregauge": 891.9970830280085,
-          "absolute_difference": 6.692701617794228e-06,
-          "relative_difference": 7.503053311890455e-09,
+          "poregauge": 891.9970824099378,
+          "absolute_difference": 6.074630846342188e-06,
+          "relative_difference": 6.810146588483546e-09,
           "status": "rounding_tolerance"
         },
         "standard_error": {
           "metric": "fit.source_001.length_by_hour.Q>=7.0.standard_error",
           "reference": 0.9619409085802247,
-          "poregauge": 0.9619410006491145,
-          "absolute_difference": 9.206888973434246e-08,
-          "relative_difference": 9.5711585725397e-08,
+          "poregauge": 0.9619409950750855,
+          "absolute_difference": 8.649486071821144e-08,
+          "relative_difference": 8.991702083433941e-08,
           "status": "rounding_tolerance"
         },
         "lower": {
           "metric": "fit.source_001.length_by_hour.Q>=7.79.lower",
           "reference": 889.9534578576602,
-          "poregauge": 889.9534645308037,
-          "absolute_difference": 6.6731435026667896e-06,
-          "relative_difference": 7.498306168426728e-09,
+          "poregauge": 889.9534639127029,
+          "absolute_difference": 6.055042717889592e-06,
+          "relative_difference": 6.803774584421065e-09,
           "status": "rounding_tolerance"
         },
         "upper": {
           "metric": "fit.source_001.length_by_hour.Q>=7.79.upper",
           "reference": 894.0406948129537,
-          "poregauge": 894.0407015252134,
-          "absolute_difference": 6.712259732921666e-06,
-          "relative_difference": 7.507778753097998e-09,
+          "poregauge": 894.0407009071727,
+          "absolute_difference": 6.094218974794785e-06,
+          "relative_difference": 6.816489462003499e-09,
           "status": "rounding_tolerance"
         }
+      },
+      "intermediate_status_counts": {
+        "exact_match": 2036,
+        "rounding_tolerance": 3876,
+        "suspected_poregauge_defect": 408
+      },
+      "intermediate_failures_by_quantity": {
+        "normalized_shrink_penalty": 400,
+        "normalized_lambda": 4,
+        "reml": 4
       }
     },
     {
@@ -970,7 +1034,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "47ef024f9a5b776462ec288e33d8a8b9c7e2541ad3a2ebc7ed2ef9626cf5be29",
+      "reference_capture_sha256": "69c4ce54a0e7efe6b237537a2a0717dc9b57f6b1ffc569755c19d0be57a93c29",
       "status_counts": {
         "exact_match": 76,
         "rounding_tolerance": 6,
@@ -979,7 +1043,9 @@
       "failures_by_family": {},
       "maximum_fit_absolute_error": null,
       "failed_fit_values": 0,
-      "maximum_errors_by_field": {}
+      "maximum_errors_by_field": {},
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "density-multimodal",
@@ -997,7 +1063,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "bd2a84732698db57c698c0d903fd2da82822ea4d8630b4648815d43a6a0626b4",
+      "reference_capture_sha256": "d64eab4ddda9b64afec3b36c41eaa42f607014bebd8ef20cf2670e1c5e870bb8",
       "status_counts": {
         "exact_match": 4671,
         "rounding_tolerance": 6308,
@@ -1016,7 +1082,9 @@
           "relative_difference": 1.2508641272019175e-15,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "density-skewed",
@@ -1034,7 +1102,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "0aeb327cc09f33f83fb3df76c04d3544c735bcfa72637a7fa130aadab4d16e09",
+      "reference_capture_sha256": "903632d3334487a94cb98ec844834ad7af47394a8f554f931e8232b330782a3c",
       "status_counts": {
         "exact_match": 4435,
         "rounding_tolerance": 6542,
@@ -1053,7 +1121,9 @@
           "relative_difference": 1.0222610114682417e-15,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "density-constant",
@@ -1071,7 +1141,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "8e22ed8f061ae6934bba1236d8f1745145769aed71919d7c3f1e6903a38a88f7",
+      "reference_capture_sha256": "bcd6e697f3038669e0d71ab65c593e76814d7e9c8d5ec2b3de181e3975484b8d",
       "status_counts": {
         "exact_match": 5461,
         "upstream_minionqc_defect": 8,
@@ -1090,7 +1160,9 @@
           "relative_difference": 1.4210854715201993e-15,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "density-near",
@@ -1108,7 +1180,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "cc0c6f9d64d4639883c41dded77bf726b41b90cf0aba91dd65533e7719522b46",
+      "reference_capture_sha256": "e262eaeb18dd66adff4d67a0a9696effd8a9f899b88d0e353dba24546d126b35",
       "status_counts": {
         "exact_match": 4537,
         "rounding_tolerance": 6442,
@@ -1127,7 +1199,9 @@
           "relative_difference": 2.4725113673091006e-15,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "density-outliers",
@@ -1145,7 +1219,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "208d7f7841792949345f28e09a5a897689e0dabda6c9b6176fe0d3bb197b129b",
+      "reference_capture_sha256": "5fa4284cac8e30c65f62233bb5ddf1b35adb8f5c02072f0c101801486936161b",
       "status_counts": {
         "exact_match": 4395,
         "rounding_tolerance": 6580,
@@ -1164,7 +1238,9 @@
           "relative_difference": 1.6415593658823546e-15,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     },
     {
       "name": "density-singleton",
@@ -1182,7 +1258,7 @@
       "excluded_controls": 0,
       "reference_completed": true,
       "reference_returncode": 0,
-      "reference_capture_sha256": "5c5e81b9b23ebfca802bcb21c31ed434d525a8697708f3db8331a63dd9d20179",
+      "reference_capture_sha256": "242bce5512572275c9b2848fa79b16cfe9dc63fccbb24975ab3ec4c212e22539",
       "status_counts": {
         "exact_match": 2769,
         "rounding_tolerance": 2766,
@@ -1202,23 +1278,55 @@
           "relative_difference": 5.578472438417888e-16,
           "status": "rounding_tolerance"
         }
-      }
+      },
+      "intermediate_status_counts": {},
+      "intermediate_failures_by_quantity": {}
     }
   ],
-  "limitations": [
-    "Suite exit 1: 1625 fitted values and 4677 GAM uncertainty values still exceed tolerance; #12 remains Partial/open.",
-    "Exact knots agree with R; GAM penalty/null-space orientation and REML residual differences are not fully isolated.",
-    "PromethION maximum fitted length error regressed from 70.144151 bp to 211.017091 bp; not accepted as parity.",
-    "112 LOESS confidence-band comparisons remain unverified; no uncertainty parity claimed for LOESS.",
-    "All 92299 non-fit checks are unchanged from the previous paired execution, including core/channel/density results.",
-    "Capture-only executes actual upstream YAML and ggplot layers without PDF files; a separate earlier short case generated 11 PDFs.",
-    "No private PBM95914 raw summary was reprocessed.",
-    "Native transitive packages are recorded, not claimed identical to the dated optional Docker snapshot.",
-    "No large-data memory/CPU benchmark performed; exact time sorting adds bounded RAM and temporary disk I/O."
-  ],
+  "cs_sensitivity": {
+    "r": "4.4.1",
+    "mgcv": "1.9.1",
+    "observations": 131847,
+    "cutoff": 7,
+    "baseline_prediction": 23021.75215299753,
+    "baseline_linear_high": false,
+    "perturbations": [
+      {
+        "knot_index": 3,
+        "epsilon_multiplier": -2,
+        "maximum_knot_difference_hours": 1.3322676295501878e-15,
+        "maximum_raw_penalty_difference": 5.329070518200751e-15,
+        "linear_high": true,
+        "prediction": 23023.467578831947,
+        "prediction_difference": 1.7154258344162372
+      },
+      {
+        "knot_index": 7,
+        "epsilon_multiplier": -1,
+        "maximum_knot_difference_hours": 1.7763568394002505e-15,
+        "maximum_raw_penalty_difference": 1.5543122344752192e-15,
+        "linear_high": true,
+        "prediction": 23023.467578832024,
+        "prediction_difference": 1.7154258344926347
+      }
+    ],
+    "script_sha256": "62410175309e46752a636de65f4cd231effef9f4966e31cf8f79d4c85281e999",
+    "note": "Independent actual R/mgcv perturbation experiment; not substituted into original reference comparisons or accepted as a match."
+  },
   "final_binary_recheck": {
-    "sha256": "44a107f292b9f36c8656dd715f37d5e9dc9722e89771e0951644b48649f65f38",
-    "case_count": 18,
-    "release_json_and_reference_populations": "Numerically identical after final nonfinite-uncertainty guard; reused unchanged actual R captures. R was not executed again for this final guard."
-  }
+    "sha256": "2baa9ec70b376d48ddb29885e78fa9458275a632b9345c5d5f90bc3f210c1f96",
+    "note": "Final binary rerun on all 18 identical inputs after finite-initializer guards and caption changes; numerical JSON/curves unchanged. Reused unchanged actual R captures; R was not executed a second time for this recheck.",
+    "case_count": 18
+  },
+  "limitations": [
+    "Suite exit 1: 1542 primary GAM point/uncertainty comparisons still fail; #12 remains Partial/open.",
+    "390 fitted, 381 standard-error, 381 lower-bound and 390 upper-bound failures belong to the MinION Q-selected population and combined-context repetitions.",
+    "PromethION and 1D2 fitted/SE/bound checks pass; some 1D2 and synthetic large-fit intermediate shrinkage penalties still differ, so curve tolerance success is not full model equivalence.",
+    "Rust uses a deterministic null-space convention instead of reproducing backend-specific near-zero eigenvalue sorting; actual R sensitivity is measured, not used to excuse failed targets.",
+    "112 LOESS confidence-band availability checks remain unverified. Degenerate profiled-fallback behavior is not claimed equivalent to mgcv.",
+    "All 92299 non-fit checks match the preceding actual paired execution; no core/channel/KDE changes.",
+    "No private PBM95914 raw summary or full-run benchmark was reprocessed.",
+    "Native transitive packages/BLAS are recorded, not claimed identical to the optional Docker snapshot.",
+    "No new Rust dependency, per-read data representation or runtime R requirement."
+  ]
 }

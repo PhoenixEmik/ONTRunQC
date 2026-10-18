@@ -126,73 +126,100 @@ values, metadata, panels, axes and legends were generated without PDF rendering.
 A separate short run generated **11 actual PDF figures**. The file-population
 probe preserves upstream grouping without changing production run identity.
 
-The full comparison is `benchmark-results/issue12-paired/comparison.json`.
+The full comparison is `benchmark-results/gam-paired/comparison.json`.
 The committed [machine-readable summary](../tests/reference/validation-summary.json)
 records input/source/capture/binary hashes, checked versions, per-case completion,
 counts and maximum errors. Run instructions are in the
 [reference README](../tests/reference/README.md). Cases checkpoint independently;
 wrong versions fail preflight and unavailable/partial R output never fabricates
-comparisons. Eight Python harness tests pass; Rust checks pass (31 unit +83
+comparisons. Nine Python harness tests pass; Rust checks pass (34 unit +83
 integration tests, one optional probe ignored), including release build. Desktop
 Chrome inspection confirmed the offline GAM ribbons; mobile rendering was not
 rechecked in this mathematical correction.
 
 | Final check classification | Count |
 | --- | ---: |
-| Exact match | 58,763 |
-| Within declared tolerance | 49,956 |
+| Exact match | 58,864 |
+| Within declared tolerance | 54,615 |
 | Intentional semantic difference | 36 |
 | Proved upstream defect | 8,954 |
-| Suspected PoreGauge defect | **6,302** |
+| Suspected PoreGauge defect | **1,542** |
 | Not yet verified | **112** |
 
-**The suite returns 1, not success.** All 6,302 suspected differences are GAM
-fits/uncertainty (#12): 1,625 fitted values, 1,435 standard errors, 1,641 lower and
-1,601 upper bounds. The 112 unverified checks are LOESS confidence bands. Newly
-captured uncensored predictions and pointwise bands expand the comparison scope;
-the total failure count is **not directly comparable** to the previous 2,400
-fitted-value failures. All 92,299 non-fit checks, including scalar/channel/density
-checks, are unchanged. Upstream count and ultralong endpoint defects require
-independent numerical proof; execution completion does not establish parity.
+**The suite returns 1, not success.** Remaining failures are 390 fitted values,
+381 standard errors, 381 lower and 390 upper bounds: **1,542**, down from 6,302
+under the same point tolerances. They occur in the MinION Q-selected population
+and its duplicated combined-context plots. The 112 unverified checks remain
+LOESS confidence-band availability checks. All **92,299 non-fit checks** match
+the preceding paired run exactly, including core statistics, channels and KDE.
+Intermediate checks record 48,648 matches/tolerant matches and **1,912 failures**
+separately in `gam_diagnostics`;
+they do not disappear into a changed primary pass count.
 
 ## Fitted time trends (#12): Partial
 
-Existing unsmoothed 15-minute means are unchanged. Optional individual-read fits
-follow pinned ggplot2 method selection: largest group across panels, LOESS below
-1,000, otherwise cubic-shrinkage `cs` (k=10) with REML. Single Q plots model the
-upstream pre-fit nonnegative y limit; combined Q plots retain signed observations.
+Existing unsmoothed 15-minute means and core JSON meanings are unchanged. Optional
+raw-read fits retain ggplot2's method/population/grouping rules and exact bounded
+unique-time knot selection. The follow-up diagnoses two independent causes:
 
-The follow-up replaces the 4,096-time approximation with **exact unique-time
-quantiles** using a bounded numeric buffer and temporary merge runs. All 320
-captured knot coordinates agree with R (maximum error 1.421e-14 hours). Every
-read still contributes to sufficient statistics. Scratch requirements/cleanup
-are described in [metrics](metrics.md#provisional-individual-read-fits-12).
-Natural cubic penalties use original hour units; analytical REML scores avoid
-comparing almost-equal large likelihoods. GAM posterior covariance now supplies
-pointwise 95% Bayesian normal bands; LOESS bands remain unavailable.
+1. **The cs null space.** Raw natural cubic bases, second derivatives, positive
+   eigenvalues, null-space projectors and design crossproducts agree. After
+   assigning unequal .1/.01 shrinkage weights, numerical eigenvalue ordering can
+   swap the two null directions. The preceding PromethION selected penalty
+   differed by 2.113e-6 after normalization, despite raw-matrix differences around
+   2e-16. Rust now specifies an endpoint-zero linear direction and its orthogonal
+   constant complement, with .1/.01 weights respectively. This is deterministic,
+   but **is not identical to every pinned-R numerical ordering**.
+2. **Finite-tolerance REML optimization.** mgcv jointly optimizes log(lambda) and
+   log(variance); the old profiled bisection sought a more accurate stationary
+   point, which differs from mgcv's returned finite-iteration result. The focused
+   Gaussian Newton implementation uses analytical gradients/Hessians, original
+   response-unit likelihoods, mgcv initialization, step limits, backtracking and
+   score-scaled stopping conditions. Gaussian posterior covariance uses the
+   final RSS/(n−edf), matching mgcv's postprocessing, rather than optimized REML
+   variance. A bracket-checked profiled fallback retains finite noiseless views;
+   full degenerate-fit parity is not claimed.
 
-A direct minimum-norm solution for two-active-row singular LOESS neighborhoods
-preserves tiny weighted responses lost by QR. Four-read N50-tie and ultralong
-cases now have **zero fitted-value failures** (104 each previously). Five
-[synthetic R goldens](../tests/reference/trends-golden.json) cover small/irregular
-LOESS, 1,500-read GAM, zero/cutoff and both four-read boundaries: **1,598 fitted
-values** (max error 6.693e-6), plus **960 GAM uncertainty values**, within absolute
-1e-6 + relative 1e-6. Exact synthetic TSV bytes and capture hashes are retained.
+No fitted-value corrections or wider tolerances are used. The existing sorting/
+scratch algorithm is unchanged. Only type-7 arithmetic order was aligned with
+R's `seq()` and one-based interpolation indices; all 320 captured knot coordinates
+now match exactly. Fused multiply-adds reproduce the pinned natural-cubic kernel's
+single-rounding operations. Tests cover R's exact synthetic knot arithmetic,
+analytical REML derivatives, existing synthetic goldens and four public PromethION
+aggregate models (no sequencing records/identifiers stored).
 
-| Public case | Previous max fitted length error (bp) | Current (bp) |
+| Public case | Before this correction: max fitted length error (bp) | After (bp) |
 | --- | ---: | ---: |
-| MinION | 1,465.274586 | 2.350897 |
-| PromethION | 70.144151 | **211.017091** |
-| 1D2 | 63.111216 | 0.197879 |
-| Combined | 1,465.274586 | 7.440929 |
+| MinION | 2.350897 | **1.715426** |
+| PromethION | 211.017091 | **1.342e-8** |
+| 1D2 | 0.197879 | **0.000622210** |
+| Combined | 7.440929 | **1.715426** |
 
-The PromethION endpoint is a measured **regression**, not an accepted equivalence.
-Knot accuracy alone does not establish fitted-curve parity. Remaining GAM
-penalty/null-space orientation and REML behavior need further numerical work;
-these residual causes are not fully isolated. The eigensolver differs from
-mgcv/LAPACK. Public short/RNA LOESS and all synthetic finite fitted values meet
-the target. #12 remains **Partial/open**, including public GAM bands and LOESS
-uncertainty. No private PBM95914 input was reprocessed.
+All PromethION and 1D2 predicted points, standard errors and bounds meet the
+unchanged absolute 1e-6 + relative 1e-6 target. The original problematic endpoint
+is R **11750.65090436984 bp**; its regression test uses the same tolerance.
+Passing curves alone do not prove penalty equivalence: some 1D2 and synthetic large-fit
+shrinkage matrices still differ, with sufficiently weak effects to pass the
+point target. MinION selected fits and combined comparisons remain outside it.
+
+**Independent R sensitivity evidence:** using the public MinION Q≥7 subset,
+changing one knot by **1.776e-15 hours** changes the raw penalty by **1.554e-15**,
+swaps the numerical null directions and changes the R endpoint by **1.715426 bp**
+(23021.752153 →23023.467579). This reproduces the residual discrepancy within R
+itself. Run `tests/reference/cs_sensitivity.R` as documented in the reference
+README. This is evidence of numerical instability, **not acceptance of an
+unmatched original-reference prediction**. Emulating a particular BLAS/eigensolver's
+roundoff is not a portable mathematical null-space definition. #12 stays open.
+
+`capture.R` records raw/shrunk penalties, eigenstructure, second derivatives,
+80-point design values, model transforms/crossproducts, coefficients, covariance,
+REML score/optimizer diagnostics, edf and uncensored predictions/SEs. Comparisons
+transform model crossproducts/covariance to common nodal coordinates; they never
+compare unlike spline parameterizations or sign-dependent null eigenvectors.
+GAM bands are pointwise 95% normal intervals as verified against
+`ggplot2:::predictdf.glm`; LOESS uses a t distribution with fitted df and remains
+unavailable in Rust. No private PBM95914 run was reprocessed. No new dependency
+or benchmark claim was introduced.
 
 ## R-grid densities (#13): Complete within declared tolerances
 

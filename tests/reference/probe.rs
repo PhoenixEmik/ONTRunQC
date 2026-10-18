@@ -69,7 +69,12 @@ fn export_report() {
                 plan.add(&record, cutoff);
                 source.add(&record).unwrap();
             }
-            sources.push(serde_json::json!({"source_id":format!("source_{:03}",i+1),"fitted_trends":plan.finish(), "density":source.finish(None).unwrap().minionqc_density}));
+            let audit = if std::env::var_os("PG_GAM_AUDIT").is_some() {
+                plan.audit()
+            } else {
+                serde_json::Value::Null
+            };
+            sources.push(serde_json::json!({"source_id":format!("source_{:03}",i+1),"gam_audit":audit,"fitted_trends":plan.finish(), "density":source.finish(None).unwrap().minionqc_density}));
         }
     }
     report["reference_sources"] = serde_json::json!(sources);

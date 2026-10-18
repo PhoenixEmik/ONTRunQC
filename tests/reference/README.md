@@ -95,11 +95,46 @@ re-runs parsing/fitting and compares all 1,598 finite fitted values and 960
 large-case GAM uncertainty values at the same tolerance. It is not evidence
 that the other paired cases pass. The latest paired run is recorded in
 `validation-summary.json`; the full ignored report is
-`benchmark-results/issue12-paired/comparison.json`. Its exit 1 reflects remaining
-public GAM mismatches, including a measured PromethION endpoint regression.
+`benchmark-results/gam-paired/comparison.json`. Its exit 1 reflects remaining
+MinION selected/combined fits. The PromethION endpoint regression is corrected.
 
 `density-golden.json` contains 24 synthetic series (22 finite curves and two
 singleton unavailable states), exact observations, actual layer coordinates and
 traced bandwidths, reference versions and capture hashes. Identical All/Q curves
 are stored once. Rust tests check all 11,264 density points, domains, bandwidths,
 integrals and peaks. Full paired results still include the distinct All/Q series.
+
+
+GAM intermediate capture includes natural-cubic F/S, raw eigenvectors/values,
+shrunk penalties, prediction design values, model-to-nodal transforms, model
+crossproducts, REML/optimizer diagnostics, edf, residual variance, coefficients
+and posterior covariance. The harness enables the validation-only Rust audit;
+`gam_diagnostics` compares equivalent nodal quantities separately from primary
+plot checks. Null eigenspaces are compared by projectors, not arbitrary signed
+vectors. Diagnostic matrix tolerances are stated per scalar in the report;
+existing curve/SE/bound tolerances remain absolute 1e-6 + relative 1e-6.
+
+`gam-golden.json` stores only aggregate sufficient statistics from the public
+upstream PromethION example (input/capture hashes included), plus actual R
+basis/penalty/prediction values for four models. It contains no individual reads,
+research/sample identifiers or private inputs. Attribution: public examples from
+Rob Lanfear's MinIONQC repository at the pinned commit (MIT licensed). A native
+Rust test reconstructs the model and checks the formerly 211 bp endpoint,
+all fitted values and uncertainties. Analytical REML derivatives also have an
+independent finite-difference test.
+
+Reproduce the remaining null-space sensitivity using the same public MinION file
+copied by the paired suite (existing pinned R installation, no new environment):
+
+```sh
+/path/to/Rscript tests/reference/cs_sensitivity.R \
+  benchmark-results/gam-paired/minion/inputs/source_001/sequencing_summary.txt \
+  7 benchmark-results/cs-sensitivity.json
+```
+
+This changes only test knot coordinates, never the normal reference run. It shows
+that R itself can swap .1/.01 null directions after an approximately 1e-15-hour
+perturbation. The canonical Rust convention is deterministic; mismatches with the
+original R result remain failures. No sensitivity result is used to widen target
+tolerances or declare issue #12 complete. The committed validation summary retains
+these measurements and the original-reference discrepancy counts.

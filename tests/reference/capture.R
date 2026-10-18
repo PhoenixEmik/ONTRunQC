@@ -21,6 +21,35 @@ plots <- list()
 problems <- character()
 density_calls <- list()
 smooth_calls <- list()
+audit_errors <- character()
+gam_audit <- function(model, prediction) {
+  knots <- unname(model$smooth[[1]]$xp)
+  raw <- mgcv::smoothCon(mgcv::s(x, bs="cr", k=10),
+    data=data.frame(x=knots), knots=list(x=knots), absorb.cons=FALSE,
+    scale.penalty=FALSE)[[1]]
+  shrink <- mgcv::smoothCon(mgcv::s(x, bs="cs", k=10),
+    data=data.frame(x=knots), knots=list(x=knots), absorb.cons=FALSE,
+    scale.penalty=FALSE)[[1]]
+  transform <- predict(model, newdata=data.frame(x=knots), type="lpmatrix")
+  inverse <- solve(transform)
+  penalty <- matrix(0,10,10)
+  penalty[2:10,2:10] <- model$smooth[[1]]$S[[1]]
+  eig <- eigen(raw$S[[1]], symmetric=TRUE)
+  list(raw_penalty=raw$S[[1]], second_derivatives=t(matrix(raw$F,10,10)),
+    shrink_penalty=shrink$S[[1]],
+    raw_eigenvalues=eig$values, raw_eigenvectors=eig$vectors,
+    model_transform=unname(transform), model_penalty=penalty,
+    model_crossproduct=crossprod(model$R),
+    basis_at_predictions=unname(mgcv::PredictMat(raw,data.frame(x=prediction$x))),
+    coefficients=unname(model$coefficients), covariance=unname(model$Vp),
+    nodal_coefficients=unname(transform %*% model$coefficients),
+    nodal_covariance=unname(transform %*% model$Vp %*% t(transform)),
+    effective_nodal_penalty=t(inverse) %*% penalty %*% inverse,
+    penalty_scale=model$smooth[[1]]$S.scale,
+    reml=unname(model$gcv.ubre), edf=sum(model$edf),
+    residual_sum_squares=model$deviance,
+    optimizer=model$outer.info)
+}
 record_smooth <- function(model, prediction) {
   if (is.null(prediction)) return(invisible(NULL))
   smooth_calls[[length(smooth_calls)+1L]] <<- list(
@@ -28,6 +57,8 @@ record_smooth <- function(model, prediction) {
     knots=if(inherits(model,"gam")) model$smooth[[1]]$xp else NULL,
     smoothing_parameter=if(inherits(model,"gam")) unname(model$sp) else NULL,
     residual_variance=if(inherits(model,"gam")) model$sig2 else model$s^2,
+    audit=if(inherits(model,"gam")) tryCatch(gam_audit(model,prediction),
+      error=function(e) { audit_errors <<- c(audit_errors,conditionMessage(e)); NULL }) else NULL,
     observations=if(inherits(model,"gam")) length(model$y) else model$n,
     data=prediction)
 }
@@ -88,6 +119,7 @@ if (!is.null(dataset)) for (label in unique(as.character(dataset$Q_cutoff))) {
 }
 summaries <- list.files(opt$output.dir, pattern="^summary.yaml$", full.names=TRUE, recursive=TRUE)
 summary_values <- lapply(summaries, function(path) list(directory=basename(dirname(path)), data=yaml::read_yaml(path)))
+if (length(audit_errors)) error <- paste("Reference capture audit failed:",paste(audit_errors,collapse="; "))
 write_json(list(error=error,warnings=problems,session=capture.output(sessionInfo()),
   packages=as.data.frame(installed.packages()[,c("Package","Version")]),
   summaries=summary_values,populations=populations,channels=channels,plots=plots),

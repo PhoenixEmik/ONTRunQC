@@ -87,4 +87,24 @@ class NumericalLayers(unittest.TestCase):
         reference["plots"][0].pop("density_parameters")
         self.assertTrue(any(c["status"]=="not_yet_verified" for c in density_comparisons(reference,probe)))
 
+    def test_gam_audit_transforms_design_crossproducts_to_common_nodal_coordinates(self):
+        from minionqc_differential import gam_intermediate_comparisons
+        identity=[[float(i==j) for j in range(10)] for i in range(10)]
+        transform=[r[:] for r in identity];transform[0][1]=2
+        cross=[[sum(transform[k][i]*transform[k][j] for k in range(10)) for j in range(10)] for i in range(10)]
+        penalty=[[identity[i][j]*(i+1) for j in range(10)] for i in range(10)]
+        normalized=[[v/8 for v in row] for row in penalty]
+        ra=dict(raw_penalty=penalty,second_derivatives=identity,raw_eigenvectors=[list(reversed(r)) for r in identity],raw_eigenvalues=[8,7,6,5,4,3,2,1,0,0],shrink_penalty=penalty,model_transform=transform,model_crossproduct=cross,nodal_covariance=identity,nodal_coefficients=[[1] for _ in range(10)],penalty_scale=8,reml=1,edf=1)
+        reference=dict(plots=[dict(file='length_by_hour.pdf',directory='source_001',panels=[dict(PANEL='1')],colours=['indigo'],colour_labels=['All reads'],layers=[dict(stat='StatSmooth',data=[dict(PANEL='1',group=1,colour='indigo')])],smooth_predictions=[dict(method='gam',smoothing_parameter=1,residual_variance=1,audit=ra)])])
+        d=dict(quality=False,single=False,population='all_summary_records',basis=dict(raw_penalty=penalty,second=identity,raw_eigenvalues=[0,0,1,2,3,4,5,6,7,8],shrink_eigenvectors=identity,normalized_shrink_penalty=normalized),fit=dict(nodal_crossproduct=identity,nodal_covariance=identity,nodal_coefficients=[1]*10,log_lambda=0,reml=1,edf=1,residual_variance=1))
+        probe=dict(reference_sources=[dict(source_id='source_001',gam_audit=[d])])
+        checks=gam_intermediate_comparisons(reference,probe)
+        self.assertTrue(checks)
+        self.assertTrue(all(c['status']=='exact_match' for c in checks))
+        d['basis']['normalized_shrink_penalty'][0][0]+=.001
+        checks=gam_intermediate_comparisons(reference,probe)
+        failures=[c for c in checks if c['status']=='suspected_poregauge_defect']
+        self.assertTrue(failures)
+        self.assertTrue(all('.normalized_shrink_penalty.' in c['metric'] for c in failures))
+
 if __name__=="__main__": unittest.main()
