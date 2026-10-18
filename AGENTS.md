@@ -36,6 +36,8 @@ Render both formats from the final report model. Escape all input-derived HTML; 
 
 Use focused, imperative commits, e.g. `Add standalone HTML reports`. PRs should explain behavior changes, link relevant issues, report validation, and identify compatibility implications.
 
+After completing and validating requested work, push its commits to the current branch's configured upstream automatically, unless the user requests local-only changes. A separate push request is not required.
+
 ## Research Data & Performance
 
 Commit only synthetic fixtures. Keep research identifiers, real reads, credentials, and identifying reports out of Git. Build output, `qc_results/`, and `benchmark-results/` are ignored. Inputs are uncompressed TSV; multi-input routing groups known run IDs and labels unknown sources explicitly. Modern and legacy schemas retain separate validation rules. Keep MinIONQC parity focused; do not add unrelated formats, large benchmarks, or speculative optimization. Physical maps require explicit layout selection. Channel activity and speed are summary-derived proxies, not pore health or occupancy. Optional template durations affect template-read speed eligibility only. 2D reads never borrow template-native filtering or events. MinION read-level plots must account for every eligible observation: exact points for small inputs, bounded full-count pixels plus actual extrema for dense inputs. Dense rendering rescans one run at a time; never reintroduce sampling or modify GAM/KDE reference evidence to validate display changes.
