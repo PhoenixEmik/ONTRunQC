@@ -2765,7 +2765,7 @@ fn output_compatibility_aliases_and_explicit_unsupported_formats_are_actionable(
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    for args in [["--format", "png"], ["--processors", "2"]] {
+    for args in [["--format", "webp"], ["--processors", "2"]] {
         let result = directory.run_with_args(&fixture("synthetic.tsv"), &args);
         assert!(!result.status.success());
         let error = String::from_utf8_lossy(&result.stderr);
@@ -3178,5 +3178,116 @@ fn minion_visualizations_keep_legacy_event_and_control_semantics() {
             0
         );
         assert!(directory.html().contains("No positive-length observations"));
+    }
+}
+
+#[test]
+#[cfg(feature = "static-figures")]
+fn six_static_formats_preserve_metrics_dimensions_names_and_palette() {
+    let directory = TestDirectory::new();
+    let data = format!("{HEADER}{ROW}");
+    let original = directory.analyze(&data);
+    let mut stems = None;
+    for (format, magic) in [
+        ("png", b"\x89PNG\r\n\x1a\n".as_slice()),
+        ("pdf", b"%PDF-"),
+        ("ps", b"%!PS-Adobe-3.0"),
+        ("jpeg", b"\xff\xd8\xff"),
+        ("tiff", b"II*\0"),
+        ("bmp", b"BM"),
+    ] {
+        let report = directory
+            .analyze_with_args(&data, &["--format", format, "--smallfigures", "--add-stat"]);
+        for key in [
+            "metrics",
+            "quality",
+            "diagnostics",
+            "comparison",
+            "time_bins",
+            "channels",
+            "distributions",
+        ] {
+            assert_eq!(report[key], original[key], "{format} changed {key}");
+        }
+        assert_eq!(report["presentation"]["export_format"], format);
+        assert!(directory.html().contains("Mean read Q-score"));
+        let folder = directory.0.join("output/figures");
+        let names: Vec<String> =
+            serde_json::from_slice(&fs::read(folder.join("manifest.json")).unwrap()).unwrap();
+        assert!(names.len() > 15);
+        let current: Vec<_> = names
+            .iter()
+            .map(|n| {
+                assert!(n.ends_with(&format!(".{format}")));
+                let bytes = fs::read(folder.join(n)).unwrap();
+                assert!(bytes.starts_with(magic), "bad {format} signature for {n}");
+                n.rsplit_once('.').unwrap().0.to_owned()
+            })
+            .collect();
+        assert_eq!(
+            current.len(),
+            current
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+        );
+        if let Some(expected) = &stems {
+            assert_eq!(&current, expected);
+        } else {
+            stems = Some(current);
+        }
+        let bytes = fs::read(folder.join(format!("length-counts.{format}"))).unwrap();
+        if matches!(format, "png" | "jpeg" | "tiff" | "bmp") {
+            let image = image::load_from_memory(&bytes).unwrap().into_rgb8();
+            assert_eq!(image.width(), 1417); // 120 mm at 300 DPI, rounded.
+            assert!(
+                image.pixels().any(|p| p
+                    .0
+                    .iter()
+                    .zip([69u8, 89, 152])
+                    .all(|(&a, b)| a.abs_diff(b) <= 5)),
+                "missing canonical indigo palette"
+            );
+        }
+    }
+}
+
+#[test]
+#[cfg(feature = "static-figures")]
+fn failed_static_destination_preserves_reports_figures_and_cleans_staging() {
+    let directory = TestDirectory::new();
+    directory.analyze(&format!("{HEADER}{ROW}"));
+    let folder = directory.0.join("output");
+    let old_json = fs::read(folder.join("report.json")).unwrap();
+    let old_html = fs::read(folder.join("report.html")).unwrap();
+    fs::create_dir(folder.join("figures")).unwrap();
+    fs::write(folder.join("figures/cumulative-yield.png"), "previous PNG").unwrap();
+    fs::create_dir(folder.join("figures/length-counts.png")).unwrap();
+    let input = directory.0.join("input.tsv");
+    let output = directory.run_with_args(&input, &["--format", "png"]);
+    assert!(!output.status.success());
+    assert_eq!(fs::read(folder.join("report.json")).unwrap(), old_json);
+    assert_eq!(fs::read(folder.join("report.html")).unwrap(), old_html);
+    assert_eq!(
+        fs::read_to_string(folder.join("figures/cumulative-yield.png")).unwrap(),
+        "previous PNG"
+    );
+    assert!(
+        fs::read_dir(&folder)
+            .unwrap()
+            .chain(fs::read_dir(folder.join("figures")).unwrap())
+            .all(|e| !e.unwrap().file_name().to_string_lossy().ends_with(".tmp"))
+    );
+}
+
+#[test]
+#[cfg(not(feature = "static-figures"))]
+fn minimal_build_rejects_static_formats_before_analysis() {
+    let directory = TestDirectory::new();
+    for format in ["png", "pdf", "ps", "jpeg", "tiff", "bmp"] {
+        let output = directory.run_with_args(&fixture("synthetic.tsv"), &["--format", format]);
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("--features static-figures"));
+        assert!(!directory.0.join("output").exists());
     }
 }

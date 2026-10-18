@@ -6,10 +6,41 @@ use crate::{
 };
 use clap::{Parser, Subcommand};
 
-#[derive(Clone, Copy, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, serde::Serialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
 pub enum FigureFormat {
     Html,
     Svg,
+    Png,
+    Pdf,
+    Ps,
+    Jpeg,
+    Tiff,
+    Bmp,
+}
+
+impl FigureFormat {
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Html => "html",
+            Self::Svg => "svg",
+            Self::Png => "png",
+            Self::Pdf => "pdf",
+            Self::Ps => "ps",
+            Self::Jpeg => "jpeg",
+            Self::Tiff => "tiff",
+            Self::Bmp => "bmp",
+        }
+    }
+
+    pub fn check_supported(self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            cfg!(feature = "static-figures") || matches!(self, Self::Html | Self::Svg),
+            "--format {} requires the static-figures Cargo feature; use an official full build or rebuild with --features static-figures",
+            self.extension()
+        );
+        Ok(())
+    }
 }
 
 #[derive(Parser)]
@@ -57,10 +88,10 @@ pub enum Command {
         /// Also emit a MinIONQC-shaped summary.yaml.
         #[arg(long)]
         yaml: bool,
-        /// Figure export: svg writes independent figures; raster/PDF/PS are unsupported.
+        /// Independent figure format; JSON and standalone HTML are always written.
         #[arg(short = 'f', long, value_enum, default_value = "html")]
         format: FigureFormat,
-        /// Compact publication dimensions for SVG figures.
+        /// Compact publication dimensions for independent figures.
         #[arg(short = 's', long, alias = "smallfigures")]
         small_figures: bool,
         /// Annotate length/Q histograms with existing exact summary statistics.

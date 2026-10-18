@@ -2,6 +2,8 @@ mod batch;
 mod cli;
 mod density;
 mod export;
+#[cfg(feature = "static-figures")]
+mod figure_render;
 mod html;
 mod input;
 mod layout;
@@ -48,6 +50,7 @@ fn run(cli: Cli) -> Result<()> {
             minionqc_trends,
             minionqc_density,
         } => {
+            format.check_supported()?;
             input.extend(input_paths);
             batch::analyze(
                 &input,
@@ -65,6 +68,11 @@ fn run(cli: Cli) -> Result<()> {
                     presentation: report::PresentationOptions {
                         write_yaml: yaml,
                         export_svg: matches!(format, cli::FigureFormat::Svg),
+                        export_format: (!matches!(
+                            format,
+                            cli::FigureFormat::Html | cli::FigureFormat::Svg
+                        ))
+                        .then_some(format),
                         small_figures,
                         add_stat,
                         mux_interval_hours: (muxes > 0.0).then_some(muxes),

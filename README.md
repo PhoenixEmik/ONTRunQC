@@ -6,7 +6,7 @@ modern MinKNOW/Dorado output. It streams TSV records, validates them, calculates
 run metrics, and writes deterministic JSON and standalone HTML reports.
 
 Current release: **[v0.4.0 — Advanced Read Quality Diagnostics](https://github.com/PhoenixEmik/PoreGauge/tree/v0.4.0)**.
-Unreleased development: **complete-data MinION visualization, issue #14** (on the 0.4.1 codebase).
+Unreleased development: **native static figure exports, issue #15** (on the 0.4.1 codebase).
 Strict GAM numerical parity remains Partial; existing reference evidence is preserved.
 
 PoreGauge is not a basecaller or a replacement for MinKNOW instrument monitoring.
@@ -334,9 +334,11 @@ canonical; YAML preserves unrounded per-read statistics and adds exact integer
 `total.bases`. All reads in YAML means positive-length basecalled reads. Original
 paths are replaced by generated source labels; run IDs remain reported metadata.
 
-`--format svg` additionally writes independent figures to `figures/`, with embedded
-styles and accessible titles. `manifest.json` lists figures from the current run;
-older unlisted figures are not deleted automatically. Optional YAML/SVG artifacts
+`--format svg|png|pdf|ps|jpeg|tiff|bmp` additionally writes independent figures
+to `figures/`; select one format per invocation, for example `--format pdf`.
+All use the same canonical SVG charts, including MinION embedded images.
+`manifest.json` lists figures from the current run; older unlisted files are not
+deleted automatically. Optional YAML/figure artifacts
 are refreshed only when requested. Standard widths are 180 mm,
 or 120 mm with `--smallfigures`; dense physical maps retain 320 mm for readable
 labels. Height follows each figure's aspect ratio. `--add-stat` annotates length
@@ -347,10 +349,29 @@ measured mux events. Default **0 disables markers**; positive intervals include
 run start and must generate at most 512 markers. Upstream's automatic/8-hour
 combined defaults are deliberately not inferred. Time statistics remain unchanged.
 
-PNG, PDF, PS, JPEG, TIFF and BMP figure export are **unsupported**. Native SVG
-avoids a font/rendering runtime; users may convert these files with their own
-scientific publishing tools. Browser printing is available but is not equivalent
-to exporting every individual figure in those formats. No converter is bundled.
+| Formats | Content and resolution |
+| --- | --- |
+| SVG | Editable vector/text, with original embedded MinION rasters. |
+| PDF | Vector paths and embedded selectable fonts; MinION rasters remain images. |
+| PNG, TIFF, BMP | Lossless 8-bit RGB at 300 DPI. |
+| JPEG | Quality 95 RGB at 300 DPI; inherently lossy. |
+| PS | Valid PostScript Level 3 with a lossless **raster-backed** 300-DPI page. |
+
+Transparent content is composited onto white for raster/PS output. Raster
+formats include density metadata; PDF/PS page bounds match the SVG's mm size.
+PS is not a vector replacement; use SVG/PDF when editability/scaling matters.
+Default/release builds need no browser, R, Ghostscript, system fonts or network
+for export. Open-licensed Liberation Sans is embedded for portable typography
+([font license](assets/fonts/LICENSE)). Figures are processed one at a time,
+with a 64-million-pixel allocation guard; large maps still require image memory.
+
+For a minimal JSON/HTML/SVG-only executable, build with
+`cargo build --release --locked --no-default-features`. Such builds reject the
+six conversion formats actionably; enable `--features static-figures` to restore
+them. Filenames/manifests and scientific JSON remain deterministic. PDF resource
+ordering can vary without changing its content, so PDF byte identity is not
+promised. See [export definitions](docs/metrics.md#native-static-figure-exports-15)
+and [executed decoder checks/measurements](docs/benchmark.md#native-static-figure-exports-15).
 
 Compatibility aliases include `-i/--input`, `-o/--outputdirectory`,
 `-q/--qscore_cutoff`, `-c/--combined-only`, `-s/--smallfigures`, `-a/--add-stat`,

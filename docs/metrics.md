@@ -641,17 +641,82 @@ observations sit at midpoints. Missing intervals break mean lines.
 `--add-stat` places exact-model mean length/N50 and mean Q annotations in the
 corresponding histogram SVGs. Display rounding/unit conversion is presentation
 only. `--format svg` exports every nonempty scientific SVG, with embedded styles,
-internal accessible titles and a current-file manifest. There is no external
-renderer or font dependency. Width is 180 mm, or 120 mm with `--smallfigures`;
+internal accessible titles and a current-file manifest. Width is 180 mm, or
+120 mm with `--smallfigures`;
 wide physical figures retain 320 mm. Height preserves aspect ratio. Empty figures
 stay explanatory states in HTML, rather than meaningless SVG files. Old SVGs not
 listed in a new manifest are retained, not silently removed.
 
 JSON, HTML and optional artifacts are all staged before per-file replacement;
 there is no atomic transaction across outputs or runs. Predictable failures clean
-staged files and preserve prior valid reports. PNG/PDF/PS/JPEG/TIFF/BMP conversions
-are not implemented. Browser printing does not establish figure-format parity.
+staged files and preserve prior valid reports. Native conversions are described
+below; they produce independent artifacts, not browser printouts.
 See [the parity matrix](minionqc-parity.md) for the full audit and tests.
+
+## Native static figure exports (#15)
+
+`--format png|pdf|ps|jpeg|tiff|bmp` writes every nonempty scientific figure, using
+the same self-contained SVG extraction as `--format svg`. JSON and HTML remain
+mandatory outputs. `presentation.export_format` is an additive, lowercase string
+only for these six formats; it is omitted for HTML/SVG. Existing `export_svg` and
+all scientific fields keep their meanings; schema version stays **1**. Strict
+unknown-field consumers need to accommodate this rendering metadata.
+
+Physical widths stay 180 mm /120 mm small mode /320 mm wide maps; heights preserve
+the canonical figure aspect ratio, captions, legends and statistical annotations.
+SVG CSS palette variables become equivalent literals, since SVG 1.1 processors
+do not implement browser custom properties. Data/axes/bin boundaries never change.
+
+- Rasterization: `usvg`/`resvg`, 96-DPI SVG unit parsing, then **300-DPI** output,
+  pixel dimensions rounded to nearest integer. White compositing and in-place
+  RGBA→RGB compaction avoid retaining a second full bitmap. PNG/TIFF/BMP are
+  lossless 8-bit RGB; JPEG is quality 95 and lossy. PNG/BMP store 11,811 pixels/m;
+  JPEG/TIFF store 300 pixels/inch. Colors follow the SVG's sRGB values; these
+  are not CMYK/prepress-color-managed outputs.
+- PDF: `svg2pdf` preserves paths and selectable, subsetted Liberation Sans text.
+  SVG 96-DPI units are converted to 72-point/inch pages. Existing embedded PNGs
+  remain raster images, losslessly encoded; vector export does not reconstruct
+  individual reads from pixel aggregation. PDF is not claimed to be PDF/A.
+- PS: a focused native PostScript **Level 3** image-page writer, using lossless
+  Flate/ASCIIHex RGB data. Physical `PageSize` and integer/HiRes bounding boxes
+  match the source SVG. The chosen SVG libraries have no PS writer; this
+  documented raster-backed approach avoids a second vector/font engine or
+  an external converter. All content is 300 DPI, including text; scaling is
+  resolution-limited. No disguised PDF/SVG payload or runtime Ghostscript.
+- Every converter processes only the current SVG. MinION's shared atlas is
+  decoded once, then losslessly cropped into equivalent channel tiles before
+  native rendering, preserving original geometry, alpha and all extrema.
+  This avoids repeatedly decoding/transforming the complete atlas for 512 uses.
+  Interpolation at tile boundaries can differ from a shared clipped image;
+  original atlas/count model and shared-atlas SVG representation remain unchanged.
+- Rendering rejects allocations above 64 million pixels, with SVG/PDF or small
+  mode suggested. This guard is not a whole-process RSS guarantee. Grids,
+  existing exact-statistics arrays, renderer trees and encoder buffers still
+  consume memory. Temporary bitmap/tree storage is released between figures;
+  all completed outputs remain staged on disk until publication.
+
+The default `static-figures` Cargo feature includes the Rust SVG/rendering and
+codec dependencies; their licenses are MIT/Apache-2.0-compatible. `image` is pinned
+to 0.25.9 to preserve Rust 1.85; resvg/usvg 0.45 and svg2pdf 0.13 share one parser.
+No Rayon/default image-format bundle, browser or C graphics/font library is
+required. Liberation Sans Regular/Bold 2.1.5 is bundled unmodified under SIL OFL
+1.1, with its license in `assets/fonts/` and release archives. Fonts are loaded
+from memory; no system-font discovery occurs. Minimal `--no-default-features`
+builds retain JSON/HTML/SVG and reject conversion requests before analysis.
+
+Figure names and manifest order are stable. Raster/PS payloads are reproducible
+with the locked renderer; PDF resources may be serialized in different orders,
+so byte-for-byte PDF identity is not guaranteed. This does not change scientific
+JSON, page geometry or plotted observations. JPEG quantization and PDF/raster
+font antialiasing differences are not numerical QC discrepancies.
+
+Unit/CLI tests decode raster formats, verify dimensions/density, embedded-image
+colors, white compositing, deterministic names and failure cleanup. The ignored
+`figure_render::tests::external_pdf_postscript_decoders` test uses actual Poppler
+and Ghostscript, and CI runs it explicitly. Optional `tests/static_exports.py`
+compares all six formats against canonical SVGs on synthetic and pinned public
+inputs, including fitted/combined charts and exact/dense MinION plots. It checks
+lossless RGB fidelity using independent decoders. See [executed measurements](benchmark.md#native-static-figure-exports-15).
 
 ## Provisional individual-read fits (#12)
 

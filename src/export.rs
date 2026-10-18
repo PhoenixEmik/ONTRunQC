@@ -1,4 +1,4 @@
-//! Focused YAML summary and standalone SVG exports; no external renderer/runtime.
+//! YAML projection and the canonical self-contained SVG figure stream.
 use crate::report::Report;
 use anyhow::{Context, Result, ensure};
 use serde_json::Value;
@@ -38,8 +38,8 @@ pub struct Figure {
 
 /// Extract only our renderer's complete SVG figures, never arbitrary input HTML.
 /// Shared classes/CSS remain embedded, and caption IDs become internal titles.
-pub fn figures(html: &str, small: bool) -> Result<Vec<Figure>> {
-    let mut figures = Vec::new();
+pub fn figures(html: &str, small: bool, mut emit: impl FnMut(Figure) -> Result<()>) -> Result<()> {
+    let css = figure_style();
     let mut remaining = html;
     while let Some(start) = remaining.find("<svg ") {
         remaining = &remaining[start..];
@@ -136,15 +136,31 @@ pub fn figures(html: &str, small: bool) -> Result<Vec<Figure>> {
         }
         let svg = format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{opening} xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}mm\" height=\"{height:.3}mm\" style=\"width:{width}mm;height:{height:.3}mm;min-width:0;max-width:none;font-family:Arial,sans-serif;background:white\"><title id=\"{label}\">{caption}</title><style><![CDATA[{}\n{extra_style}]]> </style><text x=\"20\" y=\"24\" style=\"font-size:16px;fill:#253047\">{caption}</text><g transform=\"translate(0 32)\">{}</g>{legend_svg}</svg>",
-            include_str!("report.css"),
+            css,
             &inline[opening_end + 1..inline.len() - 6]
         );
-        figures.push(Figure {
+        emit(Figure {
             name: format!("{id}.svg"),
             svg,
-        });
+        })?;
     }
-    Ok(figures)
+    Ok(())
+}
+
+// SVG 1.1 renderers do not implement CSS custom properties. Resolve our fixed
+// report palette to the same literals browsers compute, for every export format.
+fn figure_style() -> String {
+    let source = include_str!("report.css");
+    let root = source.split_once('{').unwrap().1.split('}').next().unwrap();
+    let mut css = source.to_owned();
+    for line in root.lines() {
+        if let Some((name, value)) = line.trim().split_once(':') {
+            if name.starts_with("--") {
+                css = css.replace(&format!("var({name})"), value.trim_end_matches(';'));
+            }
+        }
+    }
+    css
 }
 
 fn attribute<'a>(opening: &'a str, key: &str) -> Option<&'a str> {

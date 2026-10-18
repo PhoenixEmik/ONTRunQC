@@ -314,3 +314,94 @@ All five actual-R population/axis/count checks passed, including no-events 1D2
 and exact small-input point preservation; existing scientific JSON is unchanged
 when only the old/new visualization payloads are excluded. #12's 18-case strict
 reference evidence was hash-checked unchanged, not rerun or reclassified.
+
+
+## Native static figure exports (#15)
+
+Measured 2026-10-18 on macOS arm64, Rust 1.98.1 release, Python 3.15.0,
+ImageMagick 7.1.2-34, Poppler and Ghostscript 10.07.1. All figures use 300 DPI
+where rasterized. These are single local executions, including parsing, QC,
+JSON/HTML and every requested figure; decoder time is excluded. Cache state was
+not controlled. No private input or 11-GB benchmark was run.
+
+Reproduce with the locked build and the pinned public checkout (MinIONQC commit
+`54485d586038d8ee36f168dd94f31c423f52f581`):
+
+```sh
+cargo build --release --locked
+python3 tests/static_exports.py /path/to/minion_qc --gs /path/to/gs \
+  --output benchmark-results/static-exports
+# Optional small codec test, also executed in CI:
+cargo test --locked figure_render::tests::external_pdf_postscript_decoders -- --ignored --exact
+```
+
+The standard-library driver records child-specific `wait4` peak RSS, wall/user/
+system CPU, output bytes, binary hash, dimensions and decoded RGB hashes in
+ignored `measurements.json`. It requires actual independent decoders; a missing
+tool fails instead of marking verification successful. Decoder dependencies are
+not PoreGauge runtime dependencies.
+
+Cases: synthetic 120 records with PromethION-3000 maps, small figures, statistics
+and fitted curves (33 figures); combined 120+150 fictional records, Q-cutoff
+comparisons, reference-grid density and fits (27); public short MinION 99 summary
+records/98 basecalled reads (55 across individual+combined); public MinION
+238,421 records/237,702 basecalled reads (87 across two runs+combined). The last
+includes a 440-read exact-point run and a 237,262-read dense raster run.
+
+Each entry below is **wall seconds /peak RSS MiB**. The final column sums only
+requested figure bytes for the dense public case, excluding JSON/HTML.
+
+| Format | Synthetic | Combined | Short MinION | Dense MinION | Dense figure MiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| PNG | 1.059 /52.59 | 0.549 /29.28 | 1.841 /163.19 | 4.473 /216.33 | 10.94 |
+| PDF | 0.503 /26.88 | 0.260 /14.09 | 0.582 /20.14 | 1.611 /84.92 | 3.66 |
+| PS | 0.799 /52.88 | 0.371 /30.05 | 1.058 /164.94 | 3.095 /221.64 | 39.01 |
+| JPEG | 1.117 /52.59 | 0.573 /28.42 | 2.109 /162.61 | 4.722 /215.27 | 26.21 |
+| TIFF | 0.790 /50.88 | 0.373 /28.09 | 1.047 /163.41 | 2.940 /216.64 | 19.12 |
+| BMP | 0.945 /51.31 | 0.503 /28.31 | 1.599 /162.05 | 3.748 /214.42 | 737.36 |
+
+All **24 six-format executions and 78 representative decoder checks passed**.
+Complete manifests cover 1,212 figure files; scientific JSON is identical across
+formats after removing presentation controls. Checked families include standard
+histograms, fitted time series, 3,000-channel heatmaps, combined yield/density
+charts, and exact/dense MinION plots. Page/pixel dimensions, density metadata,
+selectable PDF text and embedded images passed. Ghostscript-decoded PS and
+TIFF/BMP match PNG RGB pixels exactly on checked figures; JPEG is intentionally
+lossy. PDF/PNG previews were visually inspected, including comparison with the
+existing pinned MinIONQC MinION figures. This verifies export fidelity, not
+pixel-identical ggplot2 rendering or resolution of #12's GAM differences.
+
+Small histograms are 120×72 mm (1,417×850 pixels); normal histograms 180×108 mm
+(2,126×1,276). MinION overview pages are 320×567.273 mm (3,780×6,700 pixels),
+retaining all 512 panels and legends. Wide maps retain their width in small mode.
+PDF/PS use matching physical page bounds. BMP is uncompressed and intentionally
+large; lossless PNG is usually the smaller raster choice. PDF preserves vector
+paths/text; PS is explicitly raster-backed at 300 DPI. JPEG quantization and PDF
+font antialiasing/resource order remain documented limitations.
+
+A directly observed export bottleneck was decoding/transforming the full MinION
+atlas for every clipped channel. On the same 150,002-read synthetic dense input,
+PNG export before/after lossless per-panel tile normalization took
+**175.539/2.611 s**, peak RSS **464.69/189.78 MiB**, user CPU
+**173.975380/2.051543 s**, system CPU **0.784322/0.050407 s**. All other PNGs and
+scientific JSON were byte-identical. Overview normalized pixel RMSE was
+**0.0017875**, caused by interpolation at tile edges; raw atlas values, counts,
+geometry and extrema are unchanged. This is a one-case measured correction,
+not a general throughput claim. The optional suite above measures the final
+path; reproducing the earlier path requires removing only that normalization.
+
+The macOS release executable measured 7,708,688 bytes with exports versus
+2,378,640 bytes using `--no-default-features`. Optional dependencies are pure
+Rust; bundled fonts total approximately 806 KiB, licensed under SIL OFL 1.1.
+The default backend was also cross-built successfully for
+`x86_64-unknown-linux-musl`: the resulting ELF had no interpreter, dynamic
+`NEEDED` entries or GLIBC version references. Local Linux execution was not
+available; CI builds and smoke-tests all six formats with musl, and the existing
+release workflow exercises packaged PNG export on Rocky Linux 8. Do not infer
+Rocky execution from a cross-build alone.
+
+The existing optional public-input scientific regression script also passed all
+five input families (short, PromethION, 1D2, direct RNA, multiple MinION files).
+The 18-case actual-R evidence, strict tolerances and GAM/KDE/MinION aggregation
+sources were hash-checked unchanged; the paired R suite was not rerun here.
+Issue #12 remains Partial with **1,542** strict primary GAM discrepancies.

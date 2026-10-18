@@ -44,6 +44,8 @@ pub struct Report {
 pub struct PresentationOptions {
     pub write_yaml: bool,
     pub export_svg: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub export_format: Option<crate::cli::FigureFormat>,
     pub small_figures: bool,
     pub add_stat: bool,
     pub mux_interval_hours: Option<f64>,
@@ -174,32 +176,49 @@ pub fn write(report: &Report, directory: &Path) -> Result<()> {
             },
         )?);
     }
-    if report.presentation.export_svg {
-        let figures = crate::export::figures(&rendered, report.presentation.small_figures)?;
+    if report.presentation.export_svg || report.presentation.export_format.is_some() {
+        let format = report
+            .presentation
+            .export_format
+            .unwrap_or(crate::cli::FigureFormat::Svg);
+        format.check_supported()?;
+        #[cfg(feature = "static-figures")]
+        let renderer = report
+            .presentation
+            .export_format
+            .map(|_| crate::figure_render::Renderer::new());
         let figures_directory = directory.join("figures");
         fs::create_dir_all(&figures_directory).context("cannot create figures directory")?;
-        for figure in &figures {
-            validate_extra_destination(&figures_directory, &figure.name)?;
+        let mut names = Vec::new();
+        crate::export::figures(&rendered, report.presentation.small_figures, |figure| {
+            let name = figure
+                .name
+                .replace(".svg", &format!(".{}", format.extension()));
+            validate_extra_destination(&figures_directory, &name)?;
             staged.push(StagedReport::prepare(
                 &figures_directory,
-                &figure.name,
+                &name,
                 |writer| {
+                    #[cfg(feature = "static-figures")]
+                    if let Some(renderer) = &renderer {
+                        return renderer
+                            .write(&figure.svg, format, writer)
+                            .with_context(|| format!("cannot render figure {name}"));
+                    }
                     writer
                         .write_all(figure.svg.as_bytes())
                         .context("cannot write SVG figure")
                 },
             )?);
-        }
+            names.push(name);
+            Ok(())
+        })?;
         validate_extra_destination(&figures_directory, "manifest.json")?;
         staged.push(StagedReport::prepare(
             &figures_directory,
             "manifest.json",
             |writer| {
-                serde_json::to_writer_pretty(
-                    writer,
-                    &figures.iter().map(|f| &f.name).collect::<Vec<_>>(),
-                )
-                .context("cannot write figure manifest")
+                serde_json::to_writer_pretty(writer, &names).context("cannot write figure manifest")
             },
         )?);
     }

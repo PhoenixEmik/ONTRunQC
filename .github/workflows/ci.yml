@@ -40,8 +40,29 @@ jobs:
       - name: Run tests
         run: cargo test --locked
 
+      - name: Check the minimal JSON/HTML/SVG build
+        run: cargo test --locked --no-default-features
+
+      - name: Install export validation and static Linux build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ghostscript poppler-utils musl-tools
+
+      - name: Decode native PDF and PostScript exports
+        run: cargo test --locked figure_render::tests::external_pdf_postscript_decoders -- --ignored --exact
+
       - name: Build release binary
         run: cargo build --release --locked
+
+      - name: Build and smoke-test static Linux exports
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          cargo build --release --locked --target x86_64-unknown-linux-musl
+          for format in png pdf ps jpeg tiff bmp; do
+            target/x86_64-unknown-linux-musl/release/poregauge analyze tests/fixtures/deep_qc.tsv \
+              --smallfigures --format "$format" --output "$RUNNER_TEMP/musl-$format"
+            test -s "$RUNNER_TEMP/musl-$format/figures/length-counts.$format"
+          done
 
   msrv:
     name: Rust 1.85 compatibility

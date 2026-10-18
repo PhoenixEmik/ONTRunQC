@@ -3,7 +3,8 @@
 Reference: [MinIONQC v1.4.1 source](https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R),
 README, options, `tests.R`, public YAML and example figures at commit `54485d5`.
 Statuses describe scientific functionality, not identical ggplot pixels.
-**Full format/rendering parity is not claimed.** JSON remains canonical.
+**Full MinIONQC numerical/CLI parity is not claimed.** JSON remains canonical;
+static format support does not imply identical ggplot pixels or vector PS.
 
 Validation keys below:
 
@@ -69,13 +70,13 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 | `--qscore_cutoff` / `-q` | Complete | Alias of `--qscore-cutoff`, default 7 inclusive; U cutoff boundary tests. Finite nonnegative cutoffs only. |
 | `--processors` / `-p` | Partial | Accepts 1; larger values fail explicitly. Processing remains sequential, no parallel speed parity. |
 | `--combined-only` / `-c` | Complete | Flag, skips individual outputs; U collection exports. |
-| `--smallfigures` / `-s` | Complete | 120 mm SVG width vs normal 180 mm; wide physical maps stay 320 mm; U export dimensions, V. Boolean flag instead of R logical value. |
+| `--smallfigures` / `-s` | Complete | 120 mm figure width vs normal 180 mm, all export formats; wide physical maps stay 320 mm; U export dimensions, V. Boolean flag instead of R logical value. |
 | `--muxes` / `-m` | Complete | Configured hour references, not events; default 0 disables, maximum 512 markers; U relative-coordinate/disable/error tests. R's inferred default and fixed combined 8h default are not assumed. |
 | `--add-stat` / `-a` | Complete | Exact-model mean length/N50 and mean Q on corresponding histograms; U SVG annotation/JSON consistency, V. Flag instead of R logical value. |
-| `--format` / `-f` | Partial | `html` default, `svg` adds independent figures. Unsupported values fail, never silently converted; U export/CLI tests. |
+| `--format` / `-f` | Complete | Default/release builds support HTML, SVG and all six native conversion formats. One format per invocation; unknown values fail. U format/manifest/decoder tests, optional export suite below. Minimal opt-out builds explicitly support only HTML/SVG. |
 | `summary.yaml` | Complete | Optional `--yaml`, MinIONQC-shaped All/Q sections, thresholds/ultralong; U YAML scalar/mapping parity/escaping/nulls, P canonical values. Intentional denominator/rounding differences below. |
 | Independent SVG figures | Complete | Current manifest, embedded CSS/title, mm dimensions; U export/offline/staging tests, V. No external fonts/scripts required. |
-| Independent PNG / PDF / PS / JPEG / TIFF / BMP | Missing | No bundled raster/document renderer. SVG is a lightweight intermediate; conversion is user's external publishing step. Browser printing is not figure-format parity. |
+| Independent PNG / PDF / PS / JPEG / TIFF / BMP | Complete | Actual native encodings from canonical SVG, including embedded MinION images; six-format CLI + independent decoder suite. PDF preserves vectors/text; PS is explicitly raster-backed Level 3 at 300 DPI. Lossless raster formats and PS decode to identical RGB in tested figures; JPEG is lossy. See #15 evidence below. |
 | HTML / JSON | Complete | PoreGauge additions; unchanged validated metrics, schema 1 additive fields; U deterministic/offline/escaping tests. No-JS mode retains all scientific plots/table data. |
 
 ## Scientific differences and evidence
@@ -98,8 +99,8 @@ stale (Q>=7 labels, Q8 invocation/results). This fast check did not execute R. T
 PBM95914 baseline was not rerun; its historical totals remain in metrics.md.
 
 Issues should remain open wherever their required acceptance criteria exceed
-these implemented, tested behaviors. Strict GAM smoothing differences and six
-static export formats still prevent an unqualified full-parity claim.
+these implemented, tested behaviors. Strict GAM smoothing and remaining CLI
+compatibility differences still prevent an unqualified full-parity claim.
 
 Earlier baseline checks (before #11–#13): rustfmt, Clippy with warnings denied, **17 unit +76
 integration tests**, and the locked release build. Existing JSON subtrees match
@@ -389,3 +390,33 @@ benchmark was performed. Added `png` and `base64` only for embedded-image encodi
 The 18-case R evidence, solver/KDE implementations and strict tolerances are
 unchanged. **#12 remains Partial/open, with 1,542 primary strict GAM differences**;
 this feature neither reclassifies them nor substitutes canonical-R targets.
+
+
+## Native independent figure formats (#15)
+
+The standard/default-feature build exports real PNG, PDF, PS, JPEG, TIFF and BMP
+files, incrementally from canonical SVGs. JSON/HTML/SVG and existing statistics
+are preserved. [Definitions and limitations](metrics.md#native-static-figure-exports-15)
+include physical sizes, 300-DPI metadata, white compositing, JPEG loss, vector
+PDF versus raster-backed Level-3 PS, PDF resource-order variation, bundled-font
+licensing and deliberately limited minimal builds. No browser/R/converter runtime.
+
+`tests/static_exports.py` is the optional reproducible decoder/measurement suite:
+
+```sh
+cargo build --release --locked
+python3 tests/static_exports.py /path/to/pinned/minion_qc --gs /path/to/gs
+```
+
+It requires ImageMagick 7, Poppler and Ghostscript **only for validation**. It
+checks complete manifests, unchanged scientific JSON, mm/pixel/page sizes and
+DPI; decodes histograms, raw-read fitted curves, physical channel heatmaps,
+combined yield/density/fitted comparisons, exact small MinION points and dense
+MinION PNG panels. PNG/TIFF/BMP and Ghostscript-decoded PS RGB values agree
+exactly on representative figures; PDF text remains selectable. Existing
+MinIONQC input/population/layout/bin/fit differences remain documented; exporting
+another format does not erase them. See [actual results](benchmark.md#native-static-figure-exports-15).
+
+#12 remains Partial/open. Its solver, null-space penalties, strict tolerances,
+KDE implementation and the 18-case evidence (including **1,542** strict GAM
+failures) are not modified or reclassified by this work. #16 is not implemented.

@@ -169,13 +169,15 @@ jobs:
           binary="target/$TARGET/release/poregauge"
           test "$("$binary" --version)" = "poregauge ${RELEASE_TAG#v}"
           "$binary" analyze tests/fixtures/deep_qc.tsv \
-            --flowcell-layout promethion-3000 --output "$RUNNER_TEMP/release-smoke"
+            --flowcell-layout promethion-3000 --format png --output "$RUNNER_TEMP/release-smoke"
           test -s "$RUNNER_TEMP/release-smoke/report.json"
           test -s "$RUNNER_TEMP/release-smoke/report.html"
+          test -s "$RUNNER_TEMP/release-smoke/figures/length-counts.png"
           package="poregauge-$RELEASE_TAG-$PACKAGE_PLATFORM"
           mkdir -p "dist/$package/docs"
           cp "$binary" README.md LICENSE "dist/$package/"
           cp docs/metrics.md "dist/$package/docs/"
+          cp assets/fonts/LICENSE "dist/$package/docs/FONT-LICENSE"
           COPYFILE_DISABLE=1 tar -czf "dist/$package.tar.gz" -C dist "$package"
 
       - name: Test packaged binary on Rocky Linux 8
@@ -197,9 +199,10 @@ jobs:
               cat /etc/os-release
               test "$(/package/poregauge --version)" = "poregauge ${RELEASE_TAG#v}"
               /package/poregauge analyze /fixtures/deep_qc.tsv \
-                --flowcell-layout promethion-3000 --output /tmp/qc_results
+                --flowcell-layout promethion-3000 --format png --output /tmp/qc_results
               test -s /tmp/qc_results/report.json
               test -s /tmp/qc_results/report.html
+              test -s /tmp/qc_results/figures/length-counts.png
             '
 
       - name: Upload release archive
