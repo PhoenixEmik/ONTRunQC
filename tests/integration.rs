@@ -2780,9 +2780,18 @@ fn optional_fits_keep_raw_metrics_and_populations_separate() {
     assert_eq!(curves[0]["points"].as_array().unwrap().len(), 80);
     assert_eq!(curves[2]["observations"], 66);
     assert!(curves[0]["method"].as_str().unwrap().starts_with("loess"));
-    assert!(curves[0]["confidence_interval"].is_null());
+    assert_eq!(
+        curves[0]["confidence_interval"],
+        "pointwise_95_percent_student_t"
+    );
+    for point in curves[0]["points"].as_array().unwrap() {
+        assert!(point["standard_error"].as_f64().unwrap() >= 0.0);
+        assert!(point["lower"].as_f64().unwrap() <= point["value"].as_f64().unwrap());
+        assert!(point["upper"].as_f64().unwrap() >= point["value"].as_f64().unwrap());
+    }
     let html = directory.html();
     assert!(html.contains("Provisional MinIONQC-style fit"));
+    assert!(html.contains("pointwise 95% LOESS Student-t interval"));
     assert!(html.contains("class=\"mux-marker\""));
     assert!(!html.contains("NaN"));
     let same = directory.analyze_with_args(&data, &["--minionqc-trends", "--muxes", "1"]);

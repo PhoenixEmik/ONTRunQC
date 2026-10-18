@@ -2239,7 +2239,7 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
     svg_start(
         out,
         &id,
-        "Raw-observation fit with exact unique-time knots. Available GAM ribbons are pointwise 95% Bayesian normal intervals. Full R equivalence remains Partial; LOESS intervals are unavailable.",
+        "Raw-observation fit with exact unique-time knots. Available ribbons are pointwise 95% intervals: Bayesian normal for GAM, Student-t for LOESS. Full R equivalence remains Partial.",
         294,
     );
     axes_range(
@@ -2264,6 +2264,11 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
     for (label, color, curve) in &curves {
         let mut segment = Vec::new();
         let band_color = *color;
+        let interval = if curve.method.starts_with("loess") {
+            "LOESS Student-t"
+        } else {
+            "GAM Bayesian normal"
+        };
         let draw_band = |out: &mut String, points: &[(f64, f64, f64)]| {
             if points.len() < 2 {
                 return;
@@ -2287,7 +2292,7 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
                 )
                 .unwrap();
             }
-            write!(out,"<polygon class=\"fit-ribbon {band_color}\" points=\"{coordinates}\"><title>{}: pointwise 95% GAM interval</title></polygon>",escape(label)).unwrap();
+            write!(out,"<polygon class=\"fit-ribbon {band_color}\" points=\"{coordinates}\"><title>{}: pointwise 95% {interval} interval</title></polygon>",escape(label)).unwrap();
         };
         for point in &curve.points {
             if let (Some(lower), Some(upper)) = (point.lower, point.upper) {
@@ -2341,7 +2346,7 @@ fn fitted_trend_plot(out: &mut String, report: &Report, quality: bool, selected:
         )
         .unwrap();
     }
-    out.push_str("</p><p class=\"annotation\">Provisional MinIONQC-style fit of individual records, including zero lengths. All/Q populations are distinct from native passing. LOESS uses degree 2, span 0.75 and median-cell Hermite interpolation (cell 0.2); GAM uses a 10-knot cubic shrinkage spline and REML. Knots use exact unique-time quantiles. GAM uses a deterministic null-space convention; some mgcv shrinkage penalties differ at roundoff. Combined method selection uses the largest group across panels. GAM ribbons are pointwise 95% Bayesian normal intervals; LOESS intervals remain unavailable. Full R numerical equivalence is Partial. Fits may cross missing intervals; the separate observed-bin charts retain gaps.</p></figure>");
+    out.push_str("</p><p class=\"annotation\">Provisional MinIONQC-style fit of individual records, including zero lengths. All/Q populations are distinct from native passing. LOESS uses degree 2, span 0.75 and median-cell Hermite interpolation (cell 0.2); GAM uses a 10-knot cubic shrinkage spline and REML. Knots use exact unique-time quantiles. GAM uses a deterministic null-space convention; some mgcv shrinkage penalties differ at roundoff. Combined method selection uses the largest group across panels. Ribbons are pointwise 95% Bayesian normal intervals for GAM and Student-t intervals for LOESS. Singular fits can lack finite bands. Full R numerical equivalence is Partial. Fits may cross missing intervals; the separate observed-bin charts retain gaps.</p></figure>");
 }
 
 fn time_markers(out: &mut String, report: &Report, end: f64) {

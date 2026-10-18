@@ -48,7 +48,7 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 | `length_histogram`, `q_histogram` | Complete | All/Q count and yield histograms; fixed documented bins rather than 300 automatic bins; U histogram conservation / offline tests, V. |
 | `yield_over_time`, `reads_per_hour` | Complete | Absolute cumulative yield and counts in 15-minute bins, All/Q; U interval/cumulative conservation and gap tests, V. Counts are per 15 min, explicitly labeled. |
 | `yield_by_length` | Complete | Exact retained bp at bounded display queries, exact threshold counts; All/Q, full yield range rather than R's 99% crop; U `every_display_query_uses_exact_lengths_including_ties`, P, V. |
-| `length_by_hour`, `q_by_hour` | Partial | Unchanged 15-minute means plus opt-in interpolated LOESS/cubic-shrinkage REML fits; U temporal/fitting tests. Exact unique-time knots, singular two-row LOESS solves and GAM ribbons are implemented; public GAM numerical parity and LOESS intervals remain incomplete. |
+| `length_by_hour`, `q_by_hour` | Partial | Unchanged 15-minute means plus opt-in interpolated LOESS/cubic-shrinkage REML fits; U temporal/fitting tests. Exact unique-time knots, singular two-row LOESS solves and GAM ribbons are implemented; public GAM numerical parity remains incomplete; LOESS pointwise Student-t intervals are verified against actual R. |
 | `channel_summary` | Complete | Four channel distributions and exact values, All-summary/Q; U channel summary tests, V. |
 | `gb_per_channel_overview` | Complete | Explicit-layout yield heatmaps including All/Q (native maps additionally available); U layout/yield conservation, V. |
 | MinION `flowcell_overview` | Partial | Exact physical panels, actual start/length/Q values, deterministic <=16 reads/channel; U sample bound/mapping tests, V. Full-read panels not reproduced. |
@@ -58,7 +58,7 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 | `combined_length_histogram`, `combined_q_histogram`, `combined_yield_by_length` | Complete | Pooled All/Q observations and exact yield queries; U pooled conservation/exact median/N50, P multiple inputs, V. |
 | Per-source `length_distributions`, `q_distributions` | Complete | Opt-in shared-domain R-grid estimator, including summary Q observations; actual pinned-R comparison of 52 curves meets documented tolerances. U synthetic R goldens; executable evidence below. Legacy KDE remains separately labeled. |
 | Per-source `yield_over_time`, `yield_by_length` | Complete | Absolute yields, common units/colors; U combined report/curve tests, P pooled totals, V. Run/source labels never invent flowcell identity. |
-| Per-source `length_by_hour`, `q_by_hour` | Partial | All/Q unsmoothed means plus opt-in raw-read fits with global method selection; U collection/time and fit tests. Exact R fits/ribbons remain Partial. |
+| Per-source `length_by_hour`, `q_by_hour` | Partial | All/Q unsmoothed means plus opt-in raw-read fits with global method selection; U collection/time and fit tests. LOESS intervals verified; strict original-R GAM fits/ribbons remain Partial. |
 
 ## CLI and outputs
 
@@ -126,31 +126,35 @@ values, metadata, panels, axes and legends were generated without PDF rendering.
 A separate short run generated **11 actual PDF figures**. The file-population
 probe preserves upstream grouping without changing production run identity.
 
-The full comparison is `benchmark-results/gam-paired/comparison.json`.
+The full comparison is `benchmark-results/parity-final/comparison.json`.
 The committed [machine-readable summary](../tests/reference/validation-summary.json)
 records input/source/capture/binary hashes, checked versions, per-case completion,
 counts and maximum errors. Run instructions are in the
 [reference README](../tests/reference/README.md). Cases checkpoint independently;
 wrong versions fail preflight and unavailable/partial R output never fabricates
-comparisons. Nine Python harness tests pass; Rust checks pass (34 unit +83
+comparisons. Eleven Python harness tests pass; Rust checks pass (37 unit +83
 integration tests, one optional probe ignored), including release build. Desktop
 Chrome inspection confirmed the offline GAM ribbons; mobile rendering was not
 rechecked in this mathematical correction.
+After the final tooltip-only change, all 18 CLI cases were rerun: 63 JSON reports
+match the actual paired execution exactly. Both binary hashes and the recheck
+are recorded; the unchanged R captures were not rerun for the caption change.
 
 | Final check classification | Count |
 | --- | ---: |
-| Exact match | 58,864 |
-| Within declared tolerance | 54,615 |
+| Exact match | 65,118 |
+| Within declared tolerance | 75,241 |
 | Intentional semantic difference | 36 |
 | Proved upstream defect | 8,954 |
 | Suspected PoreGauge defect | **1,542** |
-| Not yet verified | **112** |
+| Not yet verified | **0** |
 
 **The suite returns 1, not success.** Remaining failures are 390 fitted values,
 381 standard errors, 381 lower and 390 upper bounds: **1,542**, down from 6,302
 under the same point tolerances. They occur in the MinION Q-selected population
-and its duplicated combined-context plots. The 112 unverified checks remain
-LOESS confidence-band availability checks. All **92,299 non-fit checks** match
+and its duplicated combined-context plots. The former 112 LOESS availability
+checks are resolved by 22,080 finite SE/bound comparisons and 4,800 explicitly
+nonfinite availability comparisons, all passing. All **92,299 non-fit checks** match
 the preceding paired run exactly, including core statistics, channels and KDE.
 Intermediate checks record 48,648 matches/tolerant matches and **1,912 failures**
 separately in `gam_diagnostics`;
@@ -188,7 +192,7 @@ single-rounding operations. Tests cover R's exact synthetic knot arithmetic,
 analytical REML derivatives, existing synthetic goldens and four public PromethION
 aggregate models (no sequencing records/identifiers stored).
 
-| Public case | Before this correction: max fitted length error (bp) | After (bp) |
+| Public case | Before 406e354: max fitted length error (bp) | 406e354 and current (bp) |
 | --- | ---: | ---: |
 | MinION | 2.350897 | **1.715426** |
 | PromethION | 211.017091 | **1.342e-8** |
@@ -217,9 +221,87 @@ REML score/optimizer diagnostics, edf and uncensored predictions/SEs. Comparison
 transform model crossproducts/covariance to common nodal coordinates; they never
 compare unlike spline parameterizations or sign-dependent null eigenvectors.
 GAM bands are pointwise 95% normal intervals as verified against
-`ggplot2:::predictdf.glm`; LOESS uses a t distribution with fitted df and remains
-unavailable in Rust. No private PBM95914 run was reprocessed. No new dependency
-or benchmark claim was introduced.
+`ggplot2:::predictdf.glm`. LOESS now uses the actual interpolated influence weights,
+exact hat trace, approximate residual-delta calibration, residual scale, effective
+df and Student-t critical value. Eight synthetic actual-R cases verify 5,280
+fitted/uncertainty values and nonfinite states, including ties, irregular times,
+sparse groups and 999 reads. The paired suite adds 664 separate LOESS diagnostic
+checks (248 exact, 416 tolerant), all passing. No private PBM95914 run was
+reprocessed; no runtime dependency or benchmark claim was introduced.
+
+
+### Final controlled assessment
+
+| Strict check | 406e354 baseline | Current |
+| --- | ---: | ---: |
+| GAM fitted-value failures | 390 | 390 |
+| GAM SE failures | 381 | 381 |
+| GAM lower / upper failures | 381 / 390 | 381 / 390 |
+| GAM intermediate failures | 1,912 | 1,912 |
+| Unverified LOESS band checks | 112 | 0 |
+
+GAM maxima are unchanged from 406e354 (table above); the machine summary records
+before/after length and Q-score errors, SEs and both bounds for every case.
+
+The unchanged strict comparison still fails; the following are **diagnostic
+experiments, not substituted reference targets**. `gam_assessment.R` fits 20
+unique public/synthetic models with identical observations and knots, changing
+only the null penalty convention, then optionally imposing Rust's penalty and
+lambda. For MinION Q≥7, swapping the original two null weights accounts for all
+remaining curve/uncertainty discrepancies:
+
+| MinION selected metric | Original R vs Rust: max error | R swapped weights vs Rust: max error |
+| --- | ---: | ---: |
+| Length fit (bp) | 1.715425619 | 2.155e-7 |
+| Length SE (bp) | 0.466714392 | 3.877e-10 |
+| Length lower / upper (bp) | 2.630169018 / 0.800682220 | 2.163e-7 / 2.148e-7 |
+| Q-score fit | 8.974e-4 | 5.607e-12 |
+| Q-score SE | 2.880e-5 | 2.010e-14 |
+| Q-score lower / upper | 8.812e-4 / 9.135e-4 | 5.647e-12 / 5.567e-12 |
+
+The 1,542 primary failures are the two selected MinION curves repeated in three
+contexts: standalone MinION, its individual report inside the combined case,
+and the combined comparison. Each context has 130 fit, 127 SE, 127 lower and
+130 upper failures. No additional unexplained over-tolerance effect remains in
+these controlled experiments.
+
+The 1,912 original intermediate failures split into **1,400 normalized penalty
+cells, 442 covariance cells, 45 coefficients, 14 lambdas, 7 edf and 4 REML scores**.
+Reconstructing the canonical penalty from actual R eigenpairs matches all 3,200
+captured cells (maximum difference 8.882e-16). Canonical R fits pass all curve,
+coefficient and covariance targets, including the weaker 1D2/synthetic effects.
+Their maximum log(lambda) difference is 1.254e-10. Imposing Rust's exact penalty
+and lambda also passes; no separate optimizer or covariance defect was found
+above the existing tolerance. Small remaining accumulation differences are
+recorded, not asserted zero. Swapping weights on every dataset is **not** a fix:
+it would disturb models whose original ordering already agrees.
+
+**Stability:** 32 original GAM models from independent complete reference runs
+are identical in knots, sp, variance, uncensored predictions and audit data.
+All 20 controlled models also repeat identically within R. Thus the pinned local
+reference is reproducible; knot-perturbation sensitivity does not establish
+run-to-run instability. The installed OpenBLAS 0.3.34 reports VORTEX; its ARMV8/
+VORTEX library aliases resolve to the same binary, and requesting ARMV8 still
+reports VORTEX. No independent second BLAS was available or measured; cross-BLAS
+variation remains unverified. Library/source/capture hashes accompany the results.
+Bitwise identity is a useful same-binary regression check, not a portable
+scientific requirement. The original pinned-environment numerical target remains
+strict and still fails; the instability evidence does not waive it.
+
+### Parity contract
+
+| Category | Contract / current status |
+| --- | --- |
+| Exact scientific metrics | Established read/yield/filter/N50 semantics and intentional upstream differences remain unchanged; all 92,299 non-fit checks preserved. |
+| Pinned-environment numerical parity | Original R points/SE/bounds retain absolute 1e-6 + relative 1e-6 targets. LOESS and public PromethION/1D2 curves pass; MinION selected contexts still fail. |
+| Implementation-dependent fits | Optional GAM display explicitly names the deterministic null-space convention. Same model family does **not** mean the unequal penalties are mathematically identical. Controlled evidence explains the difference but never changes strict status. |
+| Unsupported/unverified | Independent-BLAS parity and general degenerate GAM fallback equivalence are unverified. Nonfinite LOESS bands remain unavailable, not zero. |
+
+**Policy proposal:** retain the named native convention for reproducible display,
+keep original-reference failures visible alongside the controlled explanation,
+and keep #12 **Partial/open**. Do not emulate eigensolver roundoff or widen a
+global tolerance. Full artifacts and repeatable commands are in the reference
+README; the committed summary records before/after counts and controlled errors.
 
 ## R-grid densities (#13): Complete within declared tolerances
 

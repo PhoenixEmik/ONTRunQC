@@ -159,7 +159,16 @@ impl Plan {
                 "basis_at_predictions":d.basis.as_ref().map(|b|(0..80).map(|i|
                     b.evaluate(d.tracker.min+(d.tracker.max-d.tracker.min)*i as f64/79.0)).collect::<Vec<_>>()),
                 "nodal_rhs":d.rhs,"nodal_yy":d.yy,
-                "fit":d.gam().map(|f| f.audit)})
+                "fit":d.gam().map(|f| f.audit),
+                "loess": if d.tracker.count < 1000 {
+                    LoessSurface::new(&d.tracker.small, d.quality).and_then(|surface|
+                        LoessUncertainty::new(&surface, &d.tracker.small, d.quality))
+                        .map(|u| serde_json::json!({"trace_hat":u.trace,
+                            "one_delta":u.deltas[0],"two_delta":u.deltas[1],
+                            "residual_scale":u.residual_scale,
+                            "df":u.deltas[0].powi(2)/u.deltas[1],
+                            "critical_value":u.critical}))
+                } else { None }})
         }).collect::<Vec<_>>())
     }
     pub fn add(&mut self, r: &Record<'_>, cutoff: f64) {
@@ -199,7 +208,7 @@ impl Plan {
             }
         }
         Trends {
-            verification: "R_differential_partial; canonical_cs_null_space; LOESS_intervals_unavailable",
+            verification: "R_differential_partial; canonical_cs_null_space; pointwise_GAM_and_LOESS_intervals",
             single,
             combined,
         }
@@ -281,6 +290,15 @@ impl Dataset {
         if fitted.is_some() {
             curve.confidence_interval = Some("pointwise_95_percent_bayesian_normal");
         }
+        let uncertainty = surface
+            .as_ref()
+            .and_then(|s| LoessUncertainty::new(s, &self.tracker.small, self.quality));
+        if uncertainty.is_some() {
+            curve.confidence_interval = Some("pointwise_95_percent_student_t");
+        }
+        let critical = uncertainty
+            .as_ref()
+            .map_or(1.959963984540054, |u| u.critical);
         for i in 0..80 {
             let x = self.tracker.min + (self.tracker.max - self.tracker.min) * i as f64 / 79.0;
             let value = if let Some(fitted) = &fitted {
@@ -300,30 +318,37 @@ impl Dataset {
                     Some("singular local fit or nonrepresentable prediction");
                 return curve;
             };
-            let standard_error = fitted.as_ref().and_then(|fit| {
-                let b = self.basis.as_ref().unwrap().evaluate(x);
-                let variance: f64 = (0..K)
-                    .map(|i| {
-                        (0..K)
-                            .map(|j| b[i] * fit.covariance[i][j] * b[j])
-                            .sum::<f64>()
-                    })
-                    .sum();
-                if !variance.is_finite() {
-                    return None;
-                }
-                let se = variance.max(0.0).sqrt() * self.scale;
-                se.is_finite().then_some(se)
-            });
+            let standard_error = fitted
+                .as_ref()
+                .and_then(|fit| {
+                    let b = self.basis.as_ref().unwrap().evaluate(x);
+                    let variance: f64 = (0..K)
+                        .map(|i| {
+                            (0..K)
+                                .map(|j| b[i] * fit.covariance[i][j] * b[j])
+                                .sum::<f64>()
+                        })
+                        .sum();
+                    if !variance.is_finite() {
+                        return None;
+                    }
+                    let se = variance.max(0.0).sqrt() * self.scale;
+                    se.is_finite().then_some(se)
+                })
+                .or_else(|| {
+                    uncertainty
+                        .as_ref()
+                        .and_then(|u| u.standard_error(surface.as_ref()?, x))
+                });
             curve.points.push(Point {
                 hours: x,
                 value,
                 standard_error,
                 lower: standard_error
-                    .map(|s| value - 1.959963984540054 * s)
+                    .map(|s| value - critical * s)
                     .filter(|v| v.is_finite()),
                 upper: standard_error
-                    .map(|s| value + 1.959963984540054 * s)
+                    .map(|s| value + critical * s)
                     .filter(|v| v.is_finite()),
             });
         }
@@ -986,6 +1011,267 @@ impl LoessSurface {
             + (h * (1.0 - h).powi(2) * da + h * h * (h - 1.0) * db) * (b - a)
     }
 }
+
+// Only LOESS populations (<1000 observations) retain these bounded influence
+// vectors. Interpolate the value AND derivative weights, just like the fitted
+// surface; fitting a fresh polynomial at each prediction would give wrong SEs.
+struct LoessUncertainty {
+    weights: Vec<Vec<[f64; 2]>>,
+    residual_scale: f64,
+    critical: f64,
+    #[cfg(test)]
+    trace: f64,
+    #[cfg(test)]
+    deltas: [f64; 2],
+}
+impl LoessUncertainty {
+    fn new(surface: &LoessSurface, rows: &[Observation], quality: bool) -> Option<Self> {
+        let weights = surface
+            .vertices
+            .iter()
+            .map(|v| local_influence(rows, v.0))
+            .collect::<Option<Vec<_>>>()?;
+        let mut result = Self {
+            weights,
+            residual_scale: 0.0,
+            critical: 0.0,
+            #[cfg(test)]
+            trace: 0.0,
+            #[cfg(test)]
+            deltas: [0.0; 2],
+        };
+        let trace = rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| result.influence(surface, row.x, i))
+            .sum();
+        let deltas = loess_deltas(rows.len(), trace)?;
+        let rss: f64 = rows
+            .iter()
+            .map(|row| {
+                let y = if quality { row.q } else { row.length };
+                (y - surface.predict(row.x)).powi(2)
+            })
+            .sum();
+        result.residual_scale = (rss / deltas[0]).sqrt();
+        result.critical = student_t_975(deltas[0].powi(2) / deltas[1])?;
+        #[cfg(test)]
+        {
+            result.trace = trace;
+            result.deltas = deltas;
+        }
+        result.residual_scale.is_finite().then_some(result)
+    }
+    fn influence(&self, surface: &LoessSurface, x: f64, observation: usize) -> f64 {
+        let i = surface
+            .vertices
+            .partition_point(|v| v.0 <= x)
+            .saturating_sub(1)
+            .min(surface.vertices.len() - 2);
+        let (a, b) = (surface.vertices[i].0, surface.vertices[i + 1].0);
+        let h = (x - a) / (b - a);
+        let [ya, da] = self.weights[i][observation];
+        let [yb, db] = self.weights[i + 1][observation];
+        (1.0 - h).powi(2) * (1.0 + 2.0 * h) * ya
+            + h * h * (3.0 - 2.0 * h) * yb
+            + (h * (1.0 - h).powi(2) * da + h * h * (h - 1.0) * db) * (b - a)
+    }
+    fn standard_error(&self, surface: &LoessSurface, x: f64) -> Option<f64> {
+        let norm = (0..self.weights[0].len())
+            .map(|i| self.influence(surface, x, i).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let se = self.residual_scale * norm;
+        se.is_finite().then_some(se)
+    }
+}
+fn local_influence(rows: &[Observation], x: f64) -> Option<Vec<[f64; 2]>> {
+    let mut distances: Vec<_> = rows.iter().map(|v| (v.x - x).powi(2)).collect();
+    distances.sort_by(f64::total_cmp);
+    let neighbors = (rows.len() as f64 * 0.75).floor() as usize;
+    let radius = *distances.get(neighbors.checked_sub(1)?)?;
+    if radius <= 0.0 {
+        return None;
+    }
+    let weights: Vec<_> = rows
+        .iter()
+        .map(|r| {
+            let u = ((r.x - x).powi(2) / radius).sqrt();
+            if u < 1.0 {
+                (1.0 - u.powi(3)).powi(3).sqrt()
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    let mut design: Vec<_> = rows
+        .iter()
+        .zip(&weights)
+        .map(|(r, &w)| [w, w * (r.x - x), w * (r.x - x).powi(2)])
+        .collect();
+    let norms: [f64; 3] =
+        std::array::from_fn(|j| design.iter().map(|r| r[j] * r[j]).sum::<f64>().sqrt());
+    for row in &mut design {
+        for j in 0..3 {
+            row[j] /= norms[j].max(f64::MIN_POSITIVE);
+        }
+    }
+    let vectors = local_svd(&mut design);
+    let squares: [f64; 3] = std::array::from_fn(|j| design.iter().map(|r| r[j] * r[j]).sum());
+    let cutoff = squares.into_iter().fold(0.0, f64::max) * (100.0 * f64::EPSILON).powi(2);
+    if cutoff == 0.0 {
+        return None;
+    }
+    let influence: Vec<_> = design
+        .iter()
+        .zip(weights)
+        .map(|(r, w)| {
+            std::array::from_fn(|j| {
+                (0..3)
+                    .filter(|&k| squares[k] > cutoff)
+                    .map(|k| vectors[j][k] * r[k] / squares[k])
+                    .sum::<f64>()
+                    * w
+                    / norms[j].max(f64::MIN_POSITIVE)
+            })
+        })
+        .collect();
+    influence
+        .iter()
+        .flatten()
+        .all(|v| v.is_finite())
+        .then_some(influence)
+}
+
+// Cleveland/Grosse/Shyu's approximate delta calibration (R stats loessf.f,
+// ehg141/176), specialized to one predictor, degree 2, tau=3. It is NOT the
+// exact hat-matrix residual df: R's default uses this approximation even when
+// trace.hat is exact. Hermite table and calibration constants are attributed
+// in tests/reference/README.md with the original permission notice.
+fn loess_deltas(n: usize, trace: f64) -> Option<[f64; 2]> {
+    let n = n as f64;
+    let root = (3.0 / n).sqrt();
+    let z = (((3.0 / trace).sqrt() - root) / (1.0 - root)).clamp(0.0, 1.0);
+    let calibration = [
+        (-0.005, -0.090572, 4.4844),
+        (0.1204, 0.095807, -0.7978),
+        (0.2017, 0.026152, -0.7286),
+        (0.2815, -0.031926, -0.4457),
+        (0.3705, -0.053718, -0.3495),
+        (0.4536, -0.064170, 0.032813),
+        (0.5591, -0.058387, 0.1611),
+        (0.7132, -0.020636, 0.3350),
+        (0.8751, 0.040172, -0.041032),
+        (1.005, -0.010856, -0.7736),
+    ];
+    let correction = LoessSurface {
+        vertices: calibration.to_vec(),
+    }
+    .predict(z)
+    .exp();
+    let deltas = [
+        (0.1611761, 0.3091323, 0.4401023),
+        (0.2075670, 0.2822574, 0.2369957),
+    ]
+    .map(|(a, b, c)| n - trace * (a * z.powf(b) * (1.0 - z).powf(c) * correction).exp());
+    deltas
+        .iter()
+        .all(|d| d.is_finite() && *d > 0.0)
+        .then_some(deltas)
+}
+
+// Invert the Student-t upper tail through the regularized beta continued
+// fraction. Only p=.975 is needed by ggplot2's default LOESS pointwise bands.
+fn student_t_975(df: f64) -> Option<f64> {
+    if !df.is_finite() || df <= 0.0 {
+        return None;
+    }
+    let tail = |t: f64| {
+        let x = df / (df + t * t);
+        0.5 * regularized_beta(x, df / 2.0, 0.5)
+    };
+    let (mut lo, mut hi) = (0.0, 2.0);
+    while tail(hi) > 0.025 && hi < 1e100 {
+        hi *= 2.0;
+    }
+    if !tail(hi).is_finite() || tail(hi) > 0.025 {
+        return None;
+    }
+    for _ in 0..100 {
+        let mid = (lo + hi) / 2.0;
+        if tail(mid) > 0.025 {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Some((lo + hi) / 2.0)
+}
+fn regularized_beta(x: f64, a: f64, b: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
+    if x > (a + 1.0) / (a + b + 2.0) {
+        return 1.0 - regularized_beta(1.0 - x, b, a);
+    }
+    let front =
+        (log_gamma(a + b) - log_gamma(a) - log_gamma(b) + a * x.ln() + b * (-x).ln_1p()).exp() / a;
+    let floor = |v: f64| {
+        if v.abs() < 1e-300 {
+            1e-300_f64.copysign(v)
+        } else {
+            v
+        }
+    };
+    let mut c = 1.0;
+    let mut d = 1.0 / floor(1.0 - (a + b) * x / (a + 1.0));
+    let mut h = d;
+    for m in 1..=300 {
+        let m = m as f64;
+        for coefficient in [
+            m * (b - m) * x / ((a + 2.0 * m - 1.0) * (a + 2.0 * m)),
+            -(a + m) * (a + b + m) * x / ((a + 2.0 * m) * (a + 2.0 * m + 1.0)),
+        ] {
+            d = 1.0 / floor(1.0 + coefficient * d);
+            c = floor(1.0 + coefficient / c);
+            let ratio = c * d;
+            h *= ratio;
+        }
+        if (c * d - 1.0).abs() < 4.0 * f64::EPSILON {
+            break;
+        }
+    }
+    front * h
+}
+fn log_gamma(x: f64) -> f64 {
+    // Lanczos g=7, positive arguments; reflection avoids loss near zero.
+    if x < 0.5 {
+        return std::f64::consts::PI.ln()
+            - (std::f64::consts::PI * x).sin().ln()
+            - log_gamma(1.0 - x);
+    }
+    let z = x - 1.0;
+    let coefficients = [
+        676.5203681218851,
+        -1259.1392167224028,
+        771.3234287776531,
+        -176.6150291621406,
+        12.507343278686905,
+        -0.13857109526572012,
+        9.984369578019572e-6,
+        1.5056327351493116e-7,
+    ];
+    let sum = 0.9999999999998099
+        + coefficients
+            .iter()
+            .enumerate()
+            .map(|(i, c)| c / (z + i as f64 + 1.0))
+            .sum::<f64>();
+    0.9189385332046727 + (z + 0.5) * (z + 7.5).ln() - (z + 7.5) + sum.ln()
+}
 fn local_quadratic(rows: &[Observation], x: f64, quality: bool) -> Option<(f64, f64)> {
     let mut distances: Vec<_> = rows.iter().map(|v| (v.x - x).powi(2)).collect();
     distances.sort_by(f64::total_cmp);
@@ -1092,33 +1378,7 @@ fn local_pseudoinverse(design: &mut [[f64; 3]], response: &mut [f64]) -> Option<
         }
     }
     let design = &mut reduced;
-    let mut vectors: [[f64; 3]; 3] =
-        std::array::from_fn(|i| std::array::from_fn(|j| f64::from(i == j)));
-    // One-sided Jacobi SVD of three equilibrated columns. The singular-value
-    // cutoff is R loess's 100*epsilon; no ridge or invented observations.
-    for _ in 0..50 {
-        let mut changed = false;
-        for p in 0..3 {
-            for q in p + 1..3 {
-                let a = design.iter().map(|r| r[p] * r[p]).sum::<f64>();
-                let b = design.iter().map(|r| r[q] * r[q]).sum::<f64>();
-                let c = design.iter().map(|r| r[p] * r[q]).sum::<f64>();
-                if c.abs() <= f64::EPSILON * (a * b).sqrt() {
-                    continue;
-                }
-                let (s, c) = (0.5 * (2.0 * c).atan2(b - a)).sin_cos();
-                for row in design.iter_mut().chain(vectors.iter_mut()) {
-                    let (a, b) = (row[p], row[q]);
-                    row[p] = c * a - s * b;
-                    row[q] = s * a + c * b;
-                }
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
+    let vectors = local_svd(design);
     let sigma: [f64; 3] =
         std::array::from_fn(|j| design.iter().map(|r| r[j] * r[j]).sum::<f64>().sqrt());
     let cutoff = sigma.into_iter().fold(0.0, f64::max) * 100.0 * f64::EPSILON;
@@ -1146,9 +1406,144 @@ fn local_pseudoinverse(design: &mut [[f64; 3]], response: &mut [f64]) -> Option<
         .then_some(coefficients)
 }
 
+// Three-column one-sided Jacobi SVD; shared by the local solve and its linear
+// influence weights. The latter depend only on times, never on the response.
+fn local_svd(design: &mut [[f64; 3]]) -> [[f64; 3]; 3] {
+    let mut vectors = std::array::from_fn(|i| std::array::from_fn(|j| f64::from(i == j)));
+    // One-sided Jacobi SVD of three equilibrated columns. The singular-value
+    // cutoff is R loess's 100*epsilon; no ridge or invented observations.
+    for _ in 0..50 {
+        let mut changed = false;
+        for p in 0..3 {
+            for q in p + 1..3 {
+                let a = design.iter().map(|r| r[p] * r[p]).sum::<f64>();
+                let b = design.iter().map(|r| r[q] * r[q]).sum::<f64>();
+                let c = design.iter().map(|r| r[p] * r[q]).sum::<f64>();
+                if c.abs() <= f64::EPSILON * (a * b).sqrt() {
+                    continue;
+                }
+                let (s, c) = (0.5 * (2.0 * c).atan2(b - a)).sin_cos();
+                for row in design.iter_mut().chain(vectors.iter_mut()) {
+                    let (a, b) = (row[p], row[q]);
+                    row[p] = c * a - s * b;
+                    row[q] = s * a + c * b;
+                }
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    vectors
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn actual_r_loess_uncertainty_including_sparse_and_degenerate_cases() {
+        let golden: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/reference/loess-golden.json")).unwrap();
+        let mut compared = 0;
+        for case in golden["cases"].as_array().unwrap() {
+            let mut reader =
+                crate::input::SummaryReader::new(case["input"].as_str().unwrap().as_bytes())
+                    .unwrap();
+            let mut tracker = Tracker::default();
+            while let Some(r) = reader.next_record().unwrap() {
+                tracker.add(&r, 7.0).unwrap();
+            }
+            let plan = tracker.prepare(false).unwrap();
+            for expected in case["fits"].as_array().unwrap() {
+                let d = plan
+                    .datasets
+                    .iter()
+                    .find(|d| {
+                        !d.single
+                            && d.quality == expected["quality"].as_bool().unwrap()
+                            && d.population.starts_with("qscore")
+                                == expected["selected"].as_bool().unwrap()
+                    })
+                    .unwrap();
+                let actual = d.fit(false);
+                let reference = &expected["reference"];
+                if reference.is_null() {
+                    assert!(
+                        actual.points.is_empty(),
+                        "{} {}",
+                        case["name"],
+                        expected["error"]
+                    );
+                    continue;
+                }
+                let surface = LoessSurface::new(&d.tracker.small, d.quality).unwrap();
+                let uncertainty = LoessUncertainty::new(&surface, &d.tracker.small, d.quality);
+                if let Some(u) = uncertainty {
+                    for (field, value) in [
+                        ("trace_hat", u.trace),
+                        ("one_delta", u.deltas[0]),
+                        ("two_delta", u.deltas[1]),
+                        ("residual_scale", u.residual_scale),
+                        ("df", u.deltas[0].powi(2) / u.deltas[1]),
+                        ("critical_value", u.critical),
+                    ] {
+                        let r = reference[field].as_f64().unwrap();
+                        assert!(
+                            (value - r).abs() <= 1e-6 + 1e-6 * r.abs(),
+                            "{} {}: {value} != {r}",
+                            case["name"],
+                            field
+                        );
+                    }
+                }
+                let points = reference["points"].as_array().unwrap();
+                assert_eq!(actual.points.len(), points.len(), "{}", case["name"]);
+                for (p, r) in actual.points.iter().zip(points) {
+                    for (field, value) in [
+                        ("y", Some(p.value)),
+                        ("se", p.standard_error),
+                        ("ymin", p.lower),
+                        ("ymax", p.upper),
+                    ] {
+                        if let Some(rv) = r[field].as_f64() {
+                            let v =
+                                value.unwrap_or_else(|| panic!("{} {field} missing", case["name"]));
+                            assert!(
+                                (v - rv).abs() <= 1e-6 + 1e-6 * rv.abs(),
+                                "{} {field} at {}: {v} != {rv}",
+                                case["name"],
+                                p.hours
+                            );
+                            compared += 1;
+                        } else {
+                            assert!(
+                                value.is_none(),
+                                "{} {field}: fabricated finite interval",
+                                case["name"]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("Actual R LOESS fitted/uncertainty values compared: {compared}");
+    }
+    #[test]
+    fn student_t_critical_values_and_invalid_degrees_of_freedom() {
+        // Actual R 4.4.1 qt(.975, df), independent of local-regression code.
+        for (df, r) in [
+            (1.0, 12.706204736432095),
+            (2.0, 4.302652729696142),
+            (10.0, 2.228138851986274),
+            (100.0, 1.983971518449634),
+        ] {
+            assert!((student_t_975(df).unwrap() - r).abs() < 1e-9);
+        }
+        for df in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(student_t_975(df).is_none());
+        }
+    }
     #[test]
     fn actual_r_synthetic_loess_and_gam_predictions() {
         use crate::input::SummaryReader;
@@ -1290,6 +1685,67 @@ mod tests {
                 let reference = 11750.65090436984_f64;
                 assert!((curve.points[79].value - reference).abs() <= 1e-6 + 1e-6 * reference);
             }
+        }
+    }
+    #[test]
+    fn canonical_null_space_matches_controlled_r_without_hiding_original_difference() {
+        let golden: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/reference/gam-canonical-golden.json"))
+                .unwrap();
+        for case in golden["cases"].as_array().unwrap() {
+            let knots: [f64; K] = serde_json::from_value(case["knots"].clone()).unwrap();
+            let population = Population {
+                count: case["n"].as_u64().unwrap(),
+                min: knots[0],
+                max: knots[K - 1],
+                knots: Some(knots),
+                ..Population::default()
+            };
+            let quality = case["quality"].as_bool().unwrap();
+            let mut d = Dataset::new(
+                "qscore_selected_summary_records",
+                population,
+                quality,
+                false,
+            );
+            d.n = case["n"].as_u64().unwrap();
+            d.scale = case["scale"].as_f64().unwrap();
+            d.offset = case["offset"].as_f64().unwrap();
+            d.yy = case["yy"].as_f64().unwrap();
+            d.xx = serde_json::from_value(case["xx"].clone()).unwrap();
+            d.rhs = serde_json::from_value(case["rhs"].clone()).unwrap();
+            let fit = d.gam().unwrap();
+            for (field, actual) in [
+                ("log_lambda", fit.audit["log_lambda"].as_f64().unwrap()),
+                ("reml", fit.audit["reml"].as_f64().unwrap()),
+                ("edf", fit.audit["edf"].as_f64().unwrap()),
+                ("variance", fit.audit["residual_variance"].as_f64().unwrap()),
+            ] {
+                let expected = case[field].as_f64().unwrap();
+                assert!(
+                    (actual - expected).abs() <= 1e-6 + 1e-6 * expected.abs(),
+                    "{field}: {actual} != {expected}"
+                );
+            }
+            let curve = d.fit(true);
+            for (point, reference) in curve.points.iter().zip(case["points"].as_array().unwrap()) {
+                for (value, r) in [
+                    Some(point.value),
+                    point.standard_error,
+                    point.lower,
+                    point.upper,
+                ]
+                .into_iter()
+                .zip(&reference.as_array().unwrap()[1..])
+                {
+                    let r = r.as_f64().unwrap();
+                    assert!((value.unwrap() - r).abs() <= 1e-6 + 1e-6 * r.abs());
+                }
+            }
+            // A controlled convention is not a replacement reference target.
+            let original = case["original_endpoint"].as_f64().unwrap();
+            let native = curve.points.last().unwrap().value;
+            assert!((native - original).abs() > if quality { 1e-4 } else { 1.0 });
         }
     }
     #[test]

@@ -11,6 +11,26 @@ from minionqc_differential import comparison, unverified
 
 
 class Classification(unittest.TestCase):
+    def test_uncertainty_unavailability_is_checked_without_inventing_intervals(self):
+        from minionqc_differential import fitted_comparisons
+        def check(se, actual):
+            row=dict(x=0,y=1,se=se,ymin=None,ymax=None)
+            reference={"plots":[dict(file="length_by_hour.pdf",directory="source_001",
+                panels=[dict(PANEL="1")],colours=["indigo"],colour_labels=["All reads"],
+                smooth_predictions=[dict(observations=5,data=[row])],layers=[dict(stat="StatSmooth",method="loess",
+                data=[dict(PANEL="1",group=1,colour="indigo",**row)])])]}
+            probe={"reference_sources":[dict(source_id="source_001",fitted_trends={"single":[dict(
+                population="all_summary_records",metric="length_bp",method="loess",observations=5,
+                points=[dict(hours=0,value=1,standard_error=actual,lower=None,upper=None)])]})]}
+            return fitted_comparisons(reference,probe)
+        unavailable=check(None,None)
+        self.assertTrue(all(c['status']=='exact_match' for c in unavailable))
+        fabricated=check(None,1.0)
+        self.assertEqual(next(c['status'] for c in fabricated if c['metric'].endswith('standard_error.finite')),
+                         'suspected_poregauge_defect')
+        missing=check(1.0,None)
+        self.assertEqual(next(c['status'] for c in missing if c['metric'].endswith('standard_error')),
+                         'suspected_poregauge_defect')
     def test_exact_and_rounding(self):
         self.assertEqual(comparison("count",100,100)["status"],"exact_match")
         self.assertEqual(comparison("mean",10.1,10.14,atol=.05)["status"],"rounding_tolerance")

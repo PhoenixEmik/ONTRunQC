@@ -645,10 +645,18 @@ bridge unobserved intervals; observed-bin plots retain their gaps. All fit
 calculations live in `trends.rs`, with numeric knot selection in `trend_knots.rs`;
 HTML renders the final model only.
 
-GAM points add nullable `standard_error`, `lower` and `upper`: pointwise 95%
+Fitted points add nullable `standard_error`, `lower` and `upper`. GAM uses pointwise 95%
 Bayesian normal intervals conditional on the estimated smoothing parameter,
 using residual variance RSS/(n−edf). `confidence_interval` names this convention;
-LOESS uncertainty remains unavailable (`null`). HTML renders available GAM bands
+LOESS uses `pointwise_95_percent_student_t`: the interpolated local-polynomial
+influence weights, R's exact hat trace and approximate delta calibration give
+residual scale sqrt(RSS/delta1), df=delta1²/delta2, and SE=scale×sqrt(sum(weights²)).
+Bounds use the Student-t .975 quantile, as in ggplot2. A nonsingular local fit
+does not guarantee finite residual df; nonpositive/nonfinite deltas or scales
+leave uncertainty unavailable. No normal substitute or invented interval is used.
+Influence vectors are retained only for the <=999-row LOESS population (O(n×vertices));
+GAM memory remains independent of observation count.
+HTML renders available bands
 and omits segments crossing negative bounds on nonnegative axes. These are additive schema-1 fields;
 consumers that reject unknown fields must be updated. Existing metrics and
 unsmoothed charts are unchanged.
@@ -660,10 +668,14 @@ actual-R goldens verify 1,598 fitted values and 960 GAM uncertainty values at
 absolute 1e-6 + relative 1e-6. The 18-case paired run verifies all captured knots,
 and all public PromethION/1D2 fitted values and GAM bands meet the point target.
 Four public PromethION aggregate-model snapshots guard the earlier 211 bp endpoint
-error and its uncertainty, without embedding reads. Some MinION selected/combined
-fits and some intermediate penalties still differ; LOESS intervals remain
-unavailable. See the parity matrix for measured errors and the R-only null-space
-sensitivity experiment. Optional fitting is not yet full R parity.
+error and its uncertainty, without embedding reads. A further eight-case synthetic
+R snapshot checks 5,280 LOESS fitted/uncertainty values, trace, deltas, scale, df
+and critical values, including ties, sparse/degenerate populations and 999 reads.
+Some MinION selected/combined fits and intermediate penalties still differ from
+unmodified R. Controlled R fits with the explicit Rust null-space convention
+explain these differences; they do not replace strict reference targets. See
+the parity matrix for numerical evidence and the compatibility policy. Optional
+fitting remains Partial; core QC statistics and KDE are unchanged.
 
 ## Optional R-grid density estimates (#13)
 

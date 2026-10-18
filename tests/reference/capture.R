@@ -58,7 +58,11 @@ record_smooth <- function(model, prediction) {
     smoothing_parameter=if(inherits(model,"gam")) unname(model$sp) else NULL,
     residual_variance=if(inherits(model,"gam")) model$sig2 else model$s^2,
     audit=if(inherits(model,"gam")) tryCatch(gam_audit(model,prediction),
-      error=function(e) { audit_errors <<- c(audit_errors,conditionMessage(e)); NULL }) else NULL,
+      error=function(e) { audit_errors <<- c(audit_errors,conditionMessage(e)); NULL }) else
+      list(trace_hat=model$trace.hat, one_delta=model$one.delta,
+        two_delta=model$two.delta, residual_scale=model$s,
+        df=model$one.delta^2/model$two.delta,
+        critical_value=qt(.975,model$one.delta^2/model$two.delta)),
     observations=if(inherits(model,"gam")) length(model$y) else model$n,
     data=prediction)
 }

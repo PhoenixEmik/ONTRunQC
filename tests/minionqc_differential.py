@@ -256,19 +256,22 @@ def fitted_comparisons(reference, probe):
                         checks.append(unverified(f"{key}.{i}.fitted","R layer prediction is censored or nonfinite; uncensored reference prediction is unavailable. A null cannot establish a Rust numerical defect or a match."))
                     else:
                         checks.append(comparison(f"{key}.{i}.fitted",r.get("y"),p["value"],1e-6,1e-6))
-                    if raw and curve.get("confidence_interval"):
+                    if raw:
                         for r_field,p_field in [("se","standard_error"),("ymin","lower"),("ymax","upper")]:
                             if r.get(r_field) is None:
-                                checks.append(unverified(f"{key}.{i}.{p_field}","Reference uncertainty is nonfinite/unavailable."))
+                                check=comparison(f"{key}.{i}.{p_field}.finite",False,p.get(p_field) is not None)
+                                if check["status"]=="exact_match":
+                                    check["explanation"]="Actual uncensored R uncertainty is nonfinite; Rust also withholds it. This verifies availability, not a numerical interval."
+                                checks.append(check)
                             else:
                                 checks.append(comparison(f"{key}.{i}.{p_field}",r[r_field],p.get(p_field),1e-6,1e-6))
-                if not raw or not curve.get("confidence_interval"):
+                if not raw:
                     checks.append(unverified(key+".confidence_interval","Uncensored reference or Rust confidence intervals unavailable; no uncertainty match claimed."))
     return checks
 
 
 def gam_intermediate_comparisons(reference, probe):
-    """Validation-only common nodal coordinates, never compare unlike bases."""
+    """Validation-only fit diagnostics; GAM matrices use common nodal coordinates."""
     def array(x): return x if isinstance(x,list) else [x] if x is not None else []
     def transpose(a): return list(map(list,zip(*a)))
     def multiply(a,b): return [[sum(x*y for x,y in zip(row,column)) for column in zip(*b)] for row in a]
@@ -304,12 +307,23 @@ def gam_intermediate_comparisons(reference, probe):
             for row in array(layer.get('data')):groups.setdefault((str(row['PANEL']),row['group']),[]).append(row)
             for (panel,group),rows in groups.items():
                 r=next(predictions,None)
-                if not r or r.get('method')!='gam':continue
+                if not r:continue
                 label=legends.get(rows[0].get('colour'));source=label if combined else plot['directory']
                 selected=(panels[panel].get('Q_cutoff') if combined else label)!='All reads'
                 quality=family=='q_by_hour'
                 candidates=sources.get(source,{}).get('gam_audit') or []
                 d=next((d for d in candidates if d['quality']==quality and d['population'].startswith('qscore')==selected and (not d['single'] if combined or selected or not quality else d['single'])),None)
+                if r.get('method')=='loess':
+                    key=f"loess.{plot['directory']}.{source}.{family}.{'selected' if selected else 'all'}"
+                    ra=r.get('audit') or {};pa=(d or {}).get('loess')
+                    finite=all(isinstance(ra.get(f),(float,int)) and math.isfinite(ra[f])
+                               for f in ('residual_scale','df','critical_value'))
+                    checks.append(comparison(key+'.finite_uncertainty',finite,pa is not None))
+                    if finite and pa is not None:
+                        for field in ('trace_hat','one_delta','two_delta','residual_scale','df','critical_value'):
+                            checks.append(comparison(key+'.'+field,ra[field],pa[field],1e-6,1e-6))
+                    continue
+                if r.get('method')!='gam':continue
                 key=f"gam.{plot['directory']}.{source}.{family}.{'selected' if selected else 'all'}"
                 if not d or not d.get('fit') or not r.get('audit'):
                     checks.append(unverified(key,'Intermediate audit missing; enable PG_GAM_AUDIT.'));continue
@@ -478,7 +492,8 @@ def main(argv=None):
             for item in inventory:
                 if not item["labels"].get("x") or not item["labels"].get("y"):
                     checks.append(unverified(f"plot.{item['file']}.axes","Reference axis metadata missing; inspect inventory."))
-        report["cases"].append(dict(name=name,qscore_cutoff=cutoff,inputs=[dict(sha256=digest(p),bytes=p.stat().st_size) for p in paths],excluded_controls=excluded,reference_executed=available is not None,reference_completed=bool(reference is not None and returncode==0 and not reference.get("error")),reference_returncode=returncode,reference_capture_sha256=digest(capture) if capture.exists() else None,reference_environment=reference.get("session") if reference else None,checks=checks,gam_diagnostics=gam_intermediate_comparisons(reference,source_population) if reference else []))
+        diagnostics=gam_intermediate_comparisons(reference,source_population) if reference else []
+        report["cases"].append(dict(name=name,qscore_cutoff=cutoff,inputs=[dict(sha256=digest(p),bytes=p.stat().st_size) for p in paths],excluded_controls=excluded,reference_executed=available is not None,reference_completed=bool(reference is not None and returncode==0 and not reference.get("error")),reference_returncode=returncode,reference_capture_sha256=digest(capture) if capture.exists() else None,reference_environment=reference.get("session") if reference else None,checks=checks,gam_diagnostics=[d for d in diagnostics if d['metric'].startswith('gam.')],loess_diagnostics=[d for d in diagnostics if d['metric'].startswith('loess.')]))
         save_comparison(output,report)
         print(name,dict(Counter(c["status"] for c in checks)),flush=True)
     statuses=save_comparison(output,report)

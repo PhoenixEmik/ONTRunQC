@@ -77,7 +77,8 @@ ggplot2's `compute_density()` without changing its returned values. Bandwidth
 tolerance is absolute 1e-12 + relative 1e-10. The density targets have now been
 met on all executed public/synthetic density groups; fitting remains Partial.
 GAM pointwise standard errors and 95% bounds are compared at the fitted-value
-tolerance; unsupported LOESS intervals remain explicitly Not yet verified. Density
+tolerance; LOESS intervals are also compared, with nonfinite reference bands
+checked as unavailable rather than fabricated numerical matches. Density
 integrals are over the plotted domain; unplotted Gaussian tails are not silently
 renormalized to force area one. Constant-domain evaluation is at the unchanged
 single coordinate. A `predictdf()` exit trace also captures uncensored predictions,
@@ -95,7 +96,7 @@ re-runs parsing/fitting and compares all 1,598 finite fitted values and 960
 large-case GAM uncertainty values at the same tolerance. It is not evidence
 that the other paired cases pass. The latest paired run is recorded in
 `validation-summary.json`; the full ignored report is
-`benchmark-results/gam-paired/comparison.json`. Its exit 1 reflects remaining
+`benchmark-results/parity-final/comparison.json`. Its exit 1 reflects remaining
 MinION selected/combined fits. The PromethION endpoint regression is corrected.
 
 `density-golden.json` contains 24 synthetic series (22 finite curves and two
@@ -138,3 +139,69 @@ perturbation. The canonical Rust convention is deterministic; mismatches with th
 original R result remain failures. No sensitivity result is used to widen target
 tolerances or declare issue #12 complete. The committed validation summary retains
 these measurements and the original-reference discrepancy counts.
+
+## Final GAM/LOESS assessment
+
+Run the controlled experiment **separately** from the unchanged reference suite:
+
+```sh
+/path/to/Rscript tests/reference/gam_assessment.R \
+  benchmark-results/parity-final benchmark-results/gam-controlled-final.json
+/path/to/Rscript tests/reference/cs_sensitivity.R \
+  benchmark-results/parity-final/minion/inputs/source_001/sequencing_summary.txt \
+  7 benchmark-results/cs-final-sensitivity.json
+python3 tests/reference/assess_fits.py \
+  benchmark-results/gam-paired/comparison.json \
+  benchmark-results/parity-final/comparison.json \
+  benchmark-results/gam-controlled-final.json \
+  benchmark-results/cs-final-sensitivity.json \
+  benchmark-results/final-fit-assessment.json
+```
+
+The first comparison argument is the retained 406e354 baseline. The summarizer
+asserts that every non-fit check and every existing tolerance is unchanged.
+Keep the baseline directory if reproducing that historical comparison; the
+controlled diagnostic and paired suite can also run independently.
+
+Twenty unique public/synthetic models are fitted twice in the same R process.
+Variants retain the original cs penalty, swap only its two null weights, apply
+the explicit canonical directions, use Rust's captured penalty, or additionally
+fix lambda to the Rust result. The last model's sp is an imposed input, not an
+optimizer estimate. Original/canonical predictions, uncertainty, REML, edf,
+variance, coefficients and covariance are retained. These diagnostics **never
+replace original R targets** or change strict pass/fail statuses. Baseline/final
+full captures provide an additional independent-process repeat check.
+
+`gam-canonical-golden.json` contains public MinION selected-population aggregate
+moments and actual controlled-R predictions, without read objects or metadata.
+Its test checks agreement with the named convention **and disagreement with the
+original reference endpoint**. It is not an unmodified-MinIONQC golden.
+
+Regenerate synthetic LOESS goldens using:
+
+```sh
+/path/to/Rscript tests/reference/loess_reference.R tests/reference/loess-golden.json
+```
+
+These cover irregular/tied times, 3/4 observations with nonfinite bands, insufficient
+or constant times, and the 999-observation method boundary. Rust checks 5,280
+finite fitted/SE/bound values, unavailable states and the intermediate scale/df/
+critical value. `loess_diagnostics` reports those scalar comparisons separately
+from `gam_diagnostics`. Normal analysis still needs no R.
+
+The LOESS delta-calibration constants in `trends.rs` follow `stats/src/loessf.f`
+(ehg141/176), verified against the installed pinned R rather than substituting
+exact hat-matrix residual df for R's default approximation. Original notice:
+
+> Copyright (C) 1998--2020 The R Core Team.
+> The authors of this software are Cleveland, Grosse, and Shyu.
+> Copyright (c) 1989, 1992 by AT&T.
+> Permission to use, copy, modify, and distribute this software for any
+> purpose without fee is hereby granted, provided that this entire notice
+> is included in all copies of any software which is or includes a copy
+> or modification of this software and in all copies of the supporting
+> documentation for such software.
+> THIS SOFTWARE IS BEING PROVIDED "AS IS", WITHOUT ANY EXPRESS OR IMPLIED
+> WARRANTY. IN PARTICULAR, NEITHER THE AUTHORS NOR AT&T MAKE ANY
+> REPRESENTATION OR WARRANTY OF ANY KIND CONCERNING THE MERCHANTABILITY
+> OF THIS SOFTWARE OR ITS FITNESS FOR ANY PARTICULAR PURPOSE.
