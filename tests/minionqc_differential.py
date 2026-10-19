@@ -454,7 +454,7 @@ def main(argv=None):
         pg=json.loads((pgdir/"combined/report.json").read_text())
         probe=directory/"source-population.json"
         probe_env=dict(os.environ,PG_PROBE_INPUTS=json.dumps(list(map(str,copied))),PG_PROBE_CUTOFF=str(cutoff),PG_PROBE_OUTPUT=str(probe),PG_PROBE_CURVES="1" if available else "0",PG_GAM_AUDIT="1")
-        checked=subprocess.run(["cargo","test","reference_probe::export_report","--","--ignored","--exact"],env=probe_env,capture_output=True,text=True,cwd=Path(__file__).resolve().parents[1])
+        checked=subprocess.run(["cargo","test","--locked","reference_probe::export_report","--","--ignored","--exact"],env=probe_env,capture_output=True,text=True,cwd=Path(__file__).resolve().parents[1])
         if checked.returncode: raise RuntimeError(checked.stderr)
         source_population=json.loads(probe.read_text())
         rdir=directory/"minionqc";rdir.mkdir(exist_ok=True)

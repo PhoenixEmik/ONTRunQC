@@ -78,6 +78,8 @@ record_density <- function(bw, x, from, to, adjust, kernel, n) {
 invisible(trace("compute_density", where=asNamespace("ggplot2"), print=FALSE,
   exit=quote(.GlobalEnv$record_density(bw, x, from, to, adjust, kernel, n))))
 original_save <- ggplot2::ggsave
+plot_audit <- Sys.getenv("PG_PLOT_AUDIT") == "true"
+if (plot_audit) source(Sys.getenv("PG_PLOT_AUDIT_HELPER"))
 ggsave <- function(filename, plot, ...) {
   density_calls <<- list()
   smooth_calls <<- list()
@@ -85,11 +87,13 @@ ggsave <- function(filename, plot, ...) {
   layers <- lapply(seq_along(plot$layers), function(i) {
     layer <- built$plot$layers[[i]]
     method <- layer$computed_stat_params$method
-    list(stat=class(layer$stat)[1],
+    result <- list(stat=class(layer$stat)[1],
          method=if (is.function(method)) "gam" else method,
          formula=paste(deparse(layer$computed_stat_params$formula), collapse=" "),
          data=if(class(layer$stat)[1] %in% c("StatSmooth","StatDensity")) as.data.frame(built$data[[i]]) else NULL,
          rows=nrow(built$data[[i]]), groups=unique(built$data[[i]]$group))
+    if (plot_audit) result$audit <- audit_layer(layer, built$data[[i]], family=basename(filename))
+    result
   })
   colour <- built$plot$scales$get_scales("colour")
   breaks <- if (is.null(colour)) NULL else colour$get_breaks()
@@ -99,8 +103,31 @@ ggsave <- function(filename, plot, ...) {
       colour_labels=labels, colours=if(is.null(colour)) NULL else colour$map(breaks),
       panels=as.data.frame(built$layout$layout), layers=layers,
       density_parameters=density_calls, smooth_predictions=smooth_calls)
-  if (Sys.getenv("PG_REFERENCE_RENDER", "true") == "true")
-    original_save(filename=filename, plot=plot, ...)
+  if (plot_audit) {
+    index <- length(plots)
+    plots[[index]]$axes <<- lapply(built$layout$panel_scales_x, audit_scale)
+    plots[[index]]$y_axes <<- lapply(built$layout$panel_scales_y, audit_scale)
+    plots[[index]]$render_arguments <<- list(...)
+    if (any(vapply(plot$layers, function(l) inherits(l$geom,"GeomTile"), TRUE))) {
+      columns <- intersect(c("channel","row","col","Q_cutoff","variable","value"), names(plot$data))
+      # Original numeric yield is retained before fill maps it to an RGB color.
+      if (nrow(plot$data) <= 20000L)
+        plots[[index]]$source_tiles <<- plot$data[,columns,drop=FALSE]
+    }
+  }
+  if (Sys.getenv("PG_REFERENCE_RENDER", "true") == "true") {
+    arguments <- list(...)
+    # Optional gallery resolution changes only the output device, never plot data.
+    if (plot_audit && nzchar(Sys.getenv("PG_REFERENCE_DPI")))
+      arguments$dpi <- as.numeric(Sys.getenv("PG_REFERENCE_DPI"))
+    withCallingHandlers(
+      do.call(original_save, c(list(filename=filename, plot=plot), arguments)),
+      error=function(e) {
+        if (plot_audit) plots[[length(plots)]]$render_error <<- list(
+          message=conditionMessage(e), call=deparse(conditionCall(e)),
+          stack=vapply(sys.calls(), function(x) paste(deparse(x),collapse=" "), ""))
+      })
+  }
   invisible(filename)
 }
 error <- NULL

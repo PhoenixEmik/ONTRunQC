@@ -233,3 +233,45 @@ The project is now ONTRunQC. Historical `poregauge` comparison keys, status name
 output subdirectories and explanation strings are retained by the differential
 harness so original numerical evidence and check signatures remain verifiable.
 Run it with `target/release/ontrunqc`; no reference targets or tolerances changed.
+
+## Formula and visual layer audit (#18)
+
+The separate optional tool observes existing built layers, with no changes to
+strict smoothing/density targets or normal R captures:
+
+```sh
+python3 tests/reference/plot_audit.py /path/to/pinned/minion_qc \
+  --rscript /path/to/Rscript
+Rscript tests/reference/plot_layers_test.R
+```
+
+Requires the existing pinned R environment, normal Cargo static-figures build
+and ImageMagick (`magick`); Python uses only its standard library. No environment
+is installed. Six public cases generate 85 actual R plots, native canonical PNG
+exports, bounded layer captures, numeric diagnostics and representative A/B/C
+cards. Use `--case promethion`, or `--reuse` for matching input/source hashes.
+Full reports live in ignored `benchmark-results/plot-audit/`. The small gallery,
+aggregate checks, input/source hashes and R sessions are in
+`docs/figures/minionqc-comparison/`. Original PNG is rendered at60 DPI for this
+visual audit; native exports are300 DPI, with gallery-only resize/palette
+reduction. These device changes do not change plot calculations.
+
+`PG_PLOT_AUDIT=true` plus `PG_PLOT_AUDIT_HELPER=.../plot_layers.R` enables bounded
+capture of StatBin/StatBin2d/StatCount, spatial tiles and full finite-row grids.
+Exact histogram boundaries are already transformed (log10 length where used).
+Large row samples are labelled samples, never complete plotted populations.
+Cumulative queries count all reads tied at a queried start time. Spatial yield is
+captured before mapping fill to colors. Missing/nonfinite/clipped rows remain
+explicit. `plot_checks.py` independently checks counts against original TSV
+populations and quantifies display interpolation separately from exact queries.
+
+Different bins are not interpolated/subtracted as a false residual. Diagnostic
+residuals use only matching X coordinates; the original strict suite still
+checks every fit/uncertainty group. A gallery first-group comparison cannot waive
+an unresolved Q-selected GAM discrepancy. Gallery execution returns nonzero for
+unexplained numeric differences; different aggregation/population is named.
+The production CLI is exercised separately by the paired differential suite.
+
+The existing ignored probe optionally writes actual canonical reports/figures
+with `PG_PROBE_FIGURES`; these explicitly use upstream file scope, not invented
+instrument identities. Minimal builds are not used for native PNG validation.
