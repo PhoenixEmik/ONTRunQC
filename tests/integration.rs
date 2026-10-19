@@ -3547,6 +3547,35 @@ fn signed_cutoffs_select_legacy_reads_without_weakening_modern_validation() {
         50
     );
     assert_eq!(selected["metrics"]["basecalled_reads"], 3);
+    assert_eq!(
+        selected["comparison"]["qscore_selected"]["median_qscore"],
+        -0.5
+    );
+    assert_eq!(selected["comparison"]["qscore_selected"]["n50_bp"], 30);
+    assert_eq!(
+        selected["comparison"]["quality_histogram"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["read_count"].as_u64().unwrap())
+            .sum::<u64>(),
+        2
+    );
+    let a = directory.0.join("negative-a.tsv");
+    let b = directory.0.join("negative-b.tsv");
+    fs::write(&a, legacy).unwrap();
+    fs::write(&b, legacy).unwrap();
+    let combined = run_collection(&directory, &[&a, &b], &["--processors", "2", "-q", "-1"]);
+    assert_eq!(combined["comparison"]["qscore_selected"]["read_count"], 4);
+    assert_eq!(
+        combined["comparison"]["quality_histogram"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["read_count"].as_u64().unwrap())
+            .sum::<u64>(),
+        4
+    );
     let modern = format!("{HEADER}{}", ROW.replace("12.5", "-1"));
     let input = directory.0.join("input.tsv");
     fs::write(&input, modern).unwrap();
@@ -3597,4 +3626,42 @@ fn compatibility_mux_references_follow_integer_hour_source_semantics() {
     );
     assert_eq!(short["presentation"]["mux_markers_seconds"], json!([0.0]));
     assert_eq!(short["metrics"]["basecalled_reads"], 0);
+}
+
+#[test]
+fn independent_dense_minion_runs_are_identical_at_one_and_two_workers() {
+    let directory = TestDirectory::new();
+    let paths = [directory.0.join("a.tsv"), directory.0.join("b.tsv")];
+    for (j, path) in paths.iter().enumerate() {
+        let mut data = HEADER.to_owned();
+        for i in 0..4100 {
+            data.push_str(&format!(
+                "run-{j}\t{}\t2\t{}\t1\tTRUE\t{}\t{}\tunusual\n",
+                i % 512 + 1,
+                i * 23,
+                i + 10,
+                7.5 + (i % 4) as f64
+            ));
+        }
+        fs::write(path, data).unwrap();
+    }
+    let inputs = [paths[0].as_path(), paths[1].as_path()];
+    run_collection(&directory, &inputs, &["--flowcell-layout", "minion-r9.5"]);
+    let before = report_snapshot(&directory.0.join("output"));
+    for id in ["run_001", "run_002"] {
+        let report: Value = serde_json::from_slice(
+            &fs::read(directory.0.join(format!("output/runs/{id}/report.json"))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            report["diagnostics"]["minion_read_visualization"]["eligible_reads"],
+            4100
+        );
+    }
+    run_collection(
+        &directory,
+        &inputs,
+        &["--flowcell-layout", "minion-r9.5", "--processors", "2"],
+    );
+    assert_eq!(before, report_snapshot(&directory.0.join("output")));
 }

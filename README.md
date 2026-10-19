@@ -6,7 +6,7 @@ modern MinKNOW/Dorado output. It streams TSV records, validates them, calculates
 run metrics, and writes deterministic JSON and standalone HTML reports.
 
 Current release: **[v0.4.0 — Advanced Read Quality Diagnostics](https://github.com/PhoenixEmik/PoreGauge/tree/v0.4.0)**.
-Unreleased development: **native static figure exports, issue #15** (on the 0.4.1 codebase).
+Unreleased development: **bounded multi-run workers and CLI compatibility, issue #16** (on the 0.4.1 codebase).
 Strict GAM numerical parity remains Partial; existing reference evidence is preserved.
 
 PoreGauge is not a basecaller or a replacement for MinKNOW instrument monitoring.
@@ -375,10 +375,41 @@ and [executed decoder checks/measurements](docs/benchmark.md#native-static-figur
 
 Compatibility aliases include `-i/--input`, `-o/--outputdirectory`,
 `-q/--qscore_cutoff`, `-c/--combined-only`, `-s/--smallfigures`, `-a/--add-stat`,
-`-m/--muxes`, and `-f/--format`. Boolean options are flags, not `TRUE/FALSE` values.
-`--processors 1` is accepted; larger values are rejected explicitly because
-processing remains sequential. `--output` is always required; reports are never
-written beside input files implicitly.
+`-m/--muxes`, and `-f/--format`. Logical options accept both flag-only and
+historical `TRUE/FALSE` values, e.g. `--smallfigures TRUE --add-stat FALSE`.
+Equals syntax also works; a bare flag before an input path never consumes it.
+Cutoffs may be any finite signed value; modern input Q validation stays strict.
+
+`--processors N` runs at most N independent input-component aggregators at once.
+An extra streaming identity pass joins files sharing run IDs before dispatch;
+chunks and mixed-run files stay intact. Group order, within-run floating-point
+updates and pooled reductions are unchanged. Quantile finalization, fitted-trend
+passes, dense MinION raster passes and rendering remain ordered/sequential.
+Single files and explicit `--group-inputs` retain the sequential path. More
+workers can be slower because discovery adds I/O; they do not reduce retained
+exact-statistics memory. See [measured results](docs/benchmark.md#bounded-independent-run-processing-16).
+
+Normal invocations still require `--output`, default to HTML/JSON, and disable
+mux references with `--muxes 0`. Explicit `--minionqc-compat` enables historical
+integer-hour reference markers: single-run 0 uses the final observed hour,
+positive values set an interval, combined comparisons use fixed 8-hour spacing.
+These are configured references, never measured mux events. To disable all
+references, omit compatibility mode and use `--muxes 0`.
+
+With compatibility mode and exactly one input path, omitted output creates a
+**new `poregauge_qc/`** beside a file or inside a directory; existing destinations
+are refused. This safe subdirectory differs from upstream's direct beside-input
+writes. Multiple paths require explicit output. HTML/JSON remain the default
+even in compatibility mode; request upstream's PNG output explicitly:
+
+```sh
+poregauge analyze summaries/ --processors 2 --output qc_results/
+poregauge analyze summary.txt --minionqc-compat --smallfigures TRUE --format png
+```
+
+Compatibility mode is a CLI/presentation option, not a change to scientific
+filtering, denominators, GAM/KDE or run identity. Full strict fitted-curve parity
+remains Partial (#12).
 
 ## Development
 

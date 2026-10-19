@@ -354,6 +354,7 @@ struct ComparisonAccumulator {
     mean_qscore: f64,
     length_counts: [u64; LENGTH_BOUNDS.len()],
     length_yields: [u64; LENGTH_BOUNDS.len()],
+    negative_quality_count: u64,
     quality_counts: [u64; QUALITY_BOUNDS.len()],
     time_bins: BTreeMap<u64, SelectedTimeBin>,
 }
@@ -369,6 +370,7 @@ impl Default for ComparisonAccumulator {
             mean_qscore: 0.0,
             length_counts: [0; LENGTH_BOUNDS.len()],
             length_yields: [0; LENGTH_BOUNDS.len()],
+            negative_quality_count: 0,
             quality_counts: [0; QUALITY_BOUNDS.len()],
             time_bins: BTreeMap::new(),
         }
@@ -638,8 +640,13 @@ impl Aggregator {
                 self.quality_counts[i] += bin.read_count;
             }
         }
-        for i in 0..QUALITY_BOUNDS.len() {
-            c.quality_counts[i] += report.comparison.quality_histogram[i].read_count;
+        for bin in &report.comparison.quality_histogram {
+            if bin.lower_inclusive < 0.0 {
+                c.negative_quality_count += bin.read_count;
+            } else {
+                let i = QUALITY_BOUNDS.partition_point(|b| *b <= bin.lower_inclusive) - 1;
+                c.quality_counts[i] += bin.read_count;
+            }
         }
         let joint = &report.diagnostics.length_quality_histogram;
         let offset = usize::from(joint.qscore_lower_bounds.first().is_some_and(|v| *v < 0.0));
@@ -863,7 +870,11 @@ impl Aggregator {
             let length_bin = LENGTH_BOUNDS.partition_point(|b| *b <= record.length) - 1;
             c.length_counts[length_bin] += 1;
             c.length_yields[length_bin] += record.length;
-            c.quality_counts[QUALITY_BOUNDS.partition_point(|b| *b <= record.qscore) - 1] += 1;
+            if record.qscore < 0.0 {
+                c.negative_quality_count += 1;
+            } else {
+                c.quality_counts[QUALITY_BOUNDS.partition_point(|b| *b <= record.qscore) - 1] += 1;
+            }
             let bin = c
                 .time_bins
                 .entry(start_seconds)
@@ -1171,7 +1182,7 @@ impl Aggregator {
                 bin
             })
             .collect();
-        let comparison = ComparisonMetrics {
+        let mut comparison = ComparisonMetrics {
             qscore_cutoff: self.comparison.cutoff,
             native_filtering_available: self.comparison.native_available,
             native_unclassified_reads: self.comparison.unclassified,
@@ -1200,6 +1211,16 @@ impl Aggregator {
             channels: channel_comparisons,
             channel_distributions,
         };
+        if self.comparison.negative_quality_count > 0 {
+            comparison.quality_histogram.insert(
+                0,
+                QualityBin {
+                    lower_inclusive: -f64::MAX,
+                    upper_exclusive: Some(0.0),
+                    read_count: self.comparison.negative_quality_count,
+                },
+            );
+        }
         let distribution = LENGTH_BOUNDS
             .iter()
             .enumerate()

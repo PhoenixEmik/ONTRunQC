@@ -3,7 +3,7 @@
 Reference: [MinIONQC v1.4.1 source](https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R),
 README, options, `tests.R`, public YAML and example figures at commit `54485d5`.
 Statuses describe scientific functionality, not identical ggplot pixels.
-**Full MinIONQC numerical/CLI parity is not claimed.** JSON remains canonical;
+**Full strict MinIONQC numerical parity is not claimed.** JSON remains canonical;
 static format support does not imply identical ggplot pixels or vector PS.
 
 Validation keys below:
@@ -66,13 +66,13 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 | Original option / output | Status | Equivalent / difference / validation |
 | --- | --- | --- |
 | `--input` / `-i` | Complete | Repeated input option plus positional files/directories; U alias and discovery tests. `analyze` subcommand retained. |
-| `--outputdirectory` / `-o` | Complete | Alias of required `--output`; no implicit writes beside inputs; U alias/output-failure tests. |
-| `--qscore_cutoff` / `-q` | Complete | Alias of `--qscore-cutoff`, default 7 inclusive; U cutoff boundary tests. Finite nonnegative cutoffs only. |
-| `--processors` / `-p` | Partial | Accepts 1; larger values fail explicitly. Processing remains sequential, no parallel speed parity. |
-| `--combined-only` / `-c` | Complete | Flag, skips individual outputs; U collection exports. |
-| `--smallfigures` / `-s` | Complete | 120 mm figure width vs normal 180 mm, all export formats; wide physical maps stay 320 mm; U export dimensions, V. Boolean flag instead of R logical value. |
-| `--muxes` / `-m` | Complete | Configured hour references, not events; default 0 disables, maximum 512 markers; U relative-coordinate/disable/error tests. R's inferred default and fixed combined 8h default are not assumed. |
-| `--add-stat` / `-a` | Complete | Exact-model mean length/N50 and mean Q on corresponding histograms; U SVG annotation/JSON consistency, V. Flag instead of R logical value. |
+| `--outputdirectory` / `-o` | Complete | Alias of `--output`; opt-in compatibility mode creates a new `poregauge_qc/` beside one file/inside one directory and refuses reuse. Intentional safe location difference; U compatibility output tests. |
+| `--qscore_cutoff` / `-q` | Complete | Alias of `--qscore-cutoff`, default 7 inclusive; U cutoff boundary tests. Finite signed cutoffs; negative legacy selection tested, modern input validation unchanged. |
+| `--processors` / `-p` | Complete | Bounded independent-component aggregation, stable run/file/row order and exact pooling; U worker-overlap/bounds/failure and 1-vs-2 byte-equality tests; optional measured suite below. Single/indivisible inputs remain sequential. No general speedup claim. |
+| `--combined-only` / `-c` | Complete | Bare flag or explicit TRUE/FALSE, skips individual outputs; U collection/logical tests. |
+| `--smallfigures` / `-s` | Complete | 120 mm figure width vs normal 180 mm, all export formats; wide physical maps stay 320 mm; U export dimensions, V. Bare flag and TRUE/FALSE forms; U logical argument tests. |
+| `--muxes` / `-m` | Complete | Configured hour references, not events; default 0 disables, maximum 512 markers; U relative-coordinate/disable/error tests. Opt-in --minionqc-compat uses integer-hour single defaults and fixed combined 8h references; U compatibility marker tests. |
+| `--add-stat` / `-a` | Complete | Exact-model mean length/N50 and mean Q on corresponding histograms; U SVG annotation/JSON consistency, V. Bare flag and TRUE/FALSE forms; U logical tests. |
 | `--format` / `-f` | Complete | Default/release builds support HTML, SVG and all six native conversion formats. One format per invocation; unknown values fail. U format/manifest/decoder tests, optional export suite below. Minimal opt-out builds explicitly support only HTML/SVG. |
 | `summary.yaml` | Complete | Optional `--yaml`, MinIONQC-shaped All/Q sections, thresholds/ultralong; U YAML scalar/mapping parity/escaping/nulls, P canonical values. Intentional denominator/rounding differences below. |
 | Independent SVG figures | Complete | Current manifest, embedded CSS/title, mm dimensions; U export/offline/staging tests, V. No external fonts/scripts required. |
@@ -99,8 +99,8 @@ stale (Q>=7 labels, Q8 invocation/results). This fast check did not execute R. T
 PBM95914 baseline was not rerun; its historical totals remain in metrics.md.
 
 Issues should remain open wherever their required acceptance criteria exceed
-these implemented, tested behaviors. Strict GAM smoothing and remaining CLI
-compatibility differences still prevent an unqualified full-parity claim.
+these implemented, tested behaviors. Strict original-R GAM smoothing still prevents an unqualified full-parity
+claim. Safe output/default format differences are intentional and explicit.
 
 Earlier baseline checks (before #11–#13): rustfmt, Clippy with warnings denied, **17 unit +76
 integration tests**, and the locked release build. Existing JSON subtrees match
@@ -420,3 +420,32 @@ another format does not erase them. See [actual results](benchmark.md#native-sta
 #12 remains Partial/open. Its solver, null-space penalties, strict tolerances,
 KDE implementation and the 18-case evidence (including **1,542** strict GAM
 failures) are not modified or reclassified by this work. #16 is not implemented.
+
+
+## CLI and independent-run completion (#16)
+
+Every original option is covered in the CLI table above. Logical values and
+signed cutoffs are equivalent behaviors; `analyze`, opt-in safe output placement,
+HTML/JSON default, explicit physical layouts and sequential post-aggregation
+passes are documented syntax/default/processing differences. There is no claim
+of matching R fork scheduling, default PNG, automatic device inference or unsafe
+output reuse. `--minionqc-compat` supplies tested historical mux reference rules,
+including the explicitly corrected sub-hour zero-step failure. Existing ordinary
+PoreGauge invocations retain their output locations, references and statistics.
+
+Validation: U `workers_overlap_are_bounded_and_join_before_error`,
+`parallel_groups_preserve_interleaved_chunks_legacy_empty_and_exact_outputs`,
+`parallel_worker_failure_preserves_previous_collection_and_publishes_nothing_new`,
+`independent_dense_minion_runs_are_identical_at_one_and_two_workers`, logical/
+implicit-output/signed-cutoff/mux compatibility tests. Optional
+`tests/parallel_runs.py` compares a prior release binary and 1/2 workers on
+public and synthetic inputs plus six-format exports. [Measurements and exact
+commands](benchmark.md#bounded-independent-run-processing-16) include sampled
+temporary storage, input passes, no-speedup cases and PDF byte-order limits.
+
+Parent audit: #9's legacy/control/layout/read-level coverage is satisfied by
+existing public-reference and complete-data #14 evidence. #10's YAML/annotations/
+formats/CLI/checklist requirements are covered by public numerical checks,
+#15's actual decoder evidence and #16 tests. #8 remains incomplete under its
+explicit strict fitted-curve acceptance update because #12 GAM discrepancies
+remain unresolved. #12 remains Partial/open; no targets or tolerances changed.

@@ -851,3 +851,70 @@ cases, including singleton groups. Checked-in synthetic-only golden data cover
 The optional estimator's descriptive `method` now omits the obsolete
 `unverified` suffix; report fields, legacy distributions and core metrics retain
 their definitions.
+
+
+## Bounded run processing and CLI compatibility (#16)
+
+`--processors 1` preserves the original parse/reduce order. For N>1 with
+multiple files and no explicit grouping, one additional validating streaming
+pass records run IDs and joins files with overlapping IDs into indivisible
+components. Distinct components run in bounded waves of at most N scoped
+threads. There is no queue or copied observation dataset. A mixed-run file
+stays within one worker; chunks sharing an ID stay in file/row order. Legacy
+files without IDs remain independent **source labels**, not invented runs.
+Single inputs and `--group-inputs` bypass the independence scan.
+
+Groups are restored to first-seen `(file index, record line)` order. Floating
+updates within each run, global fit-method choice, shared KDE domain, exact
+statistics and pooled reductions retain their original deterministic order.
+Fitted-trend rescans, dense MinION rescans/finalization and all report rendering
+remain sequential. Bounded workers are not a whole-process memory bound:
+all exact numeric observations remain owned once by their run aggregators,
+plus active parser buffers/stacks and existing sorting/pooling allocations.
+No numerical fitting/KDE or MinION raster implementation is changed.
+
+All workers finish/join before any report publication. Worker failure produces
+an error and no new report outputs; previous reports remain valid. Later render
+or rename failures retain existing per-file staging guarantees, **not** a
+collection-wide transaction. Inputs must remain unchanged across passes;
+new conflicting identities detected after discovery fail before publication.
+Directory/path/inode deduplication is unchanged; separately copied duplicate
+reads are not deduplicated.
+
+Logical `--combined-only`, `--smallfigures`/`--small-figures`, `--add-stat` and
+short aliases accept bare flags, `=TRUE/FALSE`, or spaced `TRUE/FALSE` (case
+insensitive). Only those exact logical tokens are normalized; other paths are
+not consumed as option values. `--` terminates option processing. Use equals
+syntax or `--` to disambiguate a literal input filename named TRUE/FALSE.
+
+Q cutoffs accept finite signed numbers, inclusively. Negative cutoffs can select
+legacy negative-Q observations; they never bypass modern nonnegative input-Q
+validation. Selected quality histograms then prepend the same explicit
+`[-f64::MAX,0)` underflow interval used by the existing all-read histogram.
+Pooling adds counts by bin boundary, conserving selected counts; existing
+nonnegative bin boundaries and all previously supported-cutoff results remain
+unchanged. No cutoff is substituted for native filtering.
+
+`--minionqc-compat` is opt-in. `presentation.minionqc_compatibility=true` appears
+only for that mode (schema 1 additive presentation metadata). It uses upstream's
+`hour=floor(start_time/3600)` convention for mux reference extents. Single-run
+`--muxes 0` uses the maximum observed integer hour, positive values define
+spacing, and combined comparisons use 8 hours regardless of the individual
+setting. Controls do not determine the extent. Empty inputs have no references;
+sub-hour runs get only the origin instead of reproducing R's zero-step `seq`
+error. The 512-marker guard remains. These are never instrument telemetry.
+Normal defaults and bin-end-based explicit references remain unchanged.
+
+Omitted `--output` is accepted only in compatibility mode with one input path.
+A fresh `poregauge_qc/` is atomically reserved beside that file or within that
+directory. Existing destinations, including symlinks, are refused; an empty
+reservation is removed on failure. Completed per-run outputs are never deleted
+on later failure. Multiple paths need explicit output. This deliberately differs
+from upstream's direct beside-input writes. Default output remains HTML/JSON;
+PNG requires `--format png`, including in compatibility mode/minimal builds.
+
+`tests/parallel_runs.py` optionally compares the prior binary, one worker and
+two workers on synthetic/public inputs, dense MinION fits/KDE and all six static
+formats. JSON/HTML, all non-PDF figures, source paths and manifests must match
+byte-for-byte; PDF resource ordering remains the documented #15 exception.
+See [executed measurements](benchmark.md#bounded-independent-run-processing-16).

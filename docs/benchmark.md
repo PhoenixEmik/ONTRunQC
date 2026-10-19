@@ -405,3 +405,81 @@ five input families (short, PromethION, 1D2, direct RNA, multiple MinION files).
 The 18-case actual-R evidence, strict tolerances and GAM/KDE/MinION aggregation
 sources were hash-checked unchanged; the paired R suite was not rerun here.
 Issue #12 remains Partial with **1,542** strict primary GAM discrepancies.
+
+
+## Bounded independent-run processing (#16)
+
+Measured 2026-10-19, macOS arm64, Rust 1.98.1 release, Python 3.15.0.
+No private sequencing data or actual-R fitting suite was rerun. The optional
+standard-library harness compares the prior #15 executable (`72dd30c` behavior),
+the new one-worker path and the new two-worker path:
+
+```sh
+cargo build --release --locked
+python3 tests/parallel_runs.py --upstream /path/to/pinned/minion_qc \
+  --baseline /path/to/prior/poregauge --output benchmark-results/parallel-runs
+```
+
+Use a fresh output directory. The public checkout must be pinned to
+`54485d586038d8ee36f168dd94f31c423f52f581`; omit --upstream/--baseline when
+unavailable. Child-specific `wait4` measures CPU/RSS; a parent monitor samples
+scratch and staged `.tmp` files every 10 ms. Sampled temporary peaks are **lower
+bounds**, not continuous filesystem tracing; monitoring is outside child CPU/RSS.
+Input-pass counts below are exact execution-path accounting for these fixtures,
+not an OS read trace. Input/output cache and competing workloads were not
+controlled; each row is one observation, not a speedup guarantee.
+
+Inputs: `large` is two independent synthetic 300,000-record runs, combined-only;
+`dense` is two 4,100-read runs with explicit MinION layout, full-count raster,
+raw-read trends, reference-grid KDE and SVG exports; `public` is the two original
+MinION input files, 608,208 summary records/eight run IDs, combined-only. Unknown
+identities are never invented. Export cases additionally use two independent
+20-record synthetic runs with YAML, small figures and annotations in each of the
+six native formats.
+
+| Case | Version / workers | Wall s | User CPU s | System CPU s | Peak RSS MiB | Sampled temp MiB | File passes | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| large | before /1 | 0.4293 | 0.3964 | 0.0117 | 41.56 | 2.08 | 2 | 2186256 |
+| large | one /1 | 0.8115 | 0.4056 | 0.0114 | 41.69 | 1.24 | 2 | 2186256 |
+| large | two /2 | 0.4632 | 0.5685 | 0.0151 | 40.41 | 2.08 | 4 | 2186256 |
+| dense | before /1 | 0.6978 | 0.1200 | 0.0513 | 54.95 | 8.74 | 6 | 22333943 |
+| dense | one /1 | 0.7591 | 0.1199 | 0.0494 | 54.44 | 8.74 | 6 | 22333943 |
+| dense | two /2 | 0.6990 | 0.1202 | 0.0443 | 52.47 | 8.74 | 8 | 22333943 |
+| public-minion | before /1 | 0.6086 | 0.5561 | 0.0244 | 43.14 | 4.98 | 2 | 5223797 |
+| public-minion | one /1 | 0.5929 | 0.5507 | 0.0242 | 41.12 | 4.98 | 2 | 5223797 |
+| public-minion | two /2 | 0.7503 | 0.8377 | 0.0397 | 40.77 | 4.98 | 4 | 5223797 |
+
+All **27 executions** completed. Scientific JSON, HTML, non-PDF figures, source
+identifiers/order and figure manifests were byte-identical across old/one/two
+variants. PDF resource bytes are excluded per the existing #15 contract; names,
+manifests and their scientific source reports still match. One worker preserves
+the original parse/reduction results. The large case uses 2/4 total file passes
+at 1/2 workers; dense uses 6/8 (identity scan +two existing post-parse passes);
+public uses 2/4. No temporary files remained. Format output sizes matched,
+except PDF's already documented resource-order serialization variation.
+
+The public case was **slower** with two workers (0.7503 vs 0.5929 s), with higher
+CPU cost from the extra discovery pass. The synthetic one-worker wall/CPU gap
+also shows scheduling/filesystem noise; no general speedup is claimed. Scanning,
+exact numeric retention and post-aggregation work often dominate small runs.
+Quantile finalization, global-fit rescans, shared-domain KDE, dense image passes
+and report/static-format rendering remain sequential to preserve deterministic
+floating-point behavior and bounded raster memory. More processors need not help.
+The test `workers_overlap_are_bounded_and_join_before_error` uses a two-thread
+barrier and atomic active/completion counters on the production dispatcher:
+maximum simultaneous jobs is exactly two, and failures join all started work.
+Integration cases verify actual independent/grouped/interleaved/legacy runs,
+dense MinION data, combined-only, fits/KDE and no-publication worker failure.
+
+Validation executed: fmt; default and minimal locked Clippy; 50 unit +94
+integration tests in the default build (three intentionally ignored external/
+performance probes), 44 unit +93 integration tests in the minimal build; both
+locked release builds; 11 reference-harness Python tests; all five original
+public-input scientific families. The core/fitting/KDE/MinION/export source and
+reference hashes stayed unchanged except one necessary selected-negative-Q
+histogram extension in `metrics.rs`: an existing nonnegative-index assumption
+was unreachable until signed cutoffs were enabled. Negative selected counts now
+use the existing all-read underflow-bin convention and pool by boundaries;
+prior supported-cutoff outputs matched the old binary exactly. No N50, means,
+filter semantics, GAM/KDE calculations or original-R targets changed. #12 still
+has its original 1,542 strict GAM discrepancies.

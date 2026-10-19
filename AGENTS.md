@@ -22,7 +22,7 @@ These check formatting/lints, run tests, build the binary, and generate `report.
 
 ## Coding Style & Naming Conventions
 
-Use rustfmt defaults, four-space indentation, `snake_case` functions/modules, and `UpperCamelCase` types. Prefer straightforward functions, minimal dependencies, and contextual `anyhow` errors. Reuse parsing buffers and borrow fields; avoid per-record strings. Keep processing single-threaded unless measurements justify changing it.
+Use rustfmt defaults, four-space indentation, `snake_case` functions/modules, and `UpperCamelCase` types. Prefer straightforward functions, minimal dependencies, and contextual `anyhow` errors. Reuse parsing buffers and borrow fields; avoid per-record strings. Use bounded independent input-component workers only when requested with `--processors`; preserve within-run input order and ordered pooled reductions. Keep fitting, dense MinION passes and rendering sequential.
 
 ## Testing Guidelines
 
