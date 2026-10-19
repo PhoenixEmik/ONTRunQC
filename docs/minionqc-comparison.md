@@ -34,7 +34,7 @@ Functional coverage of the pinned MinIONQC report families is broad, but **stric
 
 | Topic | Pinned MinIONQC | ONTRunQC | Consequence |
 | --- | --- | --- | --- |
-| Input | Plain sequencing_summary.txt, single file or recursive directory | Plain uncompressed, unquoted TSV; explicit files or recursive matching sequencing_summary*.txt/.tsv | Direct gzip reading is **not** yet supported by ONTRunQC; postponed [#17](https://github.com/PhoenixEmik/ONTRunQC/issues/17) is outside MinIONQC-first work |
+| Input | Plain sequencing_summary.txt, single file or recursive directory | Plain or streaming gzip, unquoted TSV; explicit files or recursive matching sequencing_summary*.txt/.tsv and .gz variants | Native gzip [#17](https://github.com/PhoenixEmik/ONTRunQC/issues/17) is an input-layer enhancement outside the pinned R parity contract; the same parser and metrics are used after decoding |
 | Modern headers | Reads compatible template-read fields | Validates required modern fields; accepts auto/legacy modes | Invalid required data cause errors, not silent drops |
 | Legacy / 2D / 1D2 | Historical Albacore/Guppy handling, complete 2D field substitutions | Explicit template/2D choice, no per-row template fallback; absent modern fields stay unavailable | Public legacy and 1D2 comparisons exist |
 | Direct RNA | Removes rows identified by YHR174W calibration strand | Exact named control exclusion with excluded-record count | Exclusions must not be mistaken for a general RNA QC filter |
@@ -182,7 +182,7 @@ Further specialized tests: tests/minion_visualization.py for complete-data MinIO
 1. **Documentation acceptance [#18](https://github.com/PhoenixEmik/ONTRunQC/issues/18):** verify every mapping and referenced source, review metrics/definitions and spot-check commands with the actual pinned reference. Link this detailed document from user-facing README and the engineering parity ledger.
 2. **Combined scientific parity [#8](https://github.com/PhoenixEmik/ONTRunQC/issues/8):** preserve its original strict fitted-temporal requirements; do not mark closed based only on this documentation.
 3. **Original GAM strict numeric parity [#12](https://github.com/PhoenixEmik/ONTRunQC/issues/12):** retain 1,542 failures and independently justified explanation; separate scientific functionality from full original-R numerical equality without silently changing gates.
-4. **Later product extensions:** gzip [#17](https://github.com/PhoenixEmik/ONTRunQC/issues/17) and other new QC families are deferred until compatibility documentation and gates receive explicit attention.
+4. **Input-layer enhancement:** streaming gzip [#17](https://github.com/PhoenixEmik/ONTRunQC/issues/17) is implemented and covered by compression-equivalence and source-integrity tests. It does not change the R parity gates or introduce new QC families.
 
 This document is meant to be read as a **comparison and disclosure**, not a claim that every numerical output matches the original MinIONQC exactly.
 
