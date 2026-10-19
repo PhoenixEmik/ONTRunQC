@@ -1700,7 +1700,7 @@ fn missing_native_flag_is_unavailable_and_never_inferred_from_qscore() {
 #[test]
 fn invalid_qscore_cutoffs_are_actionable() {
     let directory = TestDirectory::new();
-    for q in ["NaN", "inf", "-1", "text"] {
+    for q in ["NaN", "inf", "-inf", "text"] {
         let result = directory.run_with_args(&fixture("parity.tsv"), &["--qscore-cutoff", q]);
         assert!(!result.status.success());
         assert!(String::from_utf8_lossy(&result.stderr).contains("qscore-cutoff"));
@@ -3425,4 +3425,176 @@ fn parallel_worker_failure_preserves_previous_collection_and_publishes_nothing_n
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("3001"));
     assert_eq!(before, report_snapshot(&directory.0.join("output")));
+}
+
+#[test]
+fn compatible_logical_flags_preserve_bare_flags_and_explicit_false() {
+    let directory = TestDirectory::new();
+    let data = format!("{HEADER}{ROW}");
+    let on = directory.analyze_with_args(&data, &["--smallfigures", "TRUE", "--add-stat", "TRUE"]);
+    assert_eq!(on["presentation"]["small_figures"], true);
+    assert_eq!(on["presentation"]["add_stat"], true);
+    let off = directory.analyze_with_args(
+        &data,
+        &[
+            "--smallfigures",
+            "FALSE",
+            "--add-stat=FALSE",
+            "--combined-only",
+            "FALSE",
+        ],
+    );
+    assert_eq!(off["presentation"]["small_figures"], false);
+    assert_eq!(off["presentation"]["add_stat"], false);
+    let input = directory.0.join("input.tsv");
+    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .args(["analyze", "--smallfigures"])
+        .arg(&input)
+        .args(["-o"])
+        .arg(directory.0.join("bare"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let result = directory.run_with_args(&input, &["--combined-only", "TRUE"]);
+    assert!(result.status.success());
+    assert!(directory.0.join("output/combined/report.json").is_file());
+    let result = directory.run_with_args(&input, &["--add-stat=perhaps"]);
+    assert!(!result.status.success());
+    for n in ["0", "-1", "65536", "many"] {
+        assert!(
+            !directory
+                .run_with_args(&input, &["--processors", n])
+                .status
+                .success()
+        );
+    }
+}
+
+#[test]
+fn compatibility_output_is_opt_in_reserved_and_never_reuses_existing_directory() {
+    let directory = TestDirectory::new();
+    let input = directory.0.join("reads with spaces.tsv");
+    let data = format!("{HEADER}{ROW}");
+    fs::write(&input, &data).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_poregauge"))
+            .arg("analyze")
+            .arg(&input)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(!run(&[]).status.success());
+    assert!(!directory.0.join("poregauge_qc").exists());
+    let result = run(&["--minionqc-compat"]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let folder = directory.0.join("poregauge_qc");
+    let snapshot = report_snapshot(&folder);
+    assert!(folder.join("report.html").is_file());
+    assert!(!folder.join("figures").exists()); // Safe HTML default, even in compatibility mode.
+    assert!(!run(&["--minionqc-compat"]).status.success());
+    assert_eq!(snapshot, report_snapshot(&folder));
+    assert_eq!(data, fs::read_to_string(&input).unwrap());
+    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .arg("analyze")
+        .args([&input, &input])
+        .arg("--minionqc-compat")
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("provide --output"));
+    let nested = directory.0.join("nested");
+    fs::create_dir(&nested).unwrap();
+    fs::write(nested.join("sequencing_summary.tsv"), &data).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .arg("analyze")
+        .arg(&nested)
+        .args(["--minionqc-compat", "--processors", "2"])
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    assert!(nested.join("poregauge_qc/combined/report.html").is_file());
+    let broken = directory.0.join("broken");
+    fs::create_dir(&broken).unwrap();
+    let bad = broken.join("bad.tsv");
+    fs::write(&bad, "not a header").unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .arg("analyze")
+        .arg(&bad)
+        .arg("--minionqc-compat")
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(!broken.join("poregauge_qc").exists());
+}
+
+#[test]
+fn signed_cutoffs_select_legacy_reads_without_weakening_modern_validation() {
+    let directory = TestDirectory::new();
+    let legacy = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t10\t-2\n1\t0\t20\t-1\n1\t0\t30\t0\n";
+    let selected = directory.analyze_with_args(legacy, &["--qscore_cutoff", "-1"]);
+    assert_eq!(selected["comparison"]["qscore_selected"]["read_count"], 2);
+    assert_eq!(
+        selected["comparison"]["qscore_selected"]["total_yield_bp"],
+        50
+    );
+    assert_eq!(selected["metrics"]["basecalled_reads"], 3);
+    let modern = format!("{HEADER}{}", ROW.replace("12.5", "-1"));
+    let input = directory.0.join("input.tsv");
+    fs::write(&input, modern).unwrap();
+    let result = directory.run_with_args(&input, &["-q", "-3"]);
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("finite nonnegative"));
+    let valid = directory.analyze_with_args(&format!("{HEADER}{ROW}"), &["-q", "-1"]);
+    assert_eq!(valid["comparison"]["qscore_selected"]["read_count"], 1);
+}
+
+#[test]
+fn compatibility_mux_references_follow_integer_hour_source_semantics() {
+    let directory = TestDirectory::new();
+    let data = format!(
+        "{HEADER}{ROW}{}",
+        ROW.replace("\t0\t1\tTRUE", "\t61700\t1\tTRUE")
+    );
+    let normal = directory.analyze(&data);
+    assert_eq!(normal["presentation"]["mux_markers_seconds"], json!([]));
+    let compatible = directory.analyze_with_args(&data, &["--minionqc-compat"]);
+    assert_eq!(
+        compatible["presentation"]["mux_markers_seconds"],
+        json!([0.0, 61200.0])
+    );
+    let explicit = directory.analyze_with_args(&data, &["--minionqc-compat", "--muxes", "3.5"]);
+    assert_eq!(
+        explicit["presentation"]["mux_markers_seconds"],
+        json!([0.0, 12600.0, 25200.0, 37800.0, 50400.0])
+    );
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv");
+    fs::write(&a, &data).unwrap();
+    fs::write(&b, data.replace("synthetic-run", "second")).unwrap();
+    let combined = run_collection(
+        &directory,
+        &[&a, &b],
+        &["--minionqc-compat", "--muxes", "3.5", "--processors", "2"],
+    );
+    assert_eq!(
+        combined["presentation"]["mux_markers_seconds"],
+        json!([0.0, 28800.0, 57600.0])
+    );
+    let empty = directory.analyze_with_args(HEADER, &["--minionqc-compat"]);
+    assert_eq!(empty["presentation"]["mux_markers_seconds"], json!([]));
+    let short = directory.analyze_with_args(
+        &format!("{HEADER}{}", ROW.replace("\t10\t12.5", "\t0\t0")),
+        &["--minionqc-compat"],
+    );
+    assert_eq!(short["presentation"]["mux_markers_seconds"], json!([0.0]));
+    assert_eq!(short["metrics"]["basecalled_reads"], 0);
 }

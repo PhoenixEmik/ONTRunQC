@@ -19,7 +19,7 @@ use clap::Parser;
 use cli::{Cli, Command};
 
 fn main() -> std::process::ExitCode {
-    match run(Cli::parse()) {
+    match run(Cli::parse_from(cli::arguments(std::env::args_os()))) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error:#}");
@@ -34,6 +34,7 @@ fn run(cli: Cli) -> Result<()> {
             mut input,
             input_paths,
             output,
+            minionqc_compat,
             flowcell_layout,
             qscore_cutoff,
             combined_only,
@@ -52,11 +53,17 @@ fn run(cli: Cli) -> Result<()> {
         } => {
             format.check_supported()?;
             input.extend(input_paths);
-            batch::analyze(
+            let implicit_output = output.is_none();
+            let output = cli::output_directory(&input, output, minionqc_compat)?;
+            if implicit_output {
+                std::fs::create_dir(&output).map_err(|e| anyhow::anyhow!("cannot reserve implicit output {}: {e}; choose an unused directory with --output", output.display()))?;
+            }
+            let result = batch::analyze(
                 &input,
                 &output,
                 &batch::AnalysisOptions {
                     processors: usize::from(processors),
+                    minionqc_compat,
                     layout: flowcell_layout,
                     cutoff: qscore_cutoff,
                     minionqc_trends,
@@ -68,6 +75,7 @@ fn run(cli: Cli) -> Result<()> {
                     read_representation,
                     presentation: report::PresentationOptions {
                         write_yaml: yaml,
+                        minionqc_compatibility: minionqc_compat.then_some(true),
                         export_svg: matches!(format, cli::FigureFormat::Svg),
                         export_format: (!matches!(
                             format,
@@ -80,7 +88,13 @@ fn run(cli: Cli) -> Result<()> {
                         mux_markers_seconds: Vec::new(),
                     },
                 },
-            )?;
+            );
+            if result.is_err() && implicit_output {
+                // Remove only an empty reservation. Never delete completed
+                // per-run reports or claim collection-wide rollback.
+                let _ = std::fs::remove_dir(&output);
+            }
+            result?;
             eprintln!("Reports written to {}", output.display());
             Ok(())
         }

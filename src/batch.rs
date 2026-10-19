@@ -14,6 +14,7 @@ use std::{
 
 pub struct AnalysisOptions {
     pub processors: usize,
+    pub minionqc_compat: bool,
     pub layout: Option<FlowcellLayout>,
     pub cutoff: f64,
     pub minionqc_trends: bool,
@@ -28,6 +29,7 @@ pub struct AnalysisOptions {
 
 struct Group {
     first_seen: (usize, u64),
+    latest_start: Option<f64>,
     files: BTreeSet<usize>,
     run_id: Option<String>,
     flow_cell_id: Option<String>,
@@ -131,6 +133,10 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
     pooled.enable_reference_density(options.minionqc_density);
     pooled.set_density_domain(domain);
     let mut runs = Vec::new();
+    let latest_start = groups
+        .iter()
+        .filter_map(|g| g.latest_start)
+        .reduce(f64::max);
     for (index, mut group) in groups.into_iter().enumerate() {
         let mut visualization = group.aggregator.take_minion_visualization();
         if let Some(renderer) = visualization.as_mut().filter(|v| v.needs_pass()) {
@@ -172,7 +178,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         if !collection {
             drop(observations);
             report.presentation = options.presentation.clone();
-            crate::metrics::configure_mux_markers(&mut report)?;
+            configure_presentation(&mut report, options, group.latest_start)?;
             report::write(&report, output)?;
             return Ok(());
         }
@@ -184,7 +190,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             flow_cell_id: group.flow_cell_id,
         });
         report.presentation = options.presentation.clone();
-        crate::metrics::configure_mux_markers(&mut report)?;
+        configure_presentation(&mut report, options, group.latest_start)?;
         if !options.combined_only {
             report::write(&report, &output.join("runs").join(&source_id))?;
         }
@@ -197,7 +203,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         runs,
     });
     report.presentation = options.presentation.clone();
-    crate::metrics::configure_mux_markers(&mut report)?;
+    configure_presentation(&mut report, options, latest_start)?;
     report::write(&report, &output.join("combined"))?;
     Ok(())
 }
@@ -318,6 +324,7 @@ fn scan_inputs(
                 aggregator.enable_minion_visualization(!options.combined_only);
                 groups.push(Group {
                     first_seen: (file_index, record.line),
+                    latest_start: None,
                     trends: options
                         .minionqc_trends
                         .then(crate::trends::Tracker::default),
@@ -341,6 +348,13 @@ fn scan_inputs(
                 index
             });
             let group = &mut groups[index];
+            if !record.is_control {
+                group.latest_start = Some(
+                    group
+                        .latest_start
+                        .map_or(record.start_time, |v| v.max(record.start_time)),
+                );
+            }
             ensure!(
                 run_id.is_none() || group.run_id.is_none() || group.run_id.as_deref() == run_id,
                 "--group-inputs cannot merge different known run_id values"
@@ -388,6 +402,7 @@ fn scan_inputs(
             aggregator.include_input_format(schema, representation)?;
             groups.push(Group {
                 first_seen: (file_index, 0),
+                latest_start: None,
                 trends: options
                     .minionqc_trends
                     .then(crate::trends::Tracker::default),
@@ -472,6 +487,42 @@ fn scan_components(
         groups.extend(results.into_iter().flatten());
     }
     Ok(groups)
+}
+
+fn configure_presentation(
+    report: &mut report::Report,
+    options: &AnalysisOptions,
+    latest_start: Option<f64>,
+) -> Result<()> {
+    if !options.minionqc_compat {
+        return crate::metrics::configure_mux_markers(report);
+    }
+    report.presentation.mux_markers_seconds.clear();
+    let Some(latest) = latest_start else {
+        return Ok(());
+    };
+    // Upstream add_cols uses integer hours, not the 15-minute bin end.
+    let end_hours = (latest / 3600.0).floor();
+    let interval = if report.collection.is_some() {
+        8.0
+    } else {
+        report.presentation.mux_interval_hours.unwrap_or(end_hours)
+    };
+    if interval == 0.0 {
+        // Upstream seq(by=0) errors on sub-hour runs. Render only the origin.
+        report.presentation.mux_markers_seconds.push(0.0);
+        return Ok(());
+    }
+    let count = (end_hours / interval).floor() + 1.0;
+    ensure!(
+        count <= 512.0,
+        "compatibility mux interval generates more than 512 markers; increase --muxes or omit --minionqc-compat to disable references"
+    );
+    report.presentation.mux_interval_hours = Some(interval);
+    report.presentation.mux_markers_seconds = (0..count as usize)
+        .map(|i| i as f64 * interval * 3600.0)
+        .collect();
+    Ok(())
 }
 
 #[cfg(test)]

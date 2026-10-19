@@ -43,6 +43,8 @@ pub struct Report {
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct PresentationOptions {
     pub write_yaml: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minionqc_compatibility: Option<bool>,
     pub export_svg: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub export_format: Option<crate::cli::FigureFormat>,
