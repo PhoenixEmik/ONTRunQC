@@ -13,6 +13,7 @@ use std::{
 };
 
 pub struct AnalysisOptions {
+    pub processors: usize,
     pub layout: Option<FlowcellLayout>,
     pub cutoff: f64,
     pub minionqc_trends: bool,
@@ -26,6 +27,7 @@ pub struct AnalysisOptions {
 }
 
 struct Group {
+    first_seen: (usize, u64),
     files: BTreeSet<usize>,
     run_id: Option<String>,
     flow_cell_id: Option<String>,
@@ -46,123 +48,28 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
     );
     let collection =
         inputs.len() != 1 || inputs[0].is_dir() || options.combined_only || options.split_runs;
-    let mut groups: Vec<Group> = Vec::new();
-    let mut known = BTreeMap::<String, usize>::new();
-    for (file_index, path) in files.iter().enumerate() {
-        let mut reader = SummaryReader::with_options(
-            File::open(path).with_context(|| format!("cannot open input {}", path.display()))?,
-            options.input_schema,
-            options.read_representation,
-        )
-        .with_context(|| format!("invalid input {}", path.display()))?;
-        if collection {
-            reader.allow_multiple_runs();
-        }
-        let (native, speed) = (
-            reader.has_native_filtering(),
-            reader.has_template_duration(),
+    let indices: Vec<_> = (0..files.len()).collect();
+    let mut groups = if options.processors > 1 && files.len() > 1 && !options.group_inputs {
+        let components = independent_components(&files, options)?;
+        eprintln!(
+            "Independent input components: {}; at most {} aggregation workers",
+            components.len(),
+            options.processors.min(components.len())
         );
-        let (schema, representation) = (reader.schema(), reader.representation());
-        let mut fallback = None;
-        let mut had_record = false;
-        while let Some(record) = reader
-            .next_record()
-            .with_context(|| format!("input {}", path.display()))?
-        {
-            had_record = true;
-            let run_id = record.run_id;
-            let index = if options.group_inputs && !groups.is_empty() {
-                Some(0)
-            } else if let Some(id) = run_id {
-                known.get(id).copied()
-            } else {
-                fallback
-            };
-            let index = index.unwrap_or_else(|| {
-                let index = groups.len();
-                let mut aggregator = Aggregator::new(options.layout, false);
-                aggregator.set_qscore_cutoff(options.cutoff, true);
-                aggregator.enable_reference_density(options.minionqc_density);
-                aggregator.enable_minion_visualization(!options.combined_only);
-                groups.push(Group {
-                    trends: options
-                        .minionqc_trends
-                        .then(crate::trends::Tracker::default),
-                    files: BTreeSet::new(),
-                    run_id: run_id.map(str::to_owned),
-                    flow_cell_id: None,
-                    grouping: if options.group_inputs {
-                        "explicit_group"
-                    } else if run_id.is_some() {
-                        "run_id"
-                    } else {
-                        "unidentified_source"
-                    },
-                    aggregator,
-                });
-                if let Some(id) = run_id {
-                    known.insert(id.to_owned(), index);
-                } else {
-                    fallback = Some(index);
-                }
-                index
-            });
-            let group = &mut groups[index];
+        scan_components(&components, options.processors, |indices| {
+            scan_inputs(&files, indices, collection, options)
+        })?
+    } else {
+        scan_inputs(&files, &indices, collection, options)?
+    };
+    groups.sort_by_key(|g| g.first_seen);
+    let mut known = BTreeMap::<String, usize>::new();
+    for (i, group) in groups.iter().enumerate() {
+        if let Some(id) = &group.run_id {
             ensure!(
-                run_id.is_none() || group.run_id.is_none() || group.run_id.as_deref() == run_id,
-                "--group-inputs cannot merge different known run_id values"
+                known.insert(id.clone(), i).is_none(),
+                "input run identity changed during analysis; retry with unchanged input files"
             );
-            ensure!(
-                record.flow_cell_id.is_none()
-                    || group.flow_cell_id.is_none()
-                    || record.flow_cell_id == group.flow_cell_id.as_deref(),
-                "input {} line {}: conflicting flow_cell_id within the same run/group",
-                path.display(),
-                record.line
-            );
-            if group.run_id.is_none() {
-                group.run_id = run_id.map(str::to_owned);
-            }
-            if group.flow_cell_id.is_none() {
-                group.flow_cell_id = record.flow_cell_id.map(str::to_owned);
-            }
-            if group.files.insert(file_index) {
-                group.aggregator.include_input_capabilities(native, speed);
-                group
-                    .aggregator
-                    .include_input_format(schema, representation)?;
-            }
-            group
-                .aggregator
-                .add(&record)
-                .with_context(|| format!("input {} line {}", path.display(), record.line))?;
-            if let Some(tracker) = &mut group.trends {
-                tracker.add(&record, options.cutoff)?;
-            }
-        }
-        if !had_record && options.group_inputs && !groups.is_empty() {
-            let group = &mut groups[0];
-            group.files.insert(file_index);
-            group.aggregator.include_input_capabilities(native, speed);
-            group
-                .aggregator
-                .include_input_format(schema, representation)?;
-        } else if !had_record {
-            let mut aggregator = Aggregator::new(options.layout, speed);
-            aggregator.set_qscore_cutoff(options.cutoff, native);
-            aggregator.enable_reference_density(options.minionqc_density);
-            aggregator.enable_minion_visualization(!options.combined_only);
-            aggregator.include_input_format(schema, representation)?;
-            groups.push(Group {
-                trends: options
-                    .minionqc_trends
-                    .then(crate::trends::Tracker::default),
-                files: BTreeSet::from([file_index]),
-                run_id: None,
-                flow_cell_id: None,
-                grouping: "empty_source",
-                aggregator,
-            });
         }
     }
     ensure!(
@@ -361,4 +268,252 @@ fn visit(directory: &Path, files: &mut BTreeSet<PathBuf>) -> Result<()> {
 
 fn supported_name(name: &str) -> bool {
     name.contains("sequencing_summary") && (name.ends_with(".txt") || name.ends_with(".tsv"))
+}
+
+/// Preserve row/file order within each logical group, regardless of the worker.
+fn scan_inputs(
+    files: &[PathBuf],
+    indices: &[usize],
+    collection: bool,
+    options: &AnalysisOptions,
+) -> Result<Vec<Group>> {
+    let mut groups: Vec<Group> = Vec::new();
+    let mut known = BTreeMap::<String, usize>::new();
+    for &file_index in indices {
+        let path = &files[file_index];
+        let mut reader = SummaryReader::with_options(
+            File::open(path).with_context(|| format!("cannot open input {}", path.display()))?,
+            options.input_schema,
+            options.read_representation,
+        )
+        .with_context(|| format!("invalid input {}", path.display()))?;
+        if collection {
+            reader.allow_multiple_runs();
+        }
+        let (native, speed) = (
+            reader.has_native_filtering(),
+            reader.has_template_duration(),
+        );
+        let (schema, representation) = (reader.schema(), reader.representation());
+        let mut fallback = None;
+        let mut had_record = false;
+        while let Some(record) = reader
+            .next_record()
+            .with_context(|| format!("input {}", path.display()))?
+        {
+            had_record = true;
+            let run_id = record.run_id;
+            let index = if options.group_inputs && !groups.is_empty() {
+                Some(0)
+            } else if let Some(id) = run_id {
+                known.get(id).copied()
+            } else {
+                fallback
+            };
+            let index = index.unwrap_or_else(|| {
+                let index = groups.len();
+                let mut aggregator = Aggregator::new(options.layout, false);
+                aggregator.set_qscore_cutoff(options.cutoff, true);
+                aggregator.enable_reference_density(options.minionqc_density);
+                aggregator.enable_minion_visualization(!options.combined_only);
+                groups.push(Group {
+                    first_seen: (file_index, record.line),
+                    trends: options
+                        .minionqc_trends
+                        .then(crate::trends::Tracker::default),
+                    files: BTreeSet::new(),
+                    run_id: run_id.map(str::to_owned),
+                    flow_cell_id: None,
+                    grouping: if options.group_inputs {
+                        "explicit_group"
+                    } else if run_id.is_some() {
+                        "run_id"
+                    } else {
+                        "unidentified_source"
+                    },
+                    aggregator,
+                });
+                if let Some(id) = run_id {
+                    known.insert(id.to_owned(), index);
+                } else {
+                    fallback = Some(index);
+                }
+                index
+            });
+            let group = &mut groups[index];
+            ensure!(
+                run_id.is_none() || group.run_id.is_none() || group.run_id.as_deref() == run_id,
+                "--group-inputs cannot merge different known run_id values"
+            );
+            ensure!(
+                record.flow_cell_id.is_none()
+                    || group.flow_cell_id.is_none()
+                    || record.flow_cell_id == group.flow_cell_id.as_deref(),
+                "input {} line {}: conflicting flow_cell_id within the same run/group",
+                path.display(),
+                record.line
+            );
+            if group.run_id.is_none() {
+                group.run_id = run_id.map(str::to_owned);
+            }
+            if group.flow_cell_id.is_none() {
+                group.flow_cell_id = record.flow_cell_id.map(str::to_owned);
+            }
+            if group.files.insert(file_index) {
+                group.aggregator.include_input_capabilities(native, speed);
+                group
+                    .aggregator
+                    .include_input_format(schema, representation)?;
+            }
+            group
+                .aggregator
+                .add(&record)
+                .with_context(|| format!("input {} line {}", path.display(), record.line))?;
+            if let Some(tracker) = &mut group.trends {
+                tracker.add(&record, options.cutoff)?;
+            }
+        }
+        if !had_record && options.group_inputs && !groups.is_empty() {
+            let group = &mut groups[0];
+            group.files.insert(file_index);
+            group.aggregator.include_input_capabilities(native, speed);
+            group
+                .aggregator
+                .include_input_format(schema, representation)?;
+        } else if !had_record {
+            let mut aggregator = Aggregator::new(options.layout, speed);
+            aggregator.set_qscore_cutoff(options.cutoff, native);
+            aggregator.enable_reference_density(options.minionqc_density);
+            aggregator.enable_minion_visualization(!options.combined_only);
+            aggregator.include_input_format(schema, representation)?;
+            groups.push(Group {
+                first_seen: (file_index, 0),
+                trends: options
+                    .minionqc_trends
+                    .then(crate::trends::Tracker::default),
+                files: BTreeSet::from([file_index]),
+                run_id: None,
+                flow_cell_id: None,
+                grouping: "empty_source",
+                aggregator,
+            });
+        }
+    }
+    Ok(groups)
+}
+
+/// Files sharing any run ID form an indivisible component. One mixed-run file
+/// stays intact; identity-free files remain explicitly labeled source units.
+fn independent_components(files: &[PathBuf], options: &AnalysisOptions) -> Result<Vec<Vec<usize>>> {
+    let mut parent: Vec<usize> = (0..files.len()).collect();
+    fn root(parent: &[usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            i = parent[i];
+        }
+        i
+    }
+    let mut known = BTreeMap::<String, usize>::new();
+    for (i, path) in files.iter().enumerate() {
+        let mut reader = SummaryReader::with_options(
+            File::open(path)?,
+            options.input_schema,
+            options.read_representation,
+        )
+        .with_context(|| format!("invalid input {} during independence scan", path.display()))?;
+        reader.allow_multiple_runs();
+        while let Some(record) = reader
+            .next_record()
+            .with_context(|| format!("input {} during independence scan", path.display()))?
+        {
+            if let Some(id) = record.run_id {
+                if let Some(&previous) = known.get(id) {
+                    let (a, b) = (root(&parent, i), root(&parent, previous));
+                    parent[a.max(b)] = a.min(b);
+                } else {
+                    known.insert(id.to_owned(), i);
+                }
+            }
+        }
+    }
+    let mut components = BTreeMap::<usize, Vec<usize>>::new();
+    for i in 0..files.len() {
+        components.entry(root(&parent, i)).or_default().push(i);
+    }
+    Ok(components.into_values().collect())
+}
+
+/// A bounded wave of scoped workers: no queue, copied observations or detached
+/// tasks. Join every worker (also on failure) before returning any aggregators.
+fn scan_components(
+    components: &[Vec<usize>],
+    workers: usize,
+    scan: impl Fn(&[usize]) -> Result<Vec<Group>> + Sync,
+) -> Result<Vec<Group>> {
+    ensure!(workers > 0, "processors must be at least 1");
+    let mut groups = Vec::new();
+    for wave in components.chunks(workers) {
+        let results = std::thread::scope(|scope| -> Result<Vec<Vec<Group>>> {
+            let mut handles = Vec::new();
+            for indices in wave {
+                let scan = &scan;
+                handles.push(
+                    std::thread::Builder::new()
+                        .spawn_scoped(scope, move || scan(indices))
+                        .context("cannot start analysis worker; reduce --processors")?,
+                );
+            }
+            // Join all handles before propagating the first ordered error.
+            let joined: Vec<_> = handles.into_iter().map(|h| h.join()).collect();
+            joined
+                .into_iter()
+                .map(|r| r.map_err(|_| anyhow::anyhow!("analysis worker panicked"))?)
+                .collect()
+        })?;
+        groups.extend(results.into_iter().flatten());
+    }
+    Ok(groups)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        Barrier,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    #[test]
+    fn workers_overlap_are_bounded_and_join_before_error() {
+        let barrier = Barrier::new(2);
+        let active = AtomicUsize::new(0);
+        let maximum = AtomicUsize::new(0);
+        let completed = AtomicUsize::new(0);
+        let components = vec![vec![0], vec![1], vec![2], vec![3]];
+        let scan = |_: &[usize]| {
+            maximum.fetch_max(active.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+            barrier.wait();
+            active.fetch_sub(1, Ordering::SeqCst);
+            completed.fetch_add(1, Ordering::SeqCst);
+            Ok(Vec::new())
+        };
+        assert!(scan_components(&components, 2, scan).unwrap().is_empty());
+        assert_eq!(maximum.load(Ordering::SeqCst), 2);
+        assert_eq!(completed.load(Ordering::SeqCst), 4);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        completed.store(0, Ordering::SeqCst);
+        let result = scan_components(&components, 2, |indices| {
+            barrier.wait();
+            completed.fetch_add(1, Ordering::SeqCst);
+            ensure!(indices[0] != 0, "synthetic worker failure");
+            Ok(Vec::new())
+        });
+        assert!(
+            result
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("synthetic worker failure")
+        );
+        assert_eq!(completed.load(Ordering::SeqCst), 2);
+    }
 }

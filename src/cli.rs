@@ -100,8 +100,8 @@ pub enum Command {
         /// Configured mux reference interval in hours; 0 disables markers.
         #[arg(short = 'm', long = "muxes", alias = "mux-interval-hours", default_value = "0", value_parser = mux_hours)]
         muxes: f64,
-        /// Compatibility option: only sequential processing (1) is supported.
-        #[arg(short = 'p', long, default_value = "1", value_parser = clap::value_parser!(u16).range(1..=1))]
+        /// Maximum concurrent independent input-group aggregators (default 1).
+        #[arg(short = 'p', long, default_value = "1", value_parser = clap::value_parser!(u16).range(1..))]
         processors: u16,
         /// Explicit physical map: PromethION 1–3000 or MinION R9.5 1–512.
         #[arg(long, value_enum)]

@@ -46,7 +46,7 @@ fn run(cli: Cli) -> Result<()> {
             small_figures,
             add_stat,
             muxes,
-            processors: _,
+            processors,
             minionqc_trends,
             minionqc_density,
         } => {
@@ -56,6 +56,7 @@ fn run(cli: Cli) -> Result<()> {
                 &input,
                 &output,
                 &batch::AnalysisOptions {
+                    processors: usize::from(processors),
                     layout: flowcell_layout,
                     cutoff: qscore_cutoff,
                     minionqc_trends,

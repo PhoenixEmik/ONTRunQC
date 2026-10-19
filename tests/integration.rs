@@ -2765,7 +2765,7 @@ fn output_compatibility_aliases_and_explicit_unsupported_formats_are_actionable(
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    for args in [["--format", "webp"], ["--processors", "2"]] {
+    for args in [["--format", "webp"], ["--processors", "0"]] {
         let result = directory.run_with_args(&fixture("synthetic.tsv"), &args);
         assert!(!result.status.success());
         let error = String::from_utf8_lossy(&result.stderr);
@@ -3290,4 +3290,139 @@ fn minimal_build_rejects_static_formats_before_analysis() {
         assert!(String::from_utf8_lossy(&output.stderr).contains("--features static-figures"));
         assert!(!directory.0.join("output").exists());
     }
+}
+
+fn report_snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut output = std::collections::BTreeMap::new();
+    fn visit(
+        root: &Path,
+        directory: &Path,
+        output: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>,
+    ) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                visit(root, &path, output);
+            } else {
+                output.insert(
+                    path.strip_prefix(root).unwrap().to_owned(),
+                    fs::read(path).unwrap(),
+                );
+            }
+        }
+    }
+    visit(root, root, &mut output);
+    output
+}
+
+#[test]
+fn parallel_groups_preserve_interleaved_chunks_legacy_empty_and_exact_outputs() {
+    let directory = TestDirectory::new();
+    let row = |run: &str, length: u64, q: f64| {
+        format!("{run}\t1\t2\t900\t1\tTRUE\t{length}\t{q}\tunusual\n")
+    };
+    // Non-contiguous connected components must not change first-seen run order.
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv");
+    let c = directory.0.join("c.tsv");
+    let d = directory.0.join("d.tsv");
+    let legacy = directory.0.join("legacy.tsv");
+    let empty = directory.0.join("empty.tsv");
+    fs::write(&a, format!("{HEADER}{}", row("alpha", 10, 7.0))).unwrap();
+    fs::write(&b, format!("{HEADER}{}", row("beta", 20, 8.25))).unwrap();
+    fs::write(
+        &c,
+        format!(
+            "{HEADER}{}{}{}",
+            row("gamma", 40, 11.0),
+            row("alpha", 30, 6.75),
+            row("gamma", 0, 0.0)
+        ),
+    )
+    .unwrap();
+    fs::write(&d, format!("{HEADER}{}", row("beta", 50, 12.0))).unwrap();
+    fs::write(
+        &legacy,
+        "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n2\t0\t60\t9.0\n",
+    )
+    .unwrap();
+    fs::write(&empty, HEADER).unwrap();
+    let inputs: [&Path; 6] = [&a, &b, &c, &d, &legacy, &empty];
+    let options = [
+        "--format",
+        "svg",
+        "--minionqc-trends",
+        "--minionqc-density",
+        "--yaml",
+    ];
+    let report = run_collection(&directory, &inputs, &options);
+    assert_eq!(report["metrics"]["total_yield_bp"], 210);
+    assert_eq!(report["metrics"]["median_read_length_bp"], 35.0);
+    assert_eq!(report["metrics"]["n50_bp"], 50);
+    assert_eq!(report["collection"]["runs"][0]["run_id"], "alpha");
+    assert_eq!(report["collection"]["runs"][1]["run_id"], "beta");
+    assert_eq!(report["collection"]["runs"][2]["run_id"], "gamma");
+    let before = report_snapshot(&directory.0.join("output"));
+    let mut parallel = options.to_vec();
+    parallel.extend(["--processors", "2"]);
+    let after = run_collection(&directory, &inputs, &parallel);
+    assert_eq!(report, after);
+    assert_eq!(before, report_snapshot(&directory.0.join("output")));
+    // --group-inputs explicitly joins identity-free chunks, never splits them.
+    let grouped = run_collection(&directory, &[&legacy, &empty], &["--group-inputs"]);
+    assert_eq!(
+        grouped,
+        run_collection(
+            &directory,
+            &[&legacy, &empty],
+            &["--group-inputs", "--processors", "2"]
+        )
+    );
+    // A mixed-run single source remains sequential and preserves split semantics.
+    let split = run_collection(&directory, &[&c], &["--split-runs", "--combined-only"]);
+    assert_eq!(
+        split,
+        run_collection(
+            &directory,
+            &[&c],
+            &["--split-runs", "--combined-only", "--processors", "2"]
+        )
+    );
+}
+
+#[test]
+fn parallel_worker_failure_preserves_previous_collection_and_publishes_nothing_new() {
+    let directory = TestDirectory::new();
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv");
+    fs::write(&a, format!("{HEADER}{ROW}")).unwrap();
+    fs::write(
+        &b,
+        format!(
+            "{HEADER}{}",
+            ROW.replace("synthetic-run", "other")
+                .replace("\t1\t1\t0", "\t3001\t1\t0")
+        ),
+    )
+    .unwrap();
+    run_collection(&directory, &[&a, &b], &[]);
+    let before = report_snapshot(&directory.0.join("output"));
+    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        .arg("analyze")
+        .args([&a, &b])
+        .args([
+            "--processors",
+            "2",
+            "--flowcell-layout",
+            "promethion-3000",
+            "--format",
+            "svg",
+            "--output",
+        ])
+        .arg(directory.0.join("output"))
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("3001"));
+    assert_eq!(before, report_snapshot(&directory.0.join("output")));
 }
