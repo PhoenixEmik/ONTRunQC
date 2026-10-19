@@ -15,6 +15,50 @@ Validation keys below:
 - **V**: generate `--format svg --yaml --add-stat --muxes 8`, inspect HTML and
   independent figures offline. Routine CI needs neither R nor a browser.
 
+## Functional audit against the pinned source (2026-10-19)
+
+This audit is separate from strict numerical acceptance. Categories: **F** =
+functionally equivalent; **P** = equivalent analysis with documented presentation,
+resolution, syntax/default or input-selection differences; **N** = numerically
+different with a stated scientific justification; **D** = missing/defective;
+**U** = not yet verified. The existing Complete/Partial matrix below remains the
+acceptance ledger; N never turns a strict numerical failure into a pass.
+
+Source anchors refer to pinned `MinIONQC.R`: `load_summary`/`add_cols` (159–277),
+`summary.stats`/`channel.summary` (347–420), `single.flowcell` (423–723),
+`combined.flowcell` (725–805), `multi.plots` (817–891), dispatch (899–956).
+Evidence is U/P/V above, the actual 18-case R capture and the repeated strict
+check signatures in `tests/reference/revalidation-summary.json`.
+
+| Original functionality | Category | Source behavior, current result and evidence |
+| --- | --- | --- |
+| Single-flowcell summaries | F /N | Exact positive-length statistics match; all-summary vs basecalled denominators, zero-Q exclusion, strict-half N50 ties, unrounded values and corrected ultralong endpoint differ explicitly. Synthetic edge cases and public/R YAML comparisons. |
+| Multiple inputs/chunks/source identity | P | R groups by file's parent name; PoreGauge groups known run IDs across chunks and explicitly labels unknown sources. Mixed files/shared IDs, deduplication and stable order tested at 1/2/3/4 workers. No invented flowcell IDs. |
+| Legacy/1D2/direct RNA and malformed rows | P | Complete 2D pair substitution and exact YHR174W exclusion; unavailable native metadata stays unavailable. Unlike upstream readr problem-row removal, malformed rows fail actionably. Empty/header-only and signed legacy Q handling are explicit; public 1D2/RNA/short and schema tests. |
+| Combined summaries /combined-only | F /N | True pooled numeric populations, never averages of medians/N50; same documented denominator/tie corrections. Public pooled 608,208 records, 7,203,301,321 bp, N50 33,161, median 2,616. Individual outputs omitted when requested. |
+| Length/Q histograms, pooled histograms | P | R uses 300 automatic ggplot bins (length after log transform); fixed documented PoreGauge intervals conserve counts/yield. Populations and boundaries explicit; no identical-bin/pixel claim. |
+| Yield by minimum length, pooled/per-source | P /N | Exact inclusive threshold queries, All/Q; bounded display queries from exact lengths. Full range retained instead of R's 99%-yield X crop; strict-half ultralong prefix endpoint bug corrected. |
+| Yield over time, per-source yield | P | R joins read-start cumulative points; PoreGauge attributes yield to 15-minute bin ends. Same absolute units/totals, different temporal resolution; not exact instrument throughput. |
+| `reads_per_hour` | P | R integer-hour counts with zero-filled hours; PoreGauge explicitly labels 15-minute counts/intervals and gaps. No hourly-rate or point-by-point equivalence claim. |
+| `length_by_hour`, `q_by_hour`, per-source fits | N | Opt-in raw-record LOESS/GAM, correct All/Q grouping/method choice and available pointwise bands; observed-bin means remain separate. LOESS goldens pass. Canonical cs null-space convention is justified and deterministic, but 1,542 original-R GAM comparisons still fail; #12 stays Partial. |
+| Per-channel four distributions | P /N | Bases/count/mean/median families and exact values provided; explicit bins and summary/basecalled denominators. True read count corrects R's `sum(which(...))` bug. |
+| Physical yield overview | P | Same verified R9.5/PromethION maps, All/Q plus native pass; explicit layout replaces R's max-channel heuristic. Missing vs zero yield labeled, color/geometry styling differs. |
+| MinION overview /length-vs-Q | P | Exact positive-length points for small inputs; every eligible dense read contributes to bounded count pixels plus actual extrema. Natural-log positive events/base, missing/zero semantics, shared time/log-length axes. Actual-R count/axes/population evidence; explicit raster/color-reduction trade-offs. |
+| PromethION length-vs-Q | P | R bin2d after log-length transform; bounded fixed logarithmic-length/Q heatmaps here. No MinION read-panel overview for PromethION, matching source omission. |
+| Per-source length/Q densities | F with opt-in | `--minionqc-density` uses verified shared R-grid semantics, log-transformed length observations and captured bandwidth/domain. All 52 curves remain within original tolerance. Default legacy KDE is separately labeled, not claimed R-equivalent. |
+| YAML | P /N | Same All/Q summary/threshold/ultralong families, exact integers/full precision/nulls and generated source identifiers; denominator/rounding/bug differences explicit. |
+| PNG/PDF/PS/JPEG/TIFF/BMP /SVG | P | All six real encodings, plus SVG/HTML/JSON. Canonical SVG source, physical dimensions, legends/annotations/embedded images tested with actual decoders. PDF vectors/selectable fonts, 300-DPI raster-backed PS, lossy JPEG; no ggplot pixel identity. |
+| Input/output CLI, discovery | P | `analyze` retained; recursive paths/dedup, optional input aliases. Opt-in fresh `poregauge_qc/` differs deliberately from direct beside-input writes; ordinary output stays explicit. |
+| Q cutoff /logical flags | F | Inclusive finite signed cutoff and TRUE/FALSE or bare flags; native passing separate, modern validation strict. Negative legacy selected histogram now supported. |
+| Mux markers /format defaults /size /annotations | P | Explicit compatibility mode provides R integer-hour single defaults/fixed 8h combined references, with corrected sub-hour zero-step failure. Safe normal defaults remain HTML/JSON and no markers; widths/annotation layout differ. |
+| Processors /parallelism | P | At most N independent file components, not naive per-file R forks. Shared runs stay intact, input order/exact reductions stable; fitting, raster passes and output remain sequential. Real overlap and deterministic outputs tested. |
+
+No additional missing report family (**D**) was found in this audited scope.
+Cross-BLAS portability of strict GAM results, live/hostile source mutation
+immunity and real NFS cache behavior remain **U**; neither test success nor this
+functional audit establishes those properties. Original strict comparisons and
+all existing intentional differences remain visible below.
+
 ## Inputs and metrics
 
 | MinIONQC functionality | Status | PoreGauge behavior / reproducible validation |
@@ -449,3 +493,37 @@ formats/CLI/checklist requirements are covered by public numerical checks,
 #15's actual decoder evidence and #16 tests. #8 remains incomplete under its
 explicit strict fitted-curve acceptance update because #12 GAM discrepancies
 remain unresolved. #12 remains Partial/open; no targets or tolerances changed.
+
+
+## Input-integrity revalidation and proposed #8 split
+
+The same installed R 4.4.1 /ggplot2 3.5.1 /mgcv 1.9-1 executed all 18 cases again
+(capture-only: numerical layers/YAML, not new R figure rendering). Every primary,
+GAM-intermediate and LOESS diagnostic check record is identical to the retained
+`parity-final` baseline, including values, errors, tolerances and classifications.
+The original `validation-summary.json`, solvers, density/minion/rendering code
+and reference targets remain byte-identical. New evidence is separate in
+`tests/reference/revalidation-summary.json`; it does not replace a target.
+
+```sh
+python3 tests/minionqc_reference.py /path/to/pinned/minion_qc --execute-r \
+  --rscript /path/to/pinned/Rscript --capture-only --output benchmark-results/integrity-r
+python3 tests/reference/check_revalidation.py benchmark-results/integrity-r/comparison.json
+```
+
+The first command still exits **1** for the same 1,542 strict GAM failures; the
+second verifies unchanged evidence, **not** that those failures pass. Statuses:
+65,118 exact, 75,241 within tolerance, 36 intentional differences, 8,954 proved
+upstream defects, 1,542 suspected PoreGauge discrepancies, zero unverified.
+GAM intermediate failures remain 1,912. No new unexplained change was observed.
+
+**#8 remains open. Proposed separation for maintainer review, not approval:**
+(1) a functional gate covering recursive inputs, run/chunk identity, exact pooled
+statistics, combined-only, all combined/per-source families and offline output,
+with the recorded bin/population/raster/default differences; independently met
+by synthetic/public tests, captured R layers and exact output comparisons;
+(2) the existing numerical gate requiring original-R fitted temporal points and
+bands within unchanged tolerances, tracked with #12 and still unsatisfied.
+Retain both gates/history and original evidence. Do not close #8 unless its
+original gate passes or a maintainer explicitly approves that revised contract.
+No release is created by this audit.

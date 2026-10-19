@@ -483,3 +483,97 @@ use the existing all-read underflow-bin convention and pool by boundaries;
 prior supported-cutoff outputs matched the old binary exactly. No N50, means,
 filter semantics, GAM/KDE calculations or original-R targets changed. #12 still
 has its original 1,542 strict GAM discrepancies.
+
+
+## Input-integrity and final parity revalidation
+
+Measured 2026-10-19 on macOS arm64, Rust 1.98.1 release, Python 3.15.0,
+local files. These final guarded-path observations include source/output
+collision checks. Normal and strong runs were sequential, after R/build/tests
+finished; no cache flushing or repeated statistical benchmark was performed.
+Each row is one execution, not a universal performance guarantee.
+
+```sh
+cargo build --release --locked
+python3 tests/parallel_runs.py --baseline /path/to/356845b/poregauge \
+  --upstream /path/to/pinned/minion_qc --workers 1 2 4 --runs 4 \
+  --case large --case dense --case public-minion --output benchmark-results/integrity-normal
+# Repeat into a fresh directory with --verify-input-content for strong mode.
+```
+
+Large: four independent 300,000-record runs (1.2 million total), combined-only.
+Dense: four independent 4,100-read MinION runs with raw-read fits, R-grid KDE,
+full-count rasters and SVGs. Public: the two original MinION files/eight run IDs,
+608,208 records (606,143 basecalled), 7,203,301,321 bp, N50 33,161 bp, basecalled
+median 2,616 bp. Four configured workers can execute four synthetic components;
+the public case has only two independent components and never launches four.
+
+CPU is user/system seconds. Temp is a 10-ms sampled lower bound on scratch plus
+staged file bytes, not continuous tracing. Pass counts are exact code-path
+accounting for these inputs (not OS syscall traces); strong publication rereads
+are included. Output sizes exclude execution logs. Monitoring CPU/RSS is outside
+the child measurements.
+
+| Case | Mode / workers | Wall s | CPU user /sys s | RSS MiB | Temp MiB | File passes | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| large | 356845b /1 | 0.8157 | 0.7767 /0.0198 | 71.91 | 2.13 | 4 | 3413203 |
+| large | normal /1 | 1.2685 | 0.8229 /0.0256 | 69.03 | 2.13 | 4 | 3413203 |
+| large | normal /2 | 0.8735 | 1.1061 /0.0269 | 72.44 | 3.26 | 8 | 3413203 |
+| large | normal /4 | 0.7430 | 1.1169 /0.0311 | 76.66 | 2.13 | 8 | 3413203 |
+| large | strong /1 | 1.2560 | 1.2089 /0.0291 | 66.39 | 3.26 | 8 | 3413203 |
+| large | strong /2 | 1.3792 | 1.6947 /0.0370 | 70.33 | 3.26 | 12 | 3413203 |
+| large | strong /4 | 1.2395 | 1.7840 /0.0446 | 75.47 | 3.26 | 12 | 3413203 |
+| dense | 356845b /1 | 1.2861 | 0.3167 /0.0959 | 65.22 | 8.74 | 12 | 42581055 |
+| dense | normal /1 | 1.2990 | 0.3150 /0.1095 | 65.23 | 8.74 | 12 | 42581055 |
+| dense | normal /2 | 1.2975 | 0.3103 /0.1169 | 66.89 | 8.74 | 16 | 42581055 |
+| dense | normal /4 | 1.3094 | 0.3147 /0.1180 | 65.47 | 8.74 | 16 | 42581055 |
+| dense | strong /1 | 1.2840 | 0.3110 /0.1070 | 63.52 | 8.74 | 20 | 42581055 |
+| dense | strong /2 | 1.3064 | 0.3244 /0.1143 | 65.91 | 8.74 | 24 | 42581055 |
+| dense | strong /4 | 1.3022 | 0.3265 /0.1055 | 67.16 | 8.74 | 24 | 42581055 |
+| public-minion | 356845b /1 | 0.5856 | 0.5472 /0.0203 | 42.33 | 3.60 | 2 | 5223797 |
+| public-minion | normal /1 | 0.5954 | 0.5569 /0.0211 | 41.06 | 4.98 | 2 | 5223797 |
+| public-minion | normal /2 | 0.7494 | 0.8506 /0.0344 | 40.14 | 4.98 | 4 | 5223797 |
+| public-minion | normal /4 | 0.7516 | 0.8493 /0.0354 | 43.14 | 4.98 | 4 | 5223797 |
+| public-minion | strong /1 | 1.5492 | 1.4844 /0.0436 | 41.09 | 4.98 | 4 | 5223797 |
+| public-minion | strong /2 | 2.0026 | 2.2531 /0.0585 | 40.98 | 4.98 | 6 | 5223797 |
+| public-minion | strong /4 | 2.0089 | 2.2521 /0.0615 | 43.48 | 4.98 | 6 | 5223797 |
+
+Both 12-execution sets matched the baseline's complete JSON/HTML/SVG content,
+source ordering and manifests exactly; no temporary files remained. Another
+36-execution correctness sweep included every native format at 1/2/4 workers
+and the prior binary (two synthetic inputs); non-PDF output was byte-identical,
+with the existing PDF-resource byte-order exception. The new integrity flag is
+not serialized, so scientific JSON remains unchanged in both modes.
+
+Metadata mode adds no complete data pass; strong mode explicitly adds publication
+reads and hashes every parsed pass. Public two-worker processing is again slower
+than one worker; no new discovery optimization is justified by these observations.
+Determining shared/interleaved run membership requires examining input records,
+and removing that pass or speculatively merging file-local aggregators would
+complicate deterministic reductions. Single files/explicit grouping still bypass
+component discovery. Retain the small bounded worker architecture; use one worker
+when extra I/O dominates. Fixed parser/metadata/digest overhead is not a bound on
+whole-process memory; existing exact numeric observations still scale with reads.
+
+All ordinary checks passed: fmt, full/minimal locked Clippy, default **61 unit
++95 integration** and minimal **55 unit +94 integration** tests, both release
+builds, and 13 Python reference-harness tests. Feature variants used separate
+Cargo target directories to avoid concurrent binary replacement. New tests cover
+between-pass replacement/deletion/truncation, active parsing mutation, restored/
+cached-metadata content changes, membership drift, inode aliases, publication
+failure cleanup and input/output collisions; parallel fixtures exercise 2/3/4
+workers, ordinary/SHA modes, fits/KDE and dense MinION sources.
+
+Actual pinned R 4.4.1 /ggplot2 3.5.1 /mgcv 1.9-1 reran all **18** differential
+cases, capture-only (no new R PDFs). Every primary and GAM/LOESS intermediate
+check record equals the retained baseline exactly. The suite deliberately still
+exits 1: **1,542 primary GAM discrepancies and 1,912 intermediate failures** remain;
+zero new mismatches and zero unverified checks. Source/target/tolerance and original
+validation-summary hashes are unchanged. The separate committed
+`tests/reference/revalidation-summary.json` and checker reproduce this assertion;
+they never turn strict failures into passes. Public fast checks also passed all
+five input families, including the exact pooled values above. No private run or
+11-GB benchmark was processed. Browser automation backends were unavailable in
+this session, so no new browser screenshot verification is claimed; unchanged
+HTML content and prior visual/decoder evidence are retained. Real NFS cache
+behavior was not measured; metadata/SHA modes are not filesystem snapshots.

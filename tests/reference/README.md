@@ -205,3 +205,26 @@ exact hat-matrix residual df for R's default approximation. Original notice:
 > WARRANTY. IN PARTICULAR, NEITHER THE AUTHORS NOR AT&T MAKE ANY
 > REPRESENTATION OR WARRANTY OF ANY KIND CONCERNING THE MERCHANTABILITY
 > OF THIS SOFTWARE OR ITS FITNESS FOR ANY PARTICULAR PURPOSE.
+
+
+## Input-integrity repetition (2026-10-19)
+
+All 18 cases were executed again with the same installed pinned R environment
+using `--capture-only`; all primary check records and both diagnostic arrays
+were exactly equal to the retained `parity-final/comparison.json`. Original
+`validation-summary.json` and all tolerances/targets remain unchanged. The new
+small `revalidation-summary.json` records each array's canonical SHA-256, source
+and comparison hashes, versions and unchanged status counts. It contains no
+individual sequencing records.
+
+```sh
+python3 tests/reference/check_revalidation.py benchmark-results/input-integrity/paired-r/comparison.json
+```
+
+This checker fails on any changed value/tolerance/classification, incomplete
+case or environment/version change. Success means **unchanged evidence**, not
+passing GAM parity: the original suite still exits 1 with 1,542 primary GAM
+failures and 1,912 intermediate failures. New reference-harness unit tests verify
+that it never silently accepts a changed value, tolerance, status or incomplete
+execution. Exact check-array signatures are a same-environment regression
+contract; other BLAS environments are not automatically accepted.

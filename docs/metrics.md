@@ -918,3 +918,52 @@ two workers on synthetic/public inputs, dense MinION fits/KDE and all six static
 formats. JSON/HTML, all non-PDF figures, source paths and manifests must match
 byte-for-byte; PDF resource ordering remains the documented #15 exception.
 See [executed measurements](benchmark.md#bounded-independent-run-processing-16).
+
+
+## Multi-pass input integrity
+
+Before processing, canonical regular-file sources are frozen with byte length,
+mtime and (Unix) device/inode plus nanosecond ctime. Identity collisions detected
+while freezing fail rather than double-counting sources. Original symlink aliases
+are resolved once; the canonical target is the source being analyzed. Directory
+contents added after discovery are not automatically included.
+
+Every source open compares path/canonical identity and the open descriptor.
+Streaming reads recheck metadata each 8 MiB; EOF/finalization checks metadata,
+complete EOF and consumed byte count. Discovery, aggregation, GAM input and dense
+MinION passes all use this guard. Each completed parsed pass also compares its
+run-ID/count map, including missing-ID and control rows; no per-record strings
+are retained. Checks between phases and after rendering/before the first staged
+rename reject detected drift with source/stage and stable-copy guidance. Actual
+output destinations are checked against every canonical source path and Unix
+file identity: reports cannot overwrite their own inputs (including inputs named
+`report.json` or a generated figure name). Failure
+cleans current staged outputs; prior per-run outputs are not rolled back.
+Publication is per file, not atomic across a run's files or a collection.
+
+`--verify-input-content` adds incremental SHA-256 over the exact bytes consumed
+by every processing pass, using the first completed pass as baseline. After each
+report is rendered it rereads that report's contributing files and compares the
+same digest before publication; the combined report verifies all sources.
+Mixed-run sources/chunks can consequently be reread for several reports. This
+is explicit extra I/O, without full-file buffering; ordinary metadata mode adds
+no data scan. All numerical report fields/JSON are unchanged, and no digest,
+source path or new research metadata is embedded. The small MIT/Apache-2.0
+`sha2` dependency avoids handwritten cryptography/external checksum commands;
+existing dependency versions remain locked. Minimal builds support the guard.
+
+Metadata is not a filesystem snapshot. Coarse/changed-back timestamps, delayed
+NFS attribute caches, inode reuse and in-place mutations that escape checkpoints
+can defeat metadata-only checks; ctime may also conservatively flag chmod/link
+operations without changed bytes. SHA-256 checks observed byte streams, not an
+atomic server-side file version: data caches can hide remote changes, and writes
+restored between checks or after final verification remain possible. Do not use
+advisory locking to imply remote-writer cooperation. Use completed files, a
+stable local copy or storage snapshots for stronger guarantees. Actual NFS
+behavior was not exercised locally. No automatic retry mixes file versions.
+
+
+Filesystem background: [Rust metadata](https://doc.rust-lang.org/std/fs/struct.Metadata.html)
+and [Linux NFS cache/coherence semantics](https://man7.org/linux/man-pages/man5/nfs.5.html).
+The checks above report observed consistency; they do not provide cache bypass,
+remote-writer coordination or atomic source snapshots.

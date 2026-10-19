@@ -411,6 +411,16 @@ Compatibility mode is a CLI/presentation option, not a change to scientific
 filtering, denominators, GAM/KDE or run identity. Full strict fitted-curve parity
 remains Partial (#12).
 
+Input files must remain stable throughout analysis. PoreGauge freezes canonical
+sources and checks identity, size, timestamps, bytes consumed and per-file run-ID
+membership across discovery, aggregation, fitting and MinION passes, with another
+check after rendering before publication. To compare actual bytes on every pass
+and reread contributing files before publication, add `--verify-input-content`.
+This optional SHA-256 mode costs extra I/O/CPU; ordinary metadata mode adds no
+full data pass. Neither mode is a lock/snapshot or a guarantee against NFS cache
+staleness or hostile concurrent writes. Prefer completed, immutable inputs;
+[definitions and limits](docs/metrics.md#multi-pass-input-integrity) are explicit.
+
 ## Development
 
 ```sh

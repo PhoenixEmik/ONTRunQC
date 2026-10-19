@@ -66,7 +66,9 @@ def execute(binary, inputs, output, options, workers):
     # Exact counts from execution paths for these cases: each dense run has a
     # distinct source file. This is algorithmic accounting, not OS I/O tracing.
     passes = len(inputs)*(1 + (workers > 1 and len(inputs)>1) + ('--minionqc-trends' in options)) + dense_passes
-    return dict(wall_seconds=elapsed, user_seconds=usage.ru_utime, system_seconds=usage.ru_stime,
+    if '--verify-input-content' in options:
+        passes += sum(len(inputs) if r.get('collection') or not r.get('source') else r['source']['input_files'] for r in reports)
+    return dict(verify_input_content='--verify-input-content' in options, wall_seconds=elapsed, user_seconds=usage.ru_utime, system_seconds=usage.ru_stime,
                 peak_rss_bytes=usage.ru_maxrss*(1 if os.uname().sysname=='Darwin' else 1024),
                 peak_sampled_temporary_bytes=peak[0], temporary_sampling_seconds=.01,
                 input_file_passes=passes, input_pass_accounting='code paths, not OS tracing',
@@ -81,6 +83,10 @@ def main():
     parser.add_argument('--upstream',type=Path)
     parser.add_argument('--output',type=Path,default=Path('benchmark-results/parallel-runs'))
     parser.add_argument('--records',type=int,default=300000)
+    parser.add_argument('--runs',type=int,default=2)
+    parser.add_argument('--workers',type=int,nargs='+',default=[1,2])
+    parser.add_argument('--verify-input-content',action='store_true')
+    parser.add_argument('--case',action='append',help='Select case names (large, dense, public-minion, export-png/pdf/ps/jpeg/tiff/bmp)')
     args=parser.parse_args()
     root=args.output.resolve();root.mkdir(parents=True,exist_ok=True)
     inputs=root/'inputs';inputs.mkdir(exist_ok=True)
@@ -90,7 +96,7 @@ def main():
         ('dense',4100,['--flowcell-layout','minion-r9.5','--minionqc-trends','--minionqc-density','--format','svg']),
         ('exports',20,['--smallfigures','--yaml','--add-stat'])]:
         files=[]
-        for i in range(2):
+        for i in range(args.runs):
             path=inputs/f'{name}-{i}.tsv';fixture(path,f'fictional-{i}',count);files.append(path)
         if name=='exports':
             for fmt in ['png','pdf','ps','jpeg','tiff','bmp']:
@@ -101,13 +107,15 @@ def main():
         assert subprocess.check_output(['git','-C',str(upstream),'rev-parse','HEAD'],text=True).strip()==REVISION
         cases.append(('public-minion',sorted((upstream/'example_input_minion').glob('*/sequencing_summary.txt')),['--combined-only']))
     results=[]
+    assert args.runs>0 and all(n>0 for n in args.workers)
     for name,paths,options in cases:
+        if args.case and name not in args.case: continue
         previous=None
-        variants=[('one',args.binary,1),('two',args.binary,2)]
+        variants=[(str(n),args.binary,n) for n in args.workers]
         if args.baseline: variants.insert(0,('before',args.baseline,1))
         for label,binary,workers in variants:
             destination=root/name/label
-            measurement=execute(binary.resolve(),paths,destination,options,workers)
+            measurement=execute(binary.resolve(),paths,destination,options+(['--verify-input-content'] if args.verify_input_content and label!='before' else []),workers)
             content=snapshot(destination)
             if previous is not None: assert content==previous, f'{name}/{label} content changed'
             previous=content

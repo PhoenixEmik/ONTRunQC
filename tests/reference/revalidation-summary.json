@@ -1,0 +1,113 @@
+{
+  "baseline_commit": "356845bc328ae80bc6c8484f6093b598abe4117f",
+  "reference_commit": "54485d586038d8ee36f168dd94f31c423f52f581",
+  "reference_source_sha256": "841253a28a785b9efdc09c855c163646882e01152e26eda509adae2732c6651d",
+  "reference_versions": {
+    "r": "4.4.1",
+    "ggplot2": "3.5.1",
+    "mgcv": "1.9.1"
+  },
+  "baseline_comparison_sha256": "375937a2335a9c4234dc54f869663c2c1dee00a18a85522d5249ba6a8e2bfa62",
+  "revalidation_comparison_sha256": "8eb27d27b43b836fd1ffb24075a5e4fd09d1b6c3e1533cd83b2d64296c154f84",
+  "original_validation_summary_sha256": "3329cb6c7ad7f45d0905dcdcb5a80d24a0fa94136a571ee584689fd3bbc736fd",
+  "strict_status": "Partial: original 1542 GAM mismatches remain",
+  "status_counts": {
+    "intentional_semantic_difference": 36,
+    "exact_match": 65118,
+    "rounding_tolerance": 75241,
+    "upstream_minionqc_defect": 8954,
+    "suspected_poregauge_defect": 1542
+  },
+  "cases": {
+    "minion": {
+      "checks": "2e1457b24d0fb87766755a2cf8d510b174f2c27525cc87db6b4757e1c380b6f0",
+      "gam_diagnostics": "7acfc188a644e761f291a769dc12a6636da8afe510b839f8241a41ae40a088f5",
+      "loess_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "promethion": {
+      "checks": "7da3f60b378a6f7383846fd485c54fd5ef512b6db14d0060fc48d01e889fe1c3",
+      "gam_diagnostics": "573c209cb98a695a94ef52407863d8db56c78215ec6526265928cfb7aae366e9",
+      "loess_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "short": {
+      "checks": "b1f15bfbadcc72e8c0c5563475e63f6fc15ba5094784932018398acfdd50089b",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "b9f7424512014ebeabfd520ecc28cb6834bb023228d6e26aadbf271d84fda2ea"
+    },
+    "1d2": {
+      "checks": "d802b7f431995192cf650d8e3f157c220b0be2e12282192c116aaae47c190c6c",
+      "gam_diagnostics": "1004936f8f5c35db0ef2c1128005e8852d282c2832787eb2455f7ac3d526b9ac",
+      "loess_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "rna": {
+      "checks": "e49cba2348c861f76f459067f08509024fe4ba9eee229a48a7b71ab6868f042c",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "9546ce13ad20512ef999e968d15a3e6790b476aa79cc126eeddbde13c3627b7c"
+    },
+    "combined": {
+      "checks": "2b7f58904665fcc8be711b214247f03684156bb3a312c543118d2e77024b42d8",
+      "gam_diagnostics": "a537df37363d989d69812740eebe4fbbab55c09f4ab879bfafed237655f3d878",
+      "loess_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "zero-cutoff": {
+      "checks": "ffa31225ae12cf827cec2d8e556769e7e297c6681355d864b8ae99915bb2b938",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "dbf28c2f6b5bfc58781573070dccae25eaeca857071c3673fd1cbdda80910881"
+    },
+    "n50-tie": {
+      "checks": "99b3bd2a9596b252ed4634a76bfa66b9bbc036899751cadab46aa4e583b1afc6",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "dbf28c2f6b5bfc58781573070dccae25eaeca857071c3673fd1cbdda80910881"
+    },
+    "ultralong-endpoint": {
+      "checks": "0f8f5e5a1f8e0f26a12c30e562b6a7c1196bca053458c7fa696a2f7d802f55c4",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "dbf28c2f6b5bfc58781573070dccae25eaeca857071c3673fd1cbdda80910881"
+    },
+    "fit-small": {
+      "checks": "bf0e05c2677139d283a0fd2fb0b82c24b8d23f856802522ea290befab9fff70c",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "49294c57ffed1c585e8d203e843949856f90452bab1796e7a7605a309291f891"
+    },
+    "fit-large": {
+      "checks": "4ee20ef084c7b359a72d2538dc32187ffdf88eec54604d660f1c7208baf898fd",
+      "gam_diagnostics": "d37340e34e094062427bbad29b51515046e504649157f90f62ed31cd3e34cfe4",
+      "loess_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "fit-sparse": {
+      "checks": "9fcb1813922dbf2c0faed98facda8fb23ff25f2b1dd0590daedae47f70b3e9c6",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "density-multimodal": {
+      "checks": "2adadbeffbd67643fffba319e0f6ea963722ad2b3d3db29ffc9159585891d6bf",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "189ed5774626d0c9954949b718720d3d405fe72a1803720f3fa43164c2626695"
+    },
+    "density-skewed": {
+      "checks": "4e5265ca2c426be93ae4696bc92cee487a1d62b4aaa1c706a199e0a66f865d2c",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "79baafbbae48768ba8fb60784988aa32ea890073aba1ebc025312f64a0788ff7"
+    },
+    "density-constant": {
+      "checks": "91d3f04fbe01a506ac7280c077a7b29dcb4b68970148e6c87adc4467a3c61cb3",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "dcf6c49a116b6fff3bf2e788b9c1e7f161af598048c6818f853ad44fbb06cd01"
+    },
+    "density-near": {
+      "checks": "d7727d7033e8bc20ec8b459a2357d8c91000fc3e47a274ab8455b105e1695f19",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "ca3cf5f7872eb4da0d6de0d6ce10f8f20545dc00f16a2981da1772de9794cbbd"
+    },
+    "density-outliers": {
+      "checks": "22cc62cd6bafe5d674bd9dd8c682a617b536dd58901845ce512c0ab5d8c601e5",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "9ec1ca8fa0d046f7db349eba71f37602589e2cb3e93efbd69ed9258cea813c32"
+    },
+    "density-singleton": {
+      "checks": "ffb91af09a24f4f34957f7d25b1fac618efb8ed9c7c74e1b8c6a651d2c13692e",
+      "gam_diagnostics": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "loess_diagnostics": "6c1bf7f52fe46e1cf8d2dacb853bc57e9a6f3ae532cc92f2a690d47744e39b2b"
+    }
+  }
+}
