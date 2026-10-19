@@ -76,7 +76,7 @@ all existing intentional differences remain visible below.
 | Run/chunk/flowcell identity | Complete | Run-ID grouping; explicit unknown sources, optional real flowcell ID; U ambiguity/conflicting metadata tests. Multiple runs on one physical flowcell remain separately labeled. |
 | Albacore/Guppy minimal template headers | Complete | Optional absent metadata stays unavailable; U `minimal_legacy_inputs_keep_missing_metadata_unavailable`, P original files. |
 | 2D/1D2 field substitution | Complete | Complete 2D pair selected, no row-level template mixing; U `legacy_2d_substitution_is_consistent_and_never_falls_back_per_row`, P 1D2. |
-| Direct-RNA YHR174W exclusion | Complete | Exact name, explicit excluded count; U `direct_rna_controls_are_excluded_and_counted_separately`, P RNA (37 controls). |
+| Direct-RNA YHR174W exclusion | Partial | Exact name, explicit excluded count; U `direct_rna_controls_are_excluded_and_counted_separately`, P RNA (37 controls). Exact named-control exclusion is complete; missing calibration labels are retained here but dropped by R. Actual synthetic 3/60 bp vs1/30 bp counterexample and regression are documented in #18. |
 | Inclusive configurable Q cutoff | Complete | Separate from native pass; U `q_cutoff_is_inclusive_exact_and_independent_of_native_filtering`, P same cutoff as upstream calls. |
 | Read count / total bases | Complete | Exact integers; zero-length summary vs basecalled counts explicit; U count/yield conservation, P. |
 | Mean/median/max length; mean/median Q | Complete | Exact retained observations; per-read arithmetic, unrounded; U partition/odd/even/legacy tests, P. |
@@ -90,25 +90,32 @@ all existing intentional differences remain visible below.
 
 ## Plot families
 
+**Issue #18 correction:** the affected automatic-histogram, hourly/cumulative,
+length-yield and PromethION bin2d rows below are now **Partial** at the numerical
+plot-layer level. Their analysis families remain implemented and core totals
+remain exact; old Complete labels did not verify original ggplot bins/paths.
+See the [source/formula audit and actual gallery](minionqc-comparison.md#9-source-level-audit-formulas-and-population-contract).
+No strict GAM result or original tolerance is changed by this reassessment.
+
 All plots use offline Rust-generated SVG; dense MinION plots embed PNG rasters. All/Q comparisons use native Q selection,
 not native passing. Fixed histogram bins, unsmoothed 15-minute means and bounded
 KDE differences are intentional and documented in [metrics](metrics.md).
 
 | Upstream report family | Status | Implementation / validation |
 | --- | --- | --- |
-| `length_histogram`, `q_histogram` | Complete | All/Q count and yield histograms; fixed documented bins rather than 300 automatic bins; U histogram conservation / offline tests, V. |
-| `yield_over_time`, `reads_per_hour` | Complete | Absolute cumulative yield and counts in 15-minute bins, All/Q; U interval/cumulative conservation and gap tests, V. Counts are per 15 min, explicitly labeled. |
-| `yield_by_length` | Complete | Exact retained bp at bounded display queries, exact threshold counts; All/Q, full yield range rather than R's 99% crop; U `every_display_query_uses_exact_lengths_including_ties`, P, V. |
+| `length_histogram`, `q_histogram` | Partial | All/Q count and yield histograms; fixed documented bins rather than 300 automatic bins; U histogram conservation / offline tests, V. |
+| `yield_over_time`, `reads_per_hour` | Partial | Absolute cumulative yield and counts in 15-minute bins, All/Q; U interval/cumulative conservation and gap tests, V. Counts are per 15 min, explicitly labeled. |
+| `yield_by_length` | Partial | Exact retained bp at bounded display queries, exact threshold counts; All/Q, full yield range rather than R's 99% crop; U `every_display_query_uses_exact_lengths_including_ties`, P, V. |
 | `length_by_hour`, `q_by_hour` | Partial | Unchanged 15-minute means plus opt-in interpolated LOESS/cubic-shrinkage REML fits; U temporal/fitting tests. Exact unique-time knots, singular two-row LOESS solves and GAM ribbons are implemented; public GAM numerical parity remains incomplete; LOESS pointwise Student-t intervals are verified against actual R. |
-| `channel_summary` | Complete | Four channel distributions and exact values, All-summary/Q; U channel summary tests, V. |
+| `channel_summary` | Partial | Four channel distributions and exact values, All-summary/Q; U channel summary tests, V. |
 | `gb_per_channel_overview` | Complete | Explicit-layout yield heatmaps including All/Q (native maps additionally available); U layout/yield conservation, V. |
 | MinION `flowcell_overview` | Complete | All positive-length reads: exact points ≤4,096, otherwise 64×40 full-count pixels/channel plus actual extrema; exact R9.5 layout, shared time/log-length axes, Q color. U count/extrema/order/mapping tests; actual R plot-data/pixel validation below. Explicit aggregation and zero-length differences, not ggplot pixel identity. |
 | MinION `length_vs_q` | Complete | Every positive-length read: exact points or 512×256 full-count pixels plus extrema, log-length X/Q Y, natural-log positive events/base inferno colors. Missing/zero events explicit. U legacy/control/event/count tests; actual R axes/alpha/population/pixel validation below. Dense mixed colors are documented reductions. |
 | PromethION physical read-level overview | Not applicable | Upstream omits the per-read channel panels for PromethION. |
-| PromethION `length_vs_q` | Complete | Bounded logarithmic-length/Q count heatmaps, matching the upstream bin2d analysis family; fixed documented bins, no individual read points; U joint count conservation, V. |
-| `combined_length_histogram`, `combined_q_histogram`, `combined_yield_by_length` | Complete | Pooled All/Q observations and exact yield queries; U pooled conservation/exact median/N50, P multiple inputs, V. |
+| PromethION `length_vs_q` | Partial | Bounded logarithmic-length/Q count heatmaps, matching the upstream bin2d analysis family; fixed documented bins, no individual read points; U joint count conservation, V. |
+| `combined_length_histogram`, `combined_q_histogram`, `combined_yield_by_length` | Partial | Pooled All/Q observations and exact yield queries; U pooled conservation/exact median/N50, P multiple inputs, V. |
 | Per-source `length_distributions`, `q_distributions` | Complete | Opt-in shared-domain R-grid estimator, including summary Q observations; actual pinned-R comparison of 52 curves meets documented tolerances. U synthetic R goldens; executable evidence below. Legacy KDE remains separately labeled. |
-| Per-source `yield_over_time`, `yield_by_length` | Complete | Absolute yields, common units/colors; U combined report/curve tests, P pooled totals, V. Run/source labels never invent flowcell identity. |
+| Per-source `yield_over_time`, `yield_by_length` | Partial | Absolute yields, common units/colors; U combined report/curve tests, P pooled totals, V. Run/source labels never invent flowcell identity. |
 | Per-source `length_by_hour`, `q_by_hour` | Partial | All/Q unsmoothed means plus opt-in raw-read fits with global method selection; U collection/time and fit tests. LOESS intervals verified; strict original-R GAM fits/ribbons remain Partial. |
 
 ## CLI and outputs

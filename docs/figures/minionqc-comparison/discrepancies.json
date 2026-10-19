@@ -1,0 +1,416 @@
+{
+  "reference_commit": "54485d586038d8ee36f168dd94f31c423f52f581",
+  "audit_baseline": "8f3d4d73a18a531ea2c3f728fb859cadd90ba801",
+  "contract_axes": [
+    "functional",
+    "population_and_formula",
+    "numeric_plot_layer",
+    "visual_rendering",
+    "cli_defaults"
+  ],
+  "scope": "Source-level classification, not a waiver of original strict comparisons; no confirmed native core-statistics defect found in tested populations.",
+  "findings": [
+    {
+      "id": "A01",
+      "feature": "Length and Q histograms",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L472-L545",
+      "native_source": "src/metrics.rs::LENGTH_BOUNDS; src/html.rs:656-809",
+      "test_input_or_validation": "Public MinION and PromethION, Q7; plot_audit.py / independent_bin_L1 checks",
+      "classification": "Numerically different",
+      "priority": "P1",
+      "numeric_difference": {
+        "reference_bins_per_population": 300,
+        "reference_rows_all_and_selected": 600,
+        "native": "fixed categorical bins; exact counts recorded in measurements.json"
+      },
+      "scientific_impact": "Coarse length intervals merge the short-read peak and finer length/Q subpopulations; equal total counts do not imply equal shape.",
+      "visual_difference": "Coarse length intervals merge the short-read peak and finer length/Q subpopulations; equal total counts do not imply equal shape.",
+      "root_cause": "Automatic post-log10 StatBin vs fixed categorical length/Q bins.",
+      "proposed_correction": "Optional source-compatible automatic bins; preserve native fixed-bin schema/defaults.",
+      "acceptance_criteria": "Compare exact actual-R boundaries/counts and transformations for All/Q, constant, boundary and outlier cases.",
+      "related_issue": 19,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A02",
+      "feature": "Read counts over time",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L609-L638",
+      "native_source": "src/metrics.rs::Aggregator::add; src/html.rs:813-950",
+      "test_input_or_validation": "All six public cases; hourly_count_L1 and grid conservation checks",
+      "classification": "Numerically different",
+      "priority": "P1",
+      "numeric_difference": {
+        "reference_seconds": 3600,
+        "native_seconds": 900
+      },
+      "scientific_impact": "Counts have unequal exposure; plotting 15-minute counts is not the original hourly count/rate. Sparse gaps and zero-length populations differ.",
+      "visual_difference": "Counts have unequal exposure; plotting 15-minute counts is not the original hourly count/rate. Sparse gaps and zero-length populations differ.",
+      "root_cause": "Different bin size, zero filling and selected positive-length population.",
+      "proposed_correction": "Explicit optional reference hourly All/Q summary series.",
+      "acceptance_criteria": "Exact hour-boundary counts, zero fill and population conservation on original R; preserve current diagnostics.",
+      "related_issue": 20,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A03",
+      "feature": "Cumulative yield over time",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L563-L572",
+      "native_source": "src/html.rs:557-653; src/html.rs:2160-2265",
+      "test_input_or_validation": "Public RB7_A2, Q7; exact quarter-hour cumulative queries and terminal bp",
+      "classification": "Numerically different",
+      "priority": "P1",
+      "numeric_difference": {
+        "total_yield_bp_both": 3527993016,
+        "largest_15min_yield_bp": 83967188
+      },
+      "scientific_impact": "Read-start cumulative path and bin-end representation differ within each interval, even when endpoint yield agrees. No instrument-throughput inference.",
+      "visual_difference": "Read-start cumulative path and bin-end representation differ within each interval, even when endpoint yield agrees. No instrument-throughput inference.",
+      "root_cause": "Per-read R GeomLine vs overview steps / comparison lines at native bin ends.",
+      "proposed_correction": "Optional bounded read-start path with explicit representation/error contract.",
+      "acceptance_criteria": "Compare raw reference coordinates and exact queried values, tied starts, gaps, population and per-source context.",
+      "related_issue": 20,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A04",
+      "feature": "Channel read count formula",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L406-L420",
+      "native_source": "src/metrics.rs:1000-1040",
+      "test_input_or_validation": "All public cases; original channel captures, known upstream differential checks; synthetic n=2 ->3vs2",
+      "classification": "Intentional scientific correction",
+      "priority": "P1",
+      "numeric_difference": {
+        "formula_reference": "n*(n+1)/2",
+        "formula_native": "n",
+        "example_reference": 3,
+        "example_native": 2
+      },
+      "scientific_impact": "Original channel-count distributions are mathematically inflated; native true counts must remain correct.",
+      "visual_difference": "Original channel-count distributions are mathematically inflated; native true counts must remain correct.",
+      "root_cause": "R uses sum(which(length>=0)) instead of number of reads.",
+      "proposed_correction": "Retain correction and independently label upstream bug; never force false agreement.",
+      "acceptance_criteria": "Exact per-channel count/yield/median tests and actual original R bug proof; remain distinct from histogram geometry.",
+      "related_issue": null,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A05",
+      "feature": "Channel distribution edges",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L670-L686",
+      "native_source": "src/metrics.rs:1606-1667; src/html.rs:1012-1074",
+      "test_input_or_validation": "Actual captured channel StatBin facets; integration exact_channel_medians_include_explicit_summary_and_basecalled_denominators",
+      "classification": "Numerically different",
+      "priority": "P1",
+      "numeric_difference": {
+        "bins_both": 30,
+        "reference": "automatic centred ggplot boundaries",
+        "native": "zero-anchored equal-width intervals, last inclusive maximum"
+      },
+      "scientific_impact": "Means/medians/bases can match but bar placement/counts differ. Channel-count bug is a separate formula issue.",
+      "visual_difference": "Means/medians/bases can match but bar placement/counts differ. Channel-count bug is a separate formula issue.",
+      "root_cause": "Boundary origin, range and closure rules differ.",
+      "proposed_correction": "Optional reference bin geometry on corrected scientific counts.",
+      "acceptance_criteria": "Compare four families and All/Q edges/counts separately from known R count bug.",
+      "related_issue": 19,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A06",
+      "feature": "Yield by minimum length display",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L575-L584",
+      "native_source": "src/metrics.rs:1527-1580; src/html.rs:952-1010",
+      "test_input_or_validation": "Public raw exact lengths; curve_measurements; every_display_query_uses_exact_lengths_including_ties",
+      "classification": "Numerically different",
+      "priority": "P2",
+      "numeric_difference": {
+        "max_interpolation_bp_minion": 1555278.3120393753,
+        "max_interpolation_bp_promethion": 5464673.00873363,
+        "max_interpolation_bp_pooled": 4431919.158548355,
+        "reference_xmax_bp_minion": 93318,
+        "reference_xmax_bp_promethion": 81890,
+        "reference_nonfinite_or_clipped_rows_all_q_minion": 677,
+        "reference_nonfinite_or_clipped_rows_all_q_promethion": 116
+      },
+      "scientific_impact": "Exact stored inclusive thresholds are correct; display interpolation, tied-read vertical segments and long-tail/crop differ.",
+      "visual_difference": "Exact stored inclusive thresholds are correct; display interpolation, tied-read vertical segments and long-tail/crop differ.",
+      "root_cause": "Bounded exact queries plus linear SVG interpolation vs cropped per-read cumulative R path.",
+      "proposed_correction": "Quantified display contract and/or optional compatible display; preserve exact integer queries and full statistics.",
+      "acceptance_criteria": "Independent exact query error remains zero; measure interpolation and crop separately for ties, tails and All/Q.",
+      "related_issue": 21,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A07",
+      "feature": "PromethION length versus Q",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L649-L659",
+      "native_source": "src/metrics.rs::LengthQualityHistogram; src/html.rs:1292-1429",
+      "test_input_or_validation": "Public PromethION Q7; actual StatBin2d and complete native histogram",
+      "classification": "Numerically different",
+      "priority": "P1",
+      "numeric_difference": {
+        "reference_occupied_cells": 516,
+        "count_both": 75160,
+        "reference": "automatic 30x30 log10-space bin2d",
+        "native": "log2 length intervals and 2-Q intervals plus overflow"
+      },
+      "scientific_impact": "Dense-cluster shape and cell locations differ despite count conservation; native passed panel is not Q-cutoff selection.",
+      "visual_difference": "Dense-cluster shape and cell locations differ despite count conservation; native passed panel is not Q-cutoff selection.",
+      "root_cause": "Different transformed-space binning and legend scales.",
+      "proposed_correction": "Optional compatible bounded bin2d on original All population.",
+      "acceptance_criteria": "Compare source boundaries, transformations, cells, count conservation and overflow behavior to actual R.",
+      "related_issue": 19,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A08",
+      "feature": "MinION overview and length versus Q rendering",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L548-L561",
+      "native_source": "src/minion.rs; src/html.rs:1808-2015",
+      "test_input_or_validation": "Public MinION/1D2/RNA/short; original finite XY grids, native exact/full-count rasters, minion_visualization.py",
+      "classification": "Presentation difference",
+      "priority": "P2",
+      "numeric_difference": {
+        "native_exact_point_limit": 4096,
+        "dense_overview_pixels_per_channel": [
+          64,
+          40
+        ],
+        "dense_scatter_pixels": [
+          512,
+          256
+        ],
+        "reference": "one point per read"
+      },
+      "scientific_impact": "Complete finite population retained; averaged mapped colors, count opacity and extrema overlays do not reproduce independent alpha-composited point order.",
+      "visual_difference": "Complete finite population retained; averaged mapped colors, count opacity and extrema overlays do not reproduce independent alpha-composited point order.",
+      "root_cause": "Bounded full-count raster instead of millions of DOM points.",
+      "proposed_correction": "Keep explicit method/resolution/colour-reduction labels; do not call pixel-equivalent.",
+      "acceptance_criteria": "Conserve all finite observations, channel positions and extrema; same-axis full-count marginal checks. Exact rendering identity is not claimed.",
+      "related_issue": null,
+      "state": "documented; not changed",
+      "additional_reference_sources": [
+        "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L640-L668"
+      ]
+    },
+    {
+      "id": "A09",
+      "feature": "Smoothing and density defaults",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L587-L606",
+      "native_source": "src/cli.rs; src/html.rs::comparison_distribution/fitted_trend_plot",
+      "test_input_or_validation": "CLI options and actual 18-case suite; density goldens; default-vs-explicit option audit",
+      "classification": "Presentation difference",
+      "priority": "P2",
+      "numeric_difference": {
+        "reference": "automatic fits/densities",
+        "native": "--minionqc-trends and --minionqc-density required for compatible estimators"
+      },
+      "scientific_impact": "Default charts answer observed-bin/legacy-density questions, not fitted curves/R-grid estimates.",
+      "visual_difference": "Default charts answer observed-bin/legacy-density questions, not fitted curves/R-grid estimates.",
+      "root_cause": "Safe lightweight native defaults; compatible estimators opt-in.",
+      "proposed_correction": "Document option pairs; no automatic estimator substitution or claim of default equality.",
+      "acceptance_criteria": "Explicit estimator selections, population/axis labels and method metadata; original density checks within declared tolerance.",
+      "related_issue": null,
+      "state": "documented; not changed",
+      "additional_reference_sources": [
+        "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L830-L850"
+      ]
+    },
+    {
+      "id": "A10",
+      "feature": "Original-R GAM fits/uncertainty",
+      "existing_claim": "Partial",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L587-L606",
+      "native_source": "src/trends.rs; src/trend_knots.rs",
+      "test_input_or_validation": "18 cases strict-final/comparison.json; check_revalidation.py; existing immutable summaries",
+      "classification": "Numerically different",
+      "priority": "P1",
+      "numeric_difference": {
+        "primary_failures": 1542,
+        "fitted": 390,
+        "standard_error": 381,
+        "lower": 381,
+        "upper": 390,
+        "intermediate_mismatches": 1912
+      },
+      "scientific_impact": "Strict original pinned-R fit/uncertainty contract not met. Controlled canonical fits are not the original targets.",
+      "visual_difference": "Strict original pinned-R fit/uncertainty contract not met. Controlled canonical fits are not the original targets.",
+      "root_cause": "Documented near-null eigenvector ordering and unequal shrinkage penalty orientation; canonical native convention.",
+      "proposed_correction": "Keep #12 open and original targets/classifications/tolerances intact; no solver changes in this audit.",
+      "acceptance_criteria": "Only actual original-target acceptance can close #12; preserve every strict check signature.",
+      "related_issue": 12,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A11",
+      "feature": "RNA unknown calibration labels",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L234-L237",
+      "native_source": "src/input.rs:135-151, 203-210; tests/integration.rs::unknown_rna_calibration_labels_are_retained_instead_of_assumed_controls",
+      "test_input_or_validation": "Exact synthetic TSV and actual original-R execution in measurements.json.rna_missing_labels",
+      "classification": "Numerically different",
+      "priority": "P1",
+      "numeric_difference": {
+        "input_lengths_bp": [
+          10,
+          20,
+          30,
+          40
+        ],
+        "labels": [
+          "missing",
+          "NA",
+          "no_match",
+          "YHR174W"
+        ],
+        "reference_reads": 1,
+        "native_reads": 3,
+        "reference_yield_bp": 30,
+        "native_yield_bp": 60
+      },
+      "scientific_impact": "Missing calibration annotation is not evidence of a control read. The two populations differ even without zero lengths.",
+      "visual_difference": "Missing calibration annotation is not evidence of a control read. The two populations differ even without zero lengths.",
+      "root_cause": "R subset(label!=control) drops NA; native exact-name exclusion retains unknown labels.",
+      "proposed_correction": "Retain conservative native policy, disclose intentional difference and protect with regression.",
+      "acceptance_criteria": "Same-byte actual R and production CLI counterexample plus exact exclusion/count/yield tests.",
+      "related_issue": null,
+      "state": "documented and regression-tested; existing policy preserved"
+    },
+    {
+      "id": "A12",
+      "feature": "Core zero lengths, N50 ties and ultralong endpoint",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L347-L405",
+      "native_source": "src/metrics.rs::subset_statistics/n50_descending/ultralong",
+      "test_input_or_validation": "Actual zero-cutoff/n50-tie/ultralong-endpoint R differential cases; partition tests",
+      "classification": "Intentional scientific correction",
+      "priority": "P1",
+      "numeric_difference": {
+        "n50_input_bp": [
+          100,
+          50,
+          25,
+          25
+        ],
+        "reference_n50_bp": 50,
+        "native_n50_bp": 100,
+        "summary_denominator": "R includes zeros; native basecalled positive lengths"
+      },
+      "scientific_impact": "No universal exact equality of displayed means/medians or strict-half ties; known upstream ultralong endpoint loses an eligible read.",
+      "visual_difference": "No universal exact equality of displayed means/medians or strict-half ties; known upstream ultralong endpoint loses an eligible read.",
+      "root_cause": "Separate summary/basecalled populations, >=half core N50, corrected longest-prefix endpoint.",
+      "proposed_correction": "Preserve validated native definitions and report reference differences explicitly.",
+      "acceptance_criteria": "Exact integers and matched formulas/populations; original intentional/upstream-defect checks remain unchanged.",
+      "related_issue": null,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A13",
+      "feature": "Run identity, malformed input, safe CLI defaults",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L899-L956",
+      "native_source": "src/input.rs; src/batch.rs; src/cli.rs; src/integrity.rs",
+      "test_input_or_validation": "Public paired CLI; mixed-run/chunk/parallel/integrity integration tests",
+      "classification": "Intentional scientific correction",
+      "priority": "P2",
+      "numeric_difference": {
+        "reference": "parent-directory file identity, problem-row removal, PNG/default beside-input output",
+        "native": "run-ID components, fail malformed rows, explicit output/fresh compat directory, HTML+JSON defaults"
+      },
+      "scientific_impact": "Same file does not universally equal one instrument run; file-scope plots require labelled validation adapter. Safety/default behavior differs.",
+      "visual_difference": "Same file does not universally equal one instrument run; file-scope plots require labelled validation adapter. Safety/default behavior differs.",
+      "root_cause": "Reliable run grouping and strict/staged input/output policy.",
+      "proposed_correction": "Keep documented differences, option aliases and explicit validation scope.",
+      "acceptance_criteria": "Exact pooled populations/statistics and deterministic outputs; never invent flowcell IDs or silently skip malformed records.",
+      "related_issue": null,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A14",
+      "feature": "Export visual/vector parity",
+      "existing_claim": "Complete analysis family",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L25-L132",
+      "native_source": "src/export.rs; src/figure_render.rs",
+      "test_input_or_validation": "Six native format CLI/decoder tests; actual PNG rendering/decoding in this audit",
+      "classification": "Presentation difference",
+      "priority": "P2",
+      "numeric_difference": {
+        "native_dpi": 300,
+        "postscript": "raster-backed Level3",
+        "pdf": "vector where feasible",
+        "jpeg": "lossy quality95"
+      },
+      "scientific_impact": "Real encodings and scientific labels are supported; physical size, font rendering, palette and vector PS are not identical to ggplot.",
+      "visual_difference": "Real encodings and scientific labels are supported; physical size, font rendering, palette and vector PS are not identical to ggplot.",
+      "root_cause": "Single canonical SVG source and lightweight converters.",
+      "proposed_correction": "Keep format support separate from pixel/vector identity; PS explicitly raster-backed.",
+      "acceptance_criteria": "Existing format/dimension/embedded-raster tests remain passing; external PS/PDF render checks were not rerun here.",
+      "related_issue": null,
+      "state": "documented; not changed"
+    },
+    {
+      "id": "A15",
+      "feature": "Reference harness lockfile integrity",
+      "existing_claim": "Complete analysis family",
+      "reference_source": null,
+      "native_source": "tests/minionqc_differential.py::main",
+      "test_input_or_validation": "Actual paired suite and git diff -- Cargo.lock",
+      "classification": "Confirmed defect",
+      "priority": "P2",
+      "numeric_difference": {
+        "before": "cargo test could rewrite package ordering in Cargo.lock",
+        "after": "cargo test --locked; no dependency or lockfile change"
+      },
+      "scientific_impact": "Reproducible validation should not silently modify dependency resolution metadata.",
+      "visual_difference": "Reproducible validation should not silently modify dependency resolution metadata.",
+      "root_cause": "Ignored reference probe invoked cargo without --locked.",
+      "proposed_correction": "Fixed invocation to require the checked-in lockfile.",
+      "acceptance_criteria": "18-case suite still reproduces every strict check; Cargo.lock unchanged.",
+      "related_issue": null,
+      "state": "fixed"
+    },
+    {
+      "id": "A16",
+      "feature": "Legacy negative-Q underflow labels and joint-heatmap ticks",
+      "existing_claim": "Complete length/Q rendering",
+      "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L649-L659",
+      "native_source": "src/html.rs::length_quality_heatmaps/length_quality_map/quality_interval",
+      "test_input_or_validation": "Actual public PromethION negative Q; legacy_signed_qscores_are_preserved_with_histogram_conservation",
+      "classification": "Confirmed defect",
+      "priority": "P1",
+      "numeric_difference": {
+        "before_underflow_tick": "-1.798e308",
+        "before_regular_ticks": [
+          8,
+          18,
+          28,
+          38,
+          48
+        ],
+        "after_underflow_tick": "< 0",
+        "after_regular_ticks": [
+          10,
+          20,
+          30,
+          40,
+          50
+        ],
+        "json_bin_and_count_changes": 0
+      },
+      "visual_difference": "Finite sentinel printed as a measured Q minimum; prepended row shifted nonnegative tick selection by two Q units.",
+      "scientific_impact": "Misleading plotting labels despite correct stored bins/counts; unlike automatic-grid parity this is a native presentation defect.",
+      "root_cause": "Tick selection stepped by array index after insertion of underflow row; generic interval formatter exposed sentinel.",
+      "proposed_correction": "Implemented categorical below-zero interval labels, index-offset-independent 10-Q ticks, explicit annotation; preserve numeric JSON.",
+      "acceptance_criteria": "Negative and nonnegative boundary tests; full checks; same-public-report JSON byte equality; actual before/after figure inspection.",
+      "state": "fixed; before/after validation recorded in comparison document"
+    }
+  ]
+}
