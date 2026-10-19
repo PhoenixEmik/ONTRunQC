@@ -2,6 +2,8 @@
 
 **Oxford Nanopore sequencing-run quality control.**
 
+For a feature-by-feature comparison of the original MinIONQC v1.4.1 and ONTRunQC, including scientific definitions, CLI examples, all plot families, and verified numerical differences, read the [detailed MinIONQC compatibility comparison](docs/minionqc-comparison.md). The [parity evidence ledger](docs/minionqc-parity.md) preserves the underlying test record.
+
 ONTRunQC is a standalone Rust CLI for post-sequencing analysis of Oxford Nanopore
 sequencing summaries. It streams TSV input, calculates exact core statistics,
 and produces structured JSON and a self-contained HTML report. It supports
