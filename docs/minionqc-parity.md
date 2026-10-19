@@ -1,5 +1,7 @@
 # MinIONQC parity
 
+**Reader-facing comparison:** [MinIONQC v1.4.1 vs ONTRunQC — detailed compatibility comparison](minionqc-comparison.md). This file remains the engineering validation ledger and preserves the original strict numerical results and history.
+
 ONTRunQC was previously named PoreGauge. Historical validation artifacts and
 machine-readable comparison keys retain the old name; reference values,
 tolerances and unresolved GAM classifications are unchanged.
