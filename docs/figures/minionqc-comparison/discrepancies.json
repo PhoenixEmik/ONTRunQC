@@ -207,13 +207,13 @@
       "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L587-L606",
       "native_source": "src/cli.rs; src/html.rs::comparison_distribution/fitted_trend_plot",
       "test_input_or_validation": "CLI options and actual 18-case suite; density goldens; default-vs-explicit option audit",
-      "classification": "Presentation difference",
+      "classification": "Numerically different",
       "priority": "P2",
       "numeric_difference": {
         "reference": "automatic fits/densities",
         "native": "--minionqc-trends and --minionqc-density required for compatible estimators"
       },
-      "scientific_impact": "Default charts answer observed-bin/legacy-density questions, not fitted curves/R-grid estimates.",
+      "scientific_impact": "Default unsmoothed means and legacy normalized KDE are different numerical estimators from raw-read fits and R-grid density, not merely different presentation. Compatible estimators require explicit flags.",
       "visual_difference": "Default charts answer observed-bin/legacy-density questions, not fitted curves/R-grid estimates.",
       "root_cause": "Safe lightweight native defaults; compatible estimators opt-in.",
       "proposed_correction": "Document option pairs; no automatic estimator substitution or claim of default equality.",

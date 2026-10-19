@@ -304,7 +304,7 @@ GAM/LOESS, KDE or reference target was changed to make plots agree.
 | Channel count | Intentional scientific correction of proven R defect | n=2 gives R3 vs true2; original n(n+1)/2 expression | Preserve true counts; do not emulate bug |
 | RNA missing calibration annotation | Intentional population difference, newly verified | Missing/NA/ordinary/control lengths10/20/30/40: R 1 read/30 bp vs native 3 reads/60 bp | Existing exact-name policy retained; new regression and runnable counterexample |
 | MinION points/raster and spatial palettes | Presentation differences with full-data conservation | Exact small points / bounded all-count pixels; actual R finite counts, marginal counts and coordinate/yield checks | Keep resolution/color-reduction labels; no independent-point/pixel identity claim |
-| Fitted trends / density defaults | Default-behavior difference | Compatible estimators require explicit flags here | Command pairs disclose settings; existence of an estimator is not default equality |
+| Fitted trends / density defaults | Numerically different default estimators | Compatible estimators require explicit flags here | Command pairs disclose settings; existence of an estimator is not default equality |
 | Original GAM uncertainty/fits | Strict numerical limitation | 1,542 primary and 1,912 intermediate differences; every original strict check reproduced | [#12](https://github.com/PhoenixEmik/ONTRunQC/issues/12) stays open; no changed targets/tolerances |
 | Validation lockfile mutation | Confirmed tooling defect, fixed | Unlocked probe could reorder Cargo.lock; now uses `cargo test --locked` | Repeated suite leaves lockfile unchanged |
 
