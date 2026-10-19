@@ -29,6 +29,9 @@ pub fn render(report: &Report) -> String {
         out.push_str(r##"<a href="#overview">01 Run overview</a><a href="#yield">02 Sequencing yield</a><a href="#length">03 Read length</a><a href="#quality">04 Read quality</a><a href="#channels">05 Channels</a><a href="#mux">06 Mux performance</a><a href="#termination">07 Termination reasons</a><a href="#speed">08 Sequencing speed</a><a href="#qcutoff">09 Q-cutoff comparison</a><div class="nav-note">One run.<br>Summary-derived QC.<br>Available offline.</div></nav><main>"##);
     }
     overview(&mut out, report);
+    if report.minionqc_plot_bins.is_some() {
+        out.push_str("<p class=\"annotation\"><a href=\"#reference-bins\">View explicit MinIONQC-compatible histogram layers</a></p>");
+    }
     if let Some(hours) = report.presentation.mux_interval_hours {
         write!(out, "<p class=\"annotation\">Dashed mux-reference markers every {} hours are user configuration, not measured MinKNOW events.</p>", decimal(hours)).unwrap();
     }
@@ -46,6 +49,7 @@ pub fn render(report: &Report) -> String {
         sequencing_speed(&mut out, report);
     }
     qscore_comparison(&mut out, report);
+    reference_plots(&mut out, report);
     write!(out, "<footer>ONTRunQC {} · JSON schema {} · Post-sequencing QC from sequencing summaries. No automatic QC judgment.</footer></main></div><script>",
         escape(report.tool.version), report.schema_version).unwrap();
     out.push_str(SCRIPT);
@@ -2783,6 +2787,203 @@ fn escape(value: &str) -> String {
         }
     }
     out
+}
+
+fn reference_histogram(
+    out: &mut String,
+    id: &str,
+    title: &str,
+    bins: &[crate::plot_bins::Bin],
+    log: bool,
+    annotation: Option<&str>,
+) {
+    figure(out, id, title);
+    if bins.is_empty() {
+        empty_chart(out, "No finite observations in this population.");
+        return;
+    }
+    let max = bins.iter().map(|b| b.count).max().unwrap_or(0);
+    let (ymax, ticks) = plot_scale(max as f64, true);
+    svg_start(
+        out,
+        id,
+        "ggplot2 3.5.1 automatic right-closed bins; complete population and empty bins retained.",
+        340,
+    );
+    axes(
+        out,
+        ymax,
+        ticks,
+        if id.contains("channel") {
+            "Channels (count)"
+        } else {
+            "Reads (count)"
+        },
+    );
+    let lo = bins.first().unwrap().xmin;
+    let hi = bins.last().unwrap().xmax;
+    for b in bins {
+        let x = LEFT + (b.xmin - lo) / (hi - lo) * (RIGHT - LEFT);
+        let width = (b.xmax - b.xmin) / (hi - lo) * (RIGHT - LEFT);
+        let h = b.count as f64 / ymax * (BOTTOM - TOP);
+        write!(out,"<rect x=\"{x:.5}\" y=\"{:.5}\" width=\"{width:.5}\" height=\"{h:.5}\" fill=\"#4f46e5\"><title>({}, {}] · {} observations</title></rect>",BOTTOM-h,b.xmin,b.xmax,b.count).unwrap();
+    }
+    for i in 0..=4 {
+        let v = lo + (hi - lo) * i as f64 / 4.0;
+        x_tick(
+            out,
+            LEFT + (RIGHT - LEFT) * i as f64 / 4.0,
+            &if log { format!("{:.3}", v) } else { compact(v) },
+        );
+    }
+    let axis = if log {
+        "log10(read length / bp)"
+    } else if id.contains("reference-q-") {
+        "Mean per-read Q-score"
+    } else if id.contains("total_yield_bp") {
+        "Total yield per channel (bp)"
+    } else if id.contains("read_count") {
+        "Summary reads per channel (true count)"
+    } else {
+        "Read length per channel (bp)"
+    };
+    write!(
+        out,
+        "<text class=\"axis-label\" x=\"397\" y=\"288\" text-anchor=\"middle\">{}</text>",
+        axis
+    )
+    .unwrap();
+    if let Some(text) = annotation {
+        write!(
+            out,
+            "<text class=\"tick\" x=\"80\" y=\"317\">Basecalled statistics: {}</text>",
+            escape(text)
+        )
+        .unwrap();
+    }
+    out.push_str("</svg></div></figure>");
+}
+fn reference_plots(out: &mut String, report: &Report) {
+    let Some(data) = &report.minionqc_plot_bins else {
+        return;
+    };
+    section(
+        out,
+        "reference-bins",
+        "10",
+        "MinIONQC-compatible histogram layers",
+        "Explicit ggplot2 3.5.1 statistical binning. Canonical QC statistics and native histograms above remain unchanged.",
+    );
+    write!(out,"<p class=\"annotation\">{} retained summary records; {} Q-selected summary records. Q histograms include zero-length records; log-length plots exclude {} zero lengths. All/Q facets share X boundaries and have independent Y scales. Bins are right-closed with ggplot boundary fuzz, including the lowest edge. Native pass is a separate classification.</p>",count(data.summary_records),count(data.q_selected_summary_records),count(data.zero_length_records)).unwrap();
+    out.push_str("<div class=\"chart-grid\">");
+    for (kind, hist) in [("length", &data.length), ("q", &data.quality)] {
+        for (population, bins) in [("all", &hist.all), ("q-selected", &hist.q_selected)] {
+            reference_histogram(
+                out,
+                &format!("reference-{kind}-{population}"),
+                &format!(
+                    "Reference {kind} histogram · {} · 300 requested bins",
+                    if population == "all" {
+                        "All summary records".to_owned()
+                    } else {
+                        format!("Q ≥ {}", cutoff_value(report.comparison.qscore_cutoff))
+                    }
+                ),
+                bins,
+                kind == "length",
+                statistic_annotation(report, kind == "q", population != "all").as_deref(),
+            );
+        }
+    }
+    out.push_str("</div><p class=\"annotation\">Channel histograms use summary-read means/medians, including eligible zero lengths. Read-count distributions use true counts; MinIONQC's n(n+1)/2 channel-count bug is intentionally not reproduced. Channel counts and their bin limits therefore need not match original R.</p><div class=\"chart-grid\">");
+    for channel in &data.channels {
+        for (population, bins) in [
+            ("all", &channel.histogram.all),
+            ("q-selected", &channel.histogram.q_selected),
+        ] {
+            reference_histogram(
+                out,
+                &format!("reference-channel-{}-{population}", channel.metric),
+                &format!(
+                    "Reference channel {} · {}",
+                    channel.metric,
+                    if population == "all" {
+                        "All summary records".to_owned()
+                    } else {
+                        format!("Q ≥ {}", cutoff_value(report.comparison.qscore_cutoff))
+                    }
+                ),
+                bins,
+                false,
+                None,
+            );
+        }
+    }
+    out.push_str("</div>");
+    // Bin2D has no physical coordinates. Without an explicit layout it is
+    // device-neutral; do not infer an instrument from observed channel IDs.
+    if !report
+        .diagnostics
+        .physical_layout
+        .as_ref()
+        .is_some_and(|l| matches!(l.name, crate::layout::FlowcellLayout::MinionR95))
+    {
+        reference_bin2d(out, &data.length_vs_q);
+    }
+    out.push_str("</section>");
+}
+fn reference_bin2d(out: &mut String, data: &crate::plot_bins::Bin2d) {
+    let id = "reference-bin2d";
+    figure(
+        out,
+        id,
+        "Reference length × Q · All summary records with finite log-length",
+    );
+    if let Some(reason) = data.unavailable_reason {
+        empty_chart(out, reason);
+        return;
+    }
+    let xmin = data.x_breaks[0];
+    let xmax = *data.x_breaks.last().unwrap();
+    let ymin = data.y_breaks[0];
+    let ymax = *data.y_breaks.last().unwrap();
+    let max = data.cells.iter().map(|c| c.count).max().unwrap_or(1);
+    let min = data.cells.iter().map(|c| c.count).min().unwrap_or(1);
+    let (low_color, high_color) = if min == max {
+        ("#9e9cf2", "#9e9cf2")
+    } else {
+        ("#eef2ff", "#4f46e5")
+    };
+    svg_start(
+        out,
+        id,
+        "ggplot2 StatBin2d: 30 requested bins per transformed axis; occupied cells only, linear count colour scale.",
+        330,
+    );
+    axes_range(out, ymin, ymax, 4, "Mean per-read Q-score");
+    for c in &data.cells {
+        let x = LEFT + (c.xmin - xmin) / (xmax - xmin) * (RIGHT - LEFT);
+        let y = BOTTOM - (c.ymax - ymin) / (ymax - ymin) * (BOTTOM - TOP);
+        let w = (c.xmax - c.xmin) / (xmax - xmin) * (RIGHT - LEFT);
+        let h = (c.ymax - c.ymin) / (ymax - ymin) * (BOTTOM - TOP);
+        let fraction = if max == min {
+            0.5
+        } else {
+            (c.count - min) as f64 / (max - min) as f64
+        };
+        let r = (238.0 + (79.0 - 238.0) * fraction) as u8;
+        let g = (242.0 + (70.0 - 242.0) * fraction) as u8;
+        let b = (255.0 + (229.0 - 255.0) * fraction) as u8;
+        write!(out,"<rect x=\"{x:.5}\" y=\"{y:.5}\" width=\"{w:.5}\" height=\"{h:.5}\" fill=\"rgb({r},{g},{b})\"><title>log10 length ({}, {}]; Q ({}, {}]; {} reads</title></rect>",c.xmin,c.xmax,c.ymin,c.ymax,c.count).unwrap();
+    }
+    for i in 0..=4 {
+        x_tick(
+            out,
+            LEFT + (RIGHT - LEFT) * i as f64 / 4.0,
+            &format!("{:.3}", xmin + (xmax - xmin) * i as f64 / 4.0),
+        );
+    }
+    write!(out,"<text class=\"axis-label\" x=\"397\" y=\"285\" text-anchor=\"middle\">log10(read length / bp)</text><defs><linearGradient id=\"reference-count-scale\"><stop offset=\"0%\" stop-color=\"{low_color}\"/><stop offset=\"100%\" stop-color=\"{high_color}\"/></linearGradient></defs><rect x=\"80\" y=\"299\" width=\"180\" height=\"10\" fill=\"url(#reference-count-scale)\"/><text class=\"tick\" x=\"80\" y=\"326\">{min}</text><text class=\"tick\" x=\"260\" y=\"326\" text-anchor=\"end\">{max}</text><text class=\"tick\" x=\"285\" y=\"309\">Reads/cell (linear); empty cells unfilled</text></svg></div></figure>").unwrap();
 }
 
 #[cfg(test)]

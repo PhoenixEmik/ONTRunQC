@@ -21,6 +21,7 @@ pub struct AnalysisOptions {
     pub cutoff: f64,
     pub minionqc_trends: bool,
     pub minionqc_density: bool,
+    pub minionqc_plot_bins: bool,
     pub combined_only: bool,
     pub group_inputs: bool,
     pub split_runs: bool,
@@ -30,6 +31,7 @@ pub struct AnalysisOptions {
 }
 
 struct Group {
+    plot_bounds: crate::plot_bins::Bounds,
     first_seen: (usize, u64),
     latest_start: Option<f64>,
     files: BTreeSet<usize>,
@@ -82,6 +84,81 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         "ambiguous run identity in input; use --split-runs or explicit --group-inputs"
     );
     check_sources(&sources, "after aggregation")?;
+    let mut pooled_plot = None;
+    if options.minionqc_plot_bins {
+        let mut bounds = crate::plot_bins::Bounds::default();
+        for group in &groups {
+            bounds.merge(group.plot_bounds);
+        }
+        let mut pooled_bins = collection
+            .then(|| crate::plot_bins::Plan::new(bounds))
+            .transpose()?;
+        let mut bins = groups
+            .iter()
+            .map(|g| {
+                (!options.combined_only)
+                    .then(|| crate::plot_bins::Plan::new(g.plot_bounds))
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for (file_index, path) in files.iter().enumerate() {
+            let mut pass = sources[file_index].open_summary("reference plot-bin pass")?;
+            let mut membership = Membership::default();
+            let mut reader = SummaryReader::with_options(
+                &mut pass,
+                options.input_schema,
+                options.read_representation,
+            )?;
+            reader.allow_multiple_runs();
+            while let Some(record) = reader
+                .next_record()
+                .with_context(|| format!("reference plot-bin input {}", path.display()))?
+            {
+                membership.observe(record.run_id);
+                let index = if options.group_inputs {
+                    Some(0)
+                } else if let Some(id) = record.run_id {
+                    known.get(id).copied()
+                } else {
+                    groups
+                        .iter()
+                        .position(|g| g.run_id.is_none() && g.files.contains(&file_index))
+                }
+                .with_context(|| {
+                    format!(
+                        "input {} changed identity during reference plot-bin pass",
+                        path.display()
+                    )
+                })?;
+                if let Some(bins) = &mut bins[index] {
+                    bins.add(&record, options.cutoff).with_context(|| {
+                        format!(
+                            "reference plot-bin input {} line {}",
+                            path.display(),
+                            record.line
+                        )
+                    })?;
+                }
+                if let Some(bins) = &mut pooled_bins {
+                    bins.add(&record, options.cutoff).with_context(|| {
+                        format!(
+                            "reference plot-bin input {} line {}",
+                            path.display(),
+                            record.line
+                        )
+                    })?;
+                }
+            }
+            drop(reader);
+            pass.finish()?;
+            sources[file_index].validate_membership(membership, "reference plot-bin pass")?;
+        }
+        for (group, bins) in groups.iter_mut().zip(bins) {
+            group.aggregator.plot_bins = bins.map(crate::plot_bins::Plan::finish);
+        }
+        pooled_plot = pooled_bins.map(crate::plot_bins::Plan::finish);
+        check_sources(&sources, "after reference plot-bin pass")?;
+    }
     let mut plans = Vec::new();
     if options.minionqc_trends {
         let largest = groups
@@ -221,6 +298,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         pooled.absorb(&report, observations)?;
     }
     let mut report = pooled.finish(None)?;
+    report.minionqc_plot_bins = pooled_plot;
     report.collection = Some(Collection {
         unit: "sequencing_runs_or_explicit_sources",
         runs,
@@ -364,6 +442,7 @@ fn scan_inputs(
                 aggregator.enable_reference_density(options.minionqc_density);
                 aggregator.enable_minion_visualization(!options.combined_only);
                 groups.push(Group {
+                    plot_bounds: crate::plot_bins::Bounds::default(),
                     first_seen: (file_index, record.line),
                     latest_start: None,
                     trends: options
@@ -389,6 +468,9 @@ fn scan_inputs(
                 index
             });
             let group = &mut groups[index];
+            if options.minionqc_plot_bins {
+                group.plot_bounds.add(&record);
+            }
             if !record.is_control {
                 group.latest_start = Some(
                     group
@@ -445,6 +527,7 @@ fn scan_inputs(
             aggregator.enable_minion_visualization(!options.combined_only);
             aggregator.include_input_format(schema, representation)?;
             groups.push(Group {
+                plot_bounds: crate::plot_bins::Bounds::default(),
                 first_seen: (file_index, 0),
                 latest_start: None,
                 trends: options

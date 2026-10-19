@@ -4126,3 +4126,337 @@ fn gzip_suffix_does_not_change_source_order_for_prefix_colliding_names() {
     );
     assert_eq!(expected, report_snapshot(&directory.0.join("output")));
 }
+
+#[test]
+fn reference_bins_preserve_canonical_statistics_and_include_zero_q_population() {
+    let data = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t0\t9\n1\t1\t10\t7\n2\t2\t100\t-1\n2\t3\t1000\t20\n";
+    let t = TestDirectory::new();
+    let native = t.analyze_with_args(
+        data,
+        &["--verify-input-content", "--yaml", "--format", "svg"],
+    );
+    assert!(native.get("minionqc_plot_bins").is_none());
+    let mut compatible = t.analyze_with_args(
+        data,
+        &[
+            "--minionqc-plot-bins",
+            "--verify-input-content",
+            "--yaml",
+            "--format",
+            "svg",
+        ],
+    );
+    let bins = compatible
+        .as_object_mut()
+        .unwrap()
+        .remove("minionqc_plot_bins")
+        .unwrap();
+    assert_eq!(native, compatible);
+    assert_eq!(bins["summary_records"], 4);
+    assert_eq!(bins["q_selected_summary_records"], 3);
+    for (key, population, expected) in [
+        ("length", "all", 3),
+        ("length", "q_selected", 2),
+        ("quality", "all", 4),
+        ("quality", "q_selected", 3),
+    ] {
+        assert_eq!(
+            bins[key][population]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["count"].as_u64().unwrap())
+                .sum::<u64>(),
+            expected
+        );
+    }
+    let cells = &bins["length_vs_q"]["cells"];
+    assert_eq!(
+        cells
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["count"].as_u64().unwrap())
+            .sum::<u64>(),
+        3
+    );
+    let html = t.html();
+    assert!(html.contains("reference-length-all"));
+    assert!(html.contains("Q histograms include zero-length"));
+    assert!(!html.contains("NaN"));
+    assert!(!html.contains("Infinity"));
+    let first = fs::read(t.0.join("output/report.json")).unwrap();
+    t.analyze_with_args(
+        data,
+        &[
+            "--minionqc-plot-bins",
+            "--verify-input-content",
+            "--yaml",
+            "--format",
+            "svg",
+        ],
+    );
+    assert_eq!(first, fs::read(t.0.join("output/report.json")).unwrap());
+}
+
+#[test]
+fn reference_bins_empty_constant_and_zero_only_populations_are_explicit() {
+    for data in [
+        "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n",
+        "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t0\t7\n",
+        "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t100\t7\n",
+    ] {
+        let t = TestDirectory::new();
+        let r = t.analyze_with_args(data, &["--minionqc-plot-bins"]);
+        assert!(r["minionqc_plot_bins"]["length_vs_q"]["unavailable_reason"].is_string());
+        assert!(!t.html().contains("NaN"));
+    }
+}
+
+#[test]
+fn reference_bins_gzip_parallel_chunks_split_and_combined_are_identical() {
+    use std::io::Write;
+    let t = TestDirectory::new();
+    let plain = t.0.join("plain");
+    let mixed = t.0.join("mixed");
+    fs::create_dir(&plain).unwrap();
+    fs::create_dir(&mixed).unwrap();
+    for i in 0..3 {
+        let rows = format!(
+            "{HEADER}a\t1\t1\t0\t1\tTRUE\t{}\t7\tx\nb\t2\t1\t1\t1\tFALSE\t{}\t2\tx\n",
+            10 + i,
+            100 + i
+        );
+        let name = format!("sequencing_summary_{i}.tsv");
+        fs::write(plain.join(&name), &rows).unwrap();
+        if i == 1 {
+            let mut gzip =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            gzip.write_all(rows.as_bytes()).unwrap();
+            fs::write(mixed.join(format!("{name}.gz")), gzip.finish().unwrap()).unwrap();
+        } else {
+            fs::write(mixed.join(name), rows).unwrap();
+        }
+    }
+    let output = |input: &Path, workers: &str, destination: &str| {
+        let result = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
+            .args(["analyze"])
+            .arg(input)
+            .args([
+                "--processors",
+                workers,
+                "--combined-only",
+                "--minionqc-plot-bins",
+                "--verify-input-content",
+                "--format",
+                "svg",
+                "--output",
+            ])
+            .arg(t.0.join(destination))
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        fs::read(t.0.join(destination).join("combined/report.json")).unwrap()
+    };
+    assert_eq!(output(&plain, "1", "one"), output(&mixed, "4", "four"));
+    let r: Value =
+        serde_json::from_slice(&fs::read(t.0.join("one/combined/report.json")).unwrap()).unwrap();
+    assert_eq!(r["minionqc_plot_bins"]["summary_records"], 6);
+    assert_eq!(
+        r["minionqc_plot_bins"]["length"]["all"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["count"].as_u64().unwrap())
+            .sum::<u64>(),
+        6
+    );
+}
+
+#[test]
+fn reference_bins_compose_with_fits_density_dense_minion_and_static_exports() {
+    let t = TestDirectory::new();
+    let mut data =
+        String::from("channel\tstart_time\tsequence_length_template\tmean_qscore_template\n");
+    for i in 0..4100 {
+        data.push_str(&format!(
+            "{}\t{}\t{}\t{}\n",
+            i % 512 + 1,
+            i * 3,
+            i % 1000 + 1,
+            5 + i % 20
+        ));
+    }
+    let format = "svg"; // Dense native decoding has separate existing export tests.
+    let baseline = t.analyze_with_args(
+        &data,
+        &[
+            "--minionqc-trends",
+            "--minionqc-density",
+            "--flowcell-layout",
+            "minion-r9.5",
+            "--format",
+            format,
+        ],
+    );
+    let mut result = t.analyze_with_args(
+        &data,
+        &[
+            "--minionqc-plot-bins",
+            "--minionqc-trends",
+            "--minionqc-density",
+            "--flowcell-layout",
+            "minion-r9.5",
+            "--verify-input-content",
+            "--format",
+            format,
+        ],
+    );
+    let bins = result
+        .as_object_mut()
+        .unwrap()
+        .remove("minionqc_plot_bins")
+        .unwrap();
+    assert_eq!(baseline, result);
+    assert_eq!(bins["summary_records"], 4100);
+    assert!(
+        t.0.join(format!("output/figures/reference-length-all.{format}"))
+            .exists()
+    );
+}
+
+#[test]
+fn reference_bin2d_exports_with_explicit_layout_and_channel_zero_medians() {
+    let t = TestDirectory::new();
+    let mut data =
+        String::from("channel\tstart_time\tsequence_length_template\tmean_qscore_template\n");
+    for _ in 0..10 {
+        data.push_str("1\t0\t0\t7\n");
+    }
+    data.push_str("1\t1\t1000\t9\n2\t2\t100\t5\n2\t3\t500\t10\n");
+    let format = if cfg!(feature = "static-figures") {
+        "png"
+    } else {
+        "svg"
+    };
+    let r = t.analyze_with_args(
+        &data,
+        &[
+            "--minionqc-plot-bins",
+            "--flowcell-layout",
+            "promethion-3000",
+            "--format",
+            format,
+            "--smallfigures",
+            "--add-stat",
+        ],
+    );
+    let bins = &r["minionqc_plot_bins"];
+    assert_eq!(
+        bins["length_vs_q"]["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["count"].as_u64().unwrap())
+            .sum::<u64>(),
+        3
+    );
+    let channel = bins["channels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|h| h["metric"] == "median_read_length_bp")
+        .unwrap();
+    // The selected summary population on channel 1 has median zero; its
+    // canonical selected BASECALLED median remains 1000 bp.
+    assert_eq!(
+        r["comparison"]["channels"][0]["qscore_selected_reads"]["median_read_length_bp"],
+        1000.0
+    );
+    assert!(
+        channel["histogram"]["q_selected"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["xmin"].as_f64().unwrap() <= 0.0
+                && b["xmax"].as_f64().unwrap() >= 0.0
+                && b["count"] == 1)
+    );
+    assert!(
+        t.0.join(format!("output/figures/reference-bin2d.{format}"))
+            .exists()
+    );
+    assert!(t.html().contains("Reads/cell (linear)"));
+}
+
+#[test]
+fn reference_bins_keep_legacy_2d_controls_explicit_grouping_and_split_populations() {
+    let t = TestDirectory::new();
+    let a = t.0.join("a.tsv");
+    let b = t.0.join("b.tsv");
+    let header = "channel\tstart_time\tsequence_length_2d\tmean_qscore_2d\tcalibration_strand_genome_template\n";
+    fs::write(
+        &a,
+        format!("{header}1\t0\t10\t9\tYHR174W\n1\t1\t0\t8\tNA\n2\t2\t1000\t-1\tNA\n"),
+    )
+    .unwrap();
+    fs::write(&b, format!("{header}1\t3\t100\t8\tNA\n2\t4\t0\t9\tNA\n")).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
+        .arg("analyze")
+        .arg(a)
+        .arg(b)
+        .args([
+            "--group-inputs",
+            "--processors",
+            "4",
+            "--minionqc-plot-bins",
+            "--verify-input-content",
+            "--output",
+        ])
+        .arg(t.0.join("grouped"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let grouped: Value =
+        serde_json::from_slice(&fs::read(t.0.join("grouped/combined/report.json")).unwrap())
+            .unwrap();
+    assert_eq!(grouped["minionqc_plot_bins"]["summary_records"], 4);
+    assert_eq!(
+        grouped["minionqc_plot_bins"]["q_selected_summary_records"],
+        3
+    );
+    assert_eq!(grouped["metrics"]["basecalled_reads"], 2);
+    assert_eq!(grouped["collection"]["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(grouped["comparison"]["native_filtering_available"], false);
+    let input = t.0.join("interleaved.tsv");
+    fs::write(&input,format!("{HEADER}a\t1\t1\t0\t1\tTRUE\t100\t7\tx\nb\t2\t1\t1\t1\tTRUE\t200\t20\tx\na\t1\t2\t2\t1\tFALSE\t300\t8\tx\n")).unwrap();
+    let out = t.run_with_args(&input, &["--split-runs", "--minionqc-plot-bins"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let split: Value =
+        serde_json::from_slice(&fs::read(t.0.join("output/combined/report.json")).unwrap())
+            .unwrap();
+    assert_eq!(split["minionqc_plot_bins"]["summary_records"], 3);
+    assert_eq!(split["collection"]["runs"].as_array().unwrap().len(), 2);
+    for index in [1, 2] {
+        let r: Value = serde_json::from_slice(
+            &fs::read(t.0.join(format!("output/runs/run_{index:03}/report.json"))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            r["minionqc_plot_bins"]["summary_records"],
+            r["metrics"]["total_records"]
+        );
+    }
+}

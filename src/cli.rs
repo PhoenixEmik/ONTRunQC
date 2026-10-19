@@ -85,6 +85,9 @@ pub enum Command {
         /// Add provisional R-grid densities (also retains zero-length Q observations).
         #[arg(long)]
         minionqc_density: bool,
+        /// Reference ggplot2 histogram/Bin2D layers (one extra guarded input pass).
+        #[arg(long)]
+        minionqc_plot_bins: bool,
         /// Add provisional raw-read fits (extra streaming pass; R parity unverified).
         #[arg(long)]
         minionqc_trends: bool,

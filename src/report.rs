@@ -15,6 +15,8 @@ use crate::metrics::{
 
 #[derive(Debug, Serialize)]
 pub struct Report {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minionqc_plot_bins: Option<crate::plot_bins::PlotBins>,
     pub schema_version: u32,
     pub tool: Tool,
     pub run: Run,

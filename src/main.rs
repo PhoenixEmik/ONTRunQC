@@ -10,6 +10,7 @@ mod integrity;
 mod layout;
 mod metrics;
 mod minion;
+mod plot_bins;
 mod record;
 mod report;
 mod trend_knots;
@@ -51,6 +52,7 @@ fn run(cli: Cli) -> Result<()> {
             processors,
             minionqc_trends,
             minionqc_density,
+            minionqc_plot_bins,
             verify_input_content,
         } => {
             format.check_supported()?;
@@ -71,6 +73,7 @@ fn run(cli: Cli) -> Result<()> {
                     cutoff: qscore_cutoff,
                     minionqc_trends,
                     minionqc_density,
+                    minionqc_plot_bins,
                     combined_only,
                     group_inputs,
                     split_runs,

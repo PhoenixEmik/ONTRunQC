@@ -388,6 +388,7 @@ pub struct InputSummary {
 
 #[derive(Default)]
 pub struct Aggregator {
+    pub plot_bins: Option<crate::plot_bins::PlotBins>,
     overall: OverallMetrics,
     input: InputSummary,
     reference_density: bool,
@@ -1003,6 +1004,7 @@ impl Aggregator {
     ) -> Result<(Report, NumericObservations)> {
         // Sort channel partitions first, then move their buffers into global
         // partitions. Channel medians never require a second retained length copy.
+        let mut plot_channels = Vec::new();
         let mut channel_comparisons = Vec::with_capacity(self.channels.len());
         for channel in self.channels.values() {
             let lengths = self.channel_lengths.entry(channel.channel).or_default();
@@ -1012,6 +1014,31 @@ impl Aggregator {
             let all = length_slices(&lengths.partitions, Population::All);
             let selected = length_slices(&lengths.partitions, Population::Selected);
             let zero = channel.total_records - channel.basecalled_reads;
+            if let Some(bins) = &self.plot_bins {
+                let selected_zero = bins
+                    .selected_zeros
+                    .get(&channel.channel)
+                    .copied()
+                    .unwrap_or(0);
+                let n = lengths.selected_reads + selected_zero;
+                plot_channels.push((
+                    ChannelPopulation {
+                        read_count: channel.total_records,
+                        total_yield_bp: channel.total_yield_bp,
+                        mean_read_length_bp: fraction(
+                            channel.total_yield_bp,
+                            channel.total_records,
+                        ),
+                        median_read_length_bp: partition_median_length(all, zero),
+                    },
+                    ChannelPopulation {
+                        read_count: n,
+                        total_yield_bp: lengths.selected_yield,
+                        mean_read_length_bp: fraction(lengths.selected_yield, n),
+                        median_read_length_bp: partition_median_length(selected, selected_zero),
+                    },
+                ));
+            }
             channel_comparisons.push(ChannelComparison {
                 channel: channel.channel,
                 all_summary_records: ChannelPopulation {
@@ -1033,6 +1060,9 @@ impl Aggregator {
                     median_read_length_bp: partition_median_length(selected, 0),
                 },
             });
+        }
+        if let Some(bins) = &mut self.plot_bins {
+            bins.channels = crate::plot_bins::channels(&plot_channels)?;
         }
         let mut lengths: [Vec<u64>; 4] = std::array::from_fn(|_| Vec::new());
         // Reuse the largest channel buffer in each partition. Remaining source
@@ -1370,6 +1400,7 @@ impl Aggregator {
         };
         Ok((
             Report {
+                minionqc_plot_bins: self.plot_bins,
                 schema_version: 1,
                 tool: Tool::current(),
                 run: Run { run_id },
