@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Optional upstream public-input validation; standard library only, no R runtime.
 
-Usage: python3 tests/minionqc_reference.py UPSTREAM_CHECKOUT [POREGAUGE_BINARY]
+Usage: python3 tests/minionqc_reference.py UPSTREAM_CHECKOUT [ONTRUNQC_BINARY]
 No input adapters or private datasets. Reports live in a temporary directory.
 """
 import bisect
@@ -178,7 +178,7 @@ def check_yaml(report, expected):
 
 def main():
     upstream = Path(sys.argv[1]).resolve()
-    binary = str(Path(sys.argv[2] if len(sys.argv)>2 else "target/release/poregauge").resolve())
+    binary = str(Path(sys.argv[2] if len(sys.argv)>2 else "target/release/ontrunqc").resolve())
     assert subprocess.check_output(["git", "-C", str(upstream), "rev-parse", "HEAD"], text=True).strip() == REVISION
     cases = [
         ("short", ["testfiles/short_run/sequencing_summary.txt"], 8, "testfiles/short_run/summary.yaml"),
@@ -190,7 +190,7 @@ def main():
     for name, names, cutoff, summary in cases:
         paths = [upstream/n for n in names]
         rows, excluded = observations(paths)
-        with tempfile.TemporaryDirectory(prefix="poregauge-upstream-") as directory:
+        with tempfile.TemporaryDirectory(prefix="ontrunqc-upstream-") as directory:
             result = subprocess.run([binary, "analyze", *map(str,paths), "--split-runs", "--yaml", "-q", str(cutoff), "-o", directory], capture_output=True, text=True)
             assert result.returncode == 0, result.stderr
             report = json.loads((Path(directory)/"combined/report.json").read_text())

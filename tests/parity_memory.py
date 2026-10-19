@@ -10,7 +10,7 @@ import sys
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--reads", type=int, default=1_000_000)
 parser.add_argument("--output", type=Path, default=Path("benchmark-results/parity-memory"))
-parser.add_argument("--binary", type=Path, default=Path("target/release/poregauge"))
+parser.add_argument("--binary", type=Path, default=Path("target/release/ontrunqc"))
 args = parser.parse_args()
 if args.reads < 1:
     parser.error("--reads must be positive")

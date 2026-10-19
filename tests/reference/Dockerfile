@@ -1,4 +1,4 @@
-# Optional reference only. PoreGauge never requires R at runtime.
+# Optional reference only. ONTRunQC never requires R at runtime.
 # The dated CRAN snapshot pins transitive R packages; the harness records the
 # resolved image digest, sessionInfo and input/source hashes with every result.
 FROM rocker/r-ver:4.4.1

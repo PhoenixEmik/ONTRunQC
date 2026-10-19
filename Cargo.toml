@@ -1,10 +1,11 @@
 [package]
-name = "poregauge"
+name = "ontrunqc"
 version = "0.4.1"
 edition = "2024"
 rust-version = "1.85"
 description = "Streaming quality control for Oxford Nanopore sequencing summaries"
 license = "MIT"
+repository = "https://github.com/PhoenixEmik/ONTRunQC"
 
 [features]
 default = ["static-figures"]

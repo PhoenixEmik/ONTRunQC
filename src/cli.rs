@@ -48,7 +48,7 @@ impl FigureFormat {
 
 #[derive(Parser)]
 #[command(
-    name = "poregauge",
+    name = "ontrunqc",
     version,
     about = "Quality control for Nanopore sequencing summaries"
 )]
@@ -217,7 +217,7 @@ pub fn output_directory(
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new("."))
     };
-    Ok(directory.join("poregauge_qc"))
+    Ok(directory.join("ontrunqc_qc"))
 }
 
 #[cfg(test)]
@@ -236,19 +236,19 @@ mod tests {
         ] {
             for value in ["TRUE", "FALSE", "true", "false"] {
                 let parsed = Cli::try_parse_from(arguments(
-                    ["poregauge", "analyze", flag, value, "reads.tsv", "-o", "qc"]
+                    ["ontrunqc", "analyze", flag, value, "reads.tsv", "-o", "qc"]
                         .map(OsString::from),
                 ));
                 assert!(parsed.is_ok(), "{flag} {value}");
             }
             assert!(
                 Cli::try_parse_from(arguments(
-                    ["poregauge", "analyze", flag, "reads.tsv", "-o", "qc"].map(OsString::from)
+                    ["ontrunqc", "analyze", flag, "reads.tsv", "-o", "qc"].map(OsString::from)
                 ))
                 .is_ok()
             );
         }
-        let raw = ["poregauge", "analyze", "--", "--add-stat", "TRUE"].map(OsString::from);
+        let raw = ["ontrunqc", "analyze", "--", "--add-stat", "TRUE"].map(OsString::from);
         assert_eq!(arguments(raw.clone()), raw);
     }
 }

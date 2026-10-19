@@ -256,7 +256,7 @@ fn postscript(
 ) -> Result<()> {
     writeln!(
         writer,
-        "%!PS-Adobe-3.0\n%%Creator: PoreGauge\n%%Pages: 1\n%%BoundingBox: 0 0 {} {}\n%%HiResBoundingBox: 0 0 {page_width:.6} {page_height:.6}\n%%LanguageLevel: 3\n%%DocumentData: Clean7Bit\n%%EndComments\n%%Page: 1 1\n<< /PageSize [{page_width:.6} {page_height:.6}] >> setpagedevice\ngsave\n{page_width:.6} {page_height:.6} scale\n/DeviceRGB setcolorspace\n<< /ImageType 1 /Width {width} /Height {height} /BitsPerComponent 8\n/Decode [0 1 0 1 0 1] /ImageMatrix [{width} 0 0 -{height} 0 {height}]\n/DataSource currentfile /ASCIIHexDecode filter /FlateDecode filter >> image",
+        "%!PS-Adobe-3.0\n%%Creator: ONTRunQC\n%%Pages: 1\n%%BoundingBox: 0 0 {} {}\n%%HiResBoundingBox: 0 0 {page_width:.6} {page_height:.6}\n%%LanguageLevel: 3\n%%DocumentData: Clean7Bit\n%%EndComments\n%%Page: 1 1\n<< /PageSize [{page_width:.6} {page_height:.6}] >> setpagedevice\ngsave\n{page_width:.6} {page_height:.6} scale\n/DeviceRGB setcolorspace\n<< /ImageType 1 /Width {width} /Height {height} /BitsPerComponent 8\n/Decode [0 1 0 1 0 1] /ImageMatrix [{width} 0 0 -{height} 0 {height}]\n/DataSource currentfile /ASCIIHexDecode filter /FlateDecode filter >> image",
         page_width.ceil() as u32,
         page_height.ceil() as u32
     )?;
@@ -547,10 +547,12 @@ mod tests {
     fn external_pdf_postscript_decoders() {
         use std::{fs, process::Command};
         let directory =
-            std::env::temp_dir().join(format!("poregauge-static-decoders-{}", std::process::id()));
+            std::env::temp_dir().join(format!("ontrunqc-static-decoders-{}", std::process::id()));
         fs::create_dir(&directory).unwrap();
         let renderer = Renderer::new();
-        let gs = std::env::var("POREGAUGE_GHOSTSCRIPT").unwrap_or_else(|_| "gs".into());
+        let gs = std::env::var("ONTRUNQC_GHOSTSCRIPT")
+            .or_else(|_| std::env::var("POREGAUGE_GHOSTSCRIPT"))
+            .unwrap_or_else(|_| "gs".into());
         for format in [FigureFormat::Pdf, FigureFormat::Ps] {
             let source = directory.join(format!("figure.{}", format.extension()));
             renderer

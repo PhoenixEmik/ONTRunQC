@@ -94,7 +94,7 @@ def fixture(path, run_id, count=120):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("upstream", type=Path)
-    parser.add_argument("--binary", type=Path, default=Path("target/release/poregauge"))
+    parser.add_argument("--binary", type=Path, default=Path("target/release/ontrunqc"))
     parser.add_argument("--output", type=Path, default=Path("benchmark-results/static-exports"))
     parser.add_argument("--gs", default="gs")
     parser.add_argument("--magick", default="magick")

@@ -16,11 +16,11 @@ pub fn render(report: &Report) -> String {
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
-<title>PoreGauge · Sequencing QC report</title><style>"##);
+<title>ONTRunQC · Sequencing QC report</title><style>"##);
     out.push_str(CSS);
     out.push_str(r##"</style></head><body>
 <a class="skip-link" href="#overview">Skip to report</a>
-<header class="masthead"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21h5V11h5v15h6V6h5v15h5"/></svg><h1>PoreGauge</h1></div><span class="edition">SEQUENCING QUALITY CONTROL</span></header>
+<header class="masthead"><div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21h5V11h5v15h6V6h5v15h5"/></svg><h1>ONTRunQC</h1></div><span class="edition">SEQUENCING QUALITY CONTROL</span></header>
 <div class="layout"><nav aria-label="Report sections"><span class="nav-label">IN THIS REPORT</span>
 "##);
     if report.collection.is_some() {
@@ -46,7 +46,7 @@ pub fn render(report: &Report) -> String {
         sequencing_speed(&mut out, report);
     }
     qscore_comparison(&mut out, report);
-    write!(out, "<footer>PoreGauge {} · JSON schema {} · Post-sequencing QC from sequencing summaries. No automatic QC judgment.</footer></main></div><script>",
+    write!(out, "<footer>ONTRunQC {} · JSON schema {} · Post-sequencing QC from sequencing summaries. No automatic QC judgment.</footer></main></div><script>",
         escape(report.tool.version), report.schema_version).unwrap();
     out.push_str(SCRIPT);
     out.push_str("</script></body></html>\n");
@@ -1006,7 +1006,7 @@ fn yield_length_plot(out: &mut String, report: &Report, label: &str) {
     }
     let a = &analysis.ultralong_all;
     let q = &analysis.ultralong_qscore_selected;
-    write!(out, "<tr><th class=\"label\" scope=\"row\">Ultralong prefix</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr></tbody></table></div><p class=\"annotation\">Ultralong is the largest descending-length prefix whose strict-half N50 is ≥100 kb, not the subset of reads ≥100 kb. This dedicated comparison uses MinIONQC's strict half-yield convention; established PoreGauge N50 uses at least half. Eligible full sets and empty sets are handled explicitly.</p>", count(a.read_count), count(a.total_yield_bp), count(q.read_count), count(q.total_yield_bp)).unwrap();
+    write!(out, "<tr><th class=\"label\" scope=\"row\">Ultralong prefix</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr></tbody></table></div><p class=\"annotation\">Ultralong is the largest descending-length prefix whose strict-half N50 is ≥100 kb, not the subset of reads ≥100 kb. This dedicated comparison uses MinIONQC's strict half-yield convention; established ONTRunQC N50 uses at least half. Eligible full sets and empty sets are handled explicitly.</p>", count(a.read_count), count(a.total_yield_bp), count(q.read_count), count(q.total_yield_bp)).unwrap();
 }
 
 fn channel_summary_distributions(out: &mut String, report: &Report) {

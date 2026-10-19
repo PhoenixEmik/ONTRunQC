@@ -121,7 +121,11 @@ available data, not a gap. There is no smoothing or hourly resampling.
 
 ## Report envelope and ordering
 
-Top-level fields are `schema_version` (1), `tool` (`name: "PoreGauge"`, package
+After the project rename, `tool.name` is `ONTRunQC` (formerly `PoreGauge`).
+The package version remains 0.4.1; metric fields, definitions and schema version
+are unchanged. Consumers identifying the tool by name should accept the new value.
+
+Top-level fields are `schema_version` (1), `tool` (`name: "ONTRunQC"`, package
 `version`), `run` (`run_id`), `metrics`, `quality`, `read_length_distribution`,
 `channels`, `muxes`, `time_bins`, `end_reasons`, and (since v0.3.0) `diagnostics`.
 
@@ -344,7 +348,7 @@ its README/options, public YAML summaries and example plots.
 `comparison.qscore_selected` has the same exact length/quality statistic fields
 as `diagnostics.passed_read_statistics`: `read_count`, `total_yield_bp`, mean/median
 length, N50, minimum/maximum length, mean/median Q-score. These use the established
-PoreGauge N50 (cumulative bases **>= half**) and arithmetic per-read Q-score.
+ONTRunQC N50 (cumulative bases **>= half**) and arithmetic per-read Q-score.
 Missing statistics are null; empty counts/yields are real zeros.
 `length_histogram` and `quality_histogram` reuse the existing documented boundaries.
 `time_bins` has one entry per occupied original 900-second interval, with
@@ -412,7 +416,7 @@ Counts are true row counts: upstream's `sum(which(length>=0))` incorrectly gives
 n(n+1)/2. That implementation bug is deliberately not copied. Existing channel
 native-passed means remain unchanged. Chart bin placement is deterministic and
 explicit, rather than ggplot2's automatically placed 30 bins. Read histograms
-retain PoreGauge's existing fixed bins rather than upstream's automatic 300 bins.
+retain ONTRunQC's existing fixed bins rather than upstream's automatic 300 bins.
 Time means remain unsmoothed 15-minute observations rather than ggplot smoothing.
 Unrounded values are retained in JSON, unlike upstream's one-decimal summaries.
 
@@ -906,7 +910,7 @@ error. The 512-marker guard remains. These are never instrument telemetry.
 Normal defaults and bin-end-based explicit references remain unchanged.
 
 Omitted `--output` is accepted only in compatibility mode with one input path.
-A fresh `poregauge_qc/` is atomically reserved beside that file or within that
+A fresh `ontrunqc_qc/` is atomically reserved beside that file or within that
 directory. Existing destinations, including symlinks, are refused; an empty
 reservation is removed on failure. Completed per-run outputs are never deleted
 on later failure. Multiple paths need explicit output. This deliberately differs

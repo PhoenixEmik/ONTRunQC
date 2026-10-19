@@ -114,7 +114,7 @@ def measure(binary,path,output):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('upstream',type=Path);p.add_argument('--binary',type=Path,default=Path('target/release/poregauge'))
+    p.add_argument('upstream',type=Path);p.add_argument('--binary',type=Path,default=Path('target/release/ontrunqc'))
     p.add_argument('--baseline',type=Path);p.add_argument('--rscript',default='Rscript')
     p.add_argument('--output',type=Path,default=Path('benchmark-results/minion-visualization'))
     p.add_argument('--render-reference',action='store_true');args=p.parse_args()

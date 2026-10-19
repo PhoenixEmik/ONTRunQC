@@ -6,4 +6,4 @@ These Arial-metric-compatible fonts are embedded only with `static-figures`,
 so exports need neither system fonts nor network access. SVG/HTML remain unchanged.
 
 Copyright Google / Red Hat; distributed under the SIL Open Font License 1.1
-in [LICENSE](LICENSE). The fonts are not relicensed under PoreGauge's MIT license.
+in [LICENSE](LICENSE). The fonts are not relicensed under ONTRunQC's MIT license.

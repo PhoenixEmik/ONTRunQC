@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional paired execution of pinned MinIONQC and PoreGauge (not routine CI)."""
+"""Optional paired execution of pinned MinIONQC and ONTRunQC (not routine CI)."""
 import argparse
 from collections import Counter
 import hashlib
@@ -14,6 +14,8 @@ import sys
 
 from minionqc_reference import REVISION, n50, observations
 
+# Keep historical comparison keys, statuses and explanations unchanged so the
+# pinned numerical evidence remains verifiable after the ONTRunQC rename.
 STATUSES = ("exact_match", "rounding_tolerance", "intentional_semantic_difference",
             "suspected_poregauge_defect", "upstream_minionqc_defect", "not_yet_verified")
 
@@ -401,7 +403,7 @@ def density_comparisons(reference,probe):
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("upstream",type=Path)
-    parser.add_argument("binary",nargs="?",default="target/release/poregauge",type=Path)
+    parser.add_argument("binary",nargs="?",default="target/release/ontrunqc",type=Path)
     parser.add_argument("--execute-r",action="store_true")
     parser.add_argument("--output",type=Path,default=Path("benchmark-results/minionqc-reference"))
     parser.add_argument("--rscript",default="Rscript")

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-PoreGauge is a single-package Rust 2024 CLI for post-sequencing QC of PromethION summaries. `src/main.rs` connects the pipeline; `cli.rs` defines arguments; `input.rs` validates streaming TSV records; `record.rs` holds borrowed fields; `batch.rs` discovers inputs and routes run chunks; `integrity.rs` guards canonical source metadata, pass membership and optional streaming digests; `metrics.rs` owns QC calculations; `trends.rs` implements optional raw-read fits with bounded exact knot selection in `trend_knots.rs`; `density.rs` implements the optional reference-grid estimator; `layout.rs` implements the explicit, reference-based PromethION and MinION coordinate maps; `minion.rs` accumulates exact points or bounded full-count display rasters. `report.rs` stages requested outputs; `export.rs` emits optional YAML and streams canonical standalone SVGs; optional `figure_render.rs` converts those figures to native raster/PDF/PS formats using bundled `assets/fonts/`; `html.rs` renders offline HTML using embedded `report.css` and `report.js`.
+ONTRunQC is a single-package Rust 2024 CLI for post-sequencing QC of PromethION summaries. `src/main.rs` connects the pipeline; `cli.rs` defines arguments; `input.rs` validates streaming TSV records; `record.rs` holds borrowed fields; `batch.rs` discovers inputs and routes run chunks; `integrity.rs` guards canonical source metadata, pass membership and optional streaming digests; `metrics.rs` owns QC calculations; `trends.rs` implements optional raw-read fits with bounded exact knot selection in `trend_knots.rs`; `density.rs` implements the optional reference-grid estimator; `layout.rs` implements the explicit, reference-based PromethION and MinION coordinate maps; `minion.rs` accumulates exact points or bounded full-count display rasters. `report.rs` stages requested outputs; `export.rs` emits optional YAML and streams canonical standalone SVGs; optional `figure_render.rs` converts those figures to native raster/PDF/PS formats using bundled `assets/fonts/`; `html.rs` renders offline HTML using embedded `report.css` and `report.js`.
 
 Unit tests live beside implementations; CLI integration tests are in `tests/integration.rs`, with fictional inputs in `tests/fixtures/`. Consult `docs/metrics.md` for definitions/schema and `docs/benchmark.md` for measurement procedures.
 
@@ -15,7 +15,7 @@ cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 cargo build --release --locked
-target/release/poregauge analyze sequencing_summary.txt --output qc_results/
+target/release/ontrunqc analyze sequencing_summary.txt --output qc_results/
 ```
 
 These check formatting/lints, run tests, build the binary, and generate `report.json` plus `report.html`. Open HTML with `file://`. Try `tests/fixtures/synthetic.tsv` as input. Commit `Cargo.lock` when dependencies change.

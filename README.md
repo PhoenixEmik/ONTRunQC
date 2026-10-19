@@ -1,15 +1,21 @@
-# PoreGauge
+# ONTRunQC
 
-PoreGauge is a small, single-threaded Rust CLI for post-sequencing quality control
+**ONTRunQC** (formerly PoreGauge) is an Oxford Nanopore sequencing-run QC tool.
+This rename changes the executable to `ontrunqc` and report `tool.name` to
+`ONTRunQC`; scientific metrics, schema version, and report filenames are unchanged.
+Existing PoreGauge installations remain separate; update scripts to use `ontrunqc`.
+The opt-in compatibility output directory is now `ontrunqc_qc/`.
+
+ONTRunQC is a small Rust CLI for post-sequencing quality control
 of Oxford Nanopore sequencing summaries, initially designed for PromethION and
 modern MinKNOW/Dorado output. It streams TSV records, validates them, calculates
 run metrics, and writes deterministic JSON and standalone HTML reports.
 
-Current release: **[v0.4.0 — Advanced Read Quality Diagnostics](https://github.com/PhoenixEmik/PoreGauge/tree/v0.4.0)**.
-Unreleased development: **bounded multi-run workers and CLI compatibility, issue #16** (on the 0.4.1 codebase).
+Historical PoreGauge release: **[v0.4.1](https://github.com/PhoenixEmik/ONTRunQC/releases/tag/v0.4.1)**.
+Development checkout: **ONTRunQC 0.4.1**. This rename does not publish a release.
 Strict GAM numerical parity remains Partial; existing reference evidence is preserved.
 
-PoreGauge is not a basecaller or a replacement for MinKNOW instrument monitoring.
+ONTRunQC is not a basecaller or a replacement for MinKNOW instrument monitoring.
 It does not analyze FASTQ, BAM, or POD5 files.
 
 ## Features
@@ -40,9 +46,10 @@ It does not analyze FASTQ, BAM, or POD5 files.
 [Release automation](.github/workflows/release.yml) produces `.tar.gz` archives for
 Linux (x86-64 and ARM64) and macOS (Intel and Apple Silicon), plus `SHA256SUMS`.
 When available, download the matching archive from
-[GitHub Releases](https://github.com/PhoenixEmik/PoreGauge/releases), verify its
-checksum, extract it, and run the included `poregauge` binary. The Linux release
-workflow builds static musl binaries with no system glibc dependency. Download
+[GitHub Releases](https://github.com/PhoenixEmik/ONTRunQC/releases), verify its
+checksum, extract it, and run the included binary. Releases published before the
+rename contain `poregauge`; new source builds and future releases use `ontrunqc`.
+The Linux release workflow builds static musl binaries with no system glibc dependency. Download
 `poregauge-v0.4.0-linux-x86_64.tar.gz` for Intel/AMD systems or
 `poregauge-v0.4.0-linux-arm64.tar.gz` for ARM64 systems. The extracted directory
 uses the same name without `.tar.gz`. Rocky Linux 8 is the
@@ -54,7 +61,7 @@ verify every HPC kernel, CPU, or site policy. macOS builds are tested on macOS 1
 The archives include the license, README, and metric definitions.
 
 The original v0.3.0 `*-linux-gnu` downloads were built against newer glibc and do
-not run on Rocky Linux 8. A `GLIBC_2.xx not found` error occurs before PoreGauge
+not run on Rocky Linux 8. A `GLIBC_2.xx not found` error occurs before ONTRunQC
 starts. Use the `linux-x86_64` or `linux-arm64` build for these systems. The manual
 build-by-tag procedure below can rebuild `v0.3.0` with this workflow; maintainers
 can explicitly replace the old release assets after the compatibility checks pass.
@@ -65,15 +72,15 @@ Install Rust 1.85 or newer, including Cargo. Build this checkout from the reposi
 cargo build --release --locked
 ```
 
-The executable is `target/release/poregauge`. Optionally install it on your Cargo
-executable path with `cargo install --path . --locked` to use `poregauge` directly.
+The executable is `target/release/ontrunqc`. Optionally install it on your Cargo
+executable path with `cargo install --path . --locked` to use `ontrunqc` directly.
 
 ## Usage
 
 ```sh
-target/release/poregauge analyze sequencing_summary.txt --output qc_results/
-target/release/poregauge analyze sequencing_summary.txt --qscore-cutoff 9 --output qc_results/q9/
-target/release/poregauge analyze --help
+target/release/ontrunqc analyze sequencing_summary.txt --output qc_results/
+target/release/ontrunqc analyze sequencing_summary.txt --qscore-cutoff 9 --output qc_results/q9/
+target/release/ontrunqc analyze --help
 ```
 
 The output directory is created as needed. Successful analysis produces:
@@ -101,7 +108,7 @@ Inspect errors and rerun analysis before using outputs after a failed command.
 To try the report using fictional input:
 
 ```sh
-target/release/poregauge analyze tests/fixtures/synthetic.tsv --output qc_results/example/
+target/release/ontrunqc analyze tests/fixtures/synthetic.tsv --output qc_results/example/
 ```
 
 Open `qc_results/example/report.html`. This small fixture has 6 summary records,
@@ -116,10 +123,10 @@ intervals, native passed Q0 reads, and an exact passed median of 25 bp/N50 of 30
 For a compatible 3000-channel PromethION summary, explicitly enable spatial maps:
 
 ```sh
-target/release/poregauge analyze sequencing_summary.txt \
+target/release/ontrunqc analyze sequencing_summary.txt \
   --flowcell-layout promethion-3000 --output qc_results/
 # Complete Deep QC example using fictional data:
-target/release/poregauge analyze tests/fixtures/deep_qc.tsv \
+target/release/ontrunqc analyze tests/fixtures/deep_qc.tsv \
   --flowcell-layout promethion-3000 --output qc_results/deep-example/
 ```
 
@@ -323,9 +330,9 @@ remaining differences; full format and rendering parity is not claimed.
 ## YAML, figures and plot controls
 
 ```sh
-poregauge analyze /data/flowcells/ --output qc_results/ --yaml \
+ontrunqc analyze /data/flowcells/ --output qc_results/ --yaml \
   --format svg --smallfigures --add-stat --muxes 8
-poregauge analyze a.tsv b.tsv --combined-only --output pooled/ --yaml
+ontrunqc analyze a.tsv b.tsv --combined-only --output pooled/ --yaml
 ```
 
 `--yaml` adds `summary.yaml` beside each requested report, with MinIONQC-shaped
@@ -397,21 +404,21 @@ These are configured references, never measured mux events. To disable all
 references, omit compatibility mode and use `--muxes 0`.
 
 With compatibility mode and exactly one input path, omitted output creates a
-**new `poregauge_qc/`** beside a file or inside a directory; existing destinations
+**new `ontrunqc_qc/`** beside a file or inside a directory; existing destinations
 are refused. This safe subdirectory differs from upstream's direct beside-input
 writes. Multiple paths require explicit output. HTML/JSON remain the default
 even in compatibility mode; request upstream's PNG output explicitly:
 
 ```sh
-poregauge analyze summaries/ --processors 2 --output qc_results/
-poregauge analyze summary.txt --minionqc-compat --smallfigures TRUE --format png
+ontrunqc analyze summaries/ --processors 2 --output qc_results/
+ontrunqc analyze summary.txt --minionqc-compat --smallfigures TRUE --format png
 ```
 
 Compatibility mode is a CLI/presentation option, not a change to scientific
 filtering, denominators, GAM/KDE or run identity. Full strict fitted-curve parity
 remains Partial (#12).
 
-Input files must remain stable throughout analysis. PoreGauge freezes canonical
+Input files must remain stable throughout analysis. ONTRunQC freezes canonical
 sources and checks identity, size, timestamps, bytes consumed and per-file run-ID
 membership across discovery, aggregation, fitting and MinION passes, with another
 check after rendering before publication. To compare actual bytes on every pass
@@ -443,7 +450,7 @@ To build an existing tag without publishing, open **Actions → Release → Run 
 select the workflow on `main`, enter a tag such as `v0.3.0`, and leave **Publish a
 GitHub Release after building** unchecked. Download `poregauge-v0.3.0` from the
 completed run's artifacts for all four platform archives and `SHA256SUMS` (retained
-for seven days). The CLI equivalent is:
+for seven days). Old tags retain their original package and binary names. The CLI equivalent is:
 
 ```sh
 gh workflow run release.yml --ref main -f tag=v0.3.0 -F publish=false
@@ -481,7 +488,7 @@ exercise the added exact median and Q-cutoff sort fields.
 A small synthetic 3,000-channel/10,000-pair structural regression runs in
 `cargo test`. If Node.js is available, tests also run the dependency-free
 `tests/report_tables.cjs` behavior checks; Node is optional and is never needed
-to build or use PoreGauge. Reproduce HTML size/DOM comparisons and optional
+to build or use ONTRunQC. Reproduce HTML size/DOM comparisons and optional
 browser checks using the procedure in [benchmarking](docs/benchmark.md#html-report-maintenance-v041).
 
 ## Status and limitations
@@ -529,4 +536,4 @@ log-length density after transformation and distinguishes summary-Q observations
 from basecalled Q statistics. This mode adds 8 bytes per zero-length Q observation,
 plus allocation overhead; positive-length buffers are reused. Real R differential
 execution is optional: see [reference setup and commands](tests/reference/README.md).
-No R package or container is required to build or run normal PoreGauge analysis.
+No R package or container is required to build or run normal ONTRunQC analysis.

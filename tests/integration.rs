@@ -19,7 +19,7 @@ impl TestDirectory {
     fn new() -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "poregauge-test-{}-{}",
+            "ontrunqc-test-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -32,7 +32,7 @@ impl TestDirectory {
     }
 
     fn run_with_args(&self, input: &Path, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
             .arg("analyze")
             .arg(input)
             .args(args)
@@ -102,7 +102,7 @@ fn complete_synthetic_metrics() {
     assert_eq!(report["schema_version"], 1);
     assert_eq!(
         report["tool"],
-        json!({"name":"PoreGauge", "version":env!("CARGO_PKG_VERSION")})
+        json!({"name":"ONTRunQC", "version":env!("CARGO_PKG_VERSION")})
     );
     assert_eq!(report["run"]["run_id"], "synthetic-run");
     assert_eq!(
@@ -409,6 +409,9 @@ fn html_contains_all_sections_and_matches_json_statistics() {
     let report = directory.analyze(&fs::read_to_string(fixture("synthetic.tsv")).unwrap());
     let html = directory.html();
     assert!(html.starts_with("<!doctype html>"));
+    assert!(html.contains("<title>ONTRunQC · Sequencing QC report</title>"));
+    assert!(html.contains("<h1>ONTRunQC</h1>"));
+    assert!(html.contains(&format!("<footer>ONTRunQC {}", env!("CARGO_PKG_VERSION"))));
     for id in [
         "overview",
         "yield",
@@ -2014,7 +2017,7 @@ fn signed_zero_quality_retains_original_exact_median_serialization() {
 }
 
 fn run_collection(directory: &TestDirectory, inputs: &[&Path], args: &[&str]) -> Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let output = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .arg("analyze")
         .args(inputs)
         .args(args)
@@ -2124,7 +2127,7 @@ fn combined_only_skips_individual_outputs_and_explicit_grouping_rejects_conflict
     let report = run_collection(&directory, &[&a, &b], &["--combined-only"]);
     assert_eq!(report["metrics"]["basecalled_reads"], 2);
     assert!(!directory.0.join("output/runs").exists());
-    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .arg("analyze")
         .args([&a, &b])
         .arg("--group-inputs")
@@ -2159,7 +2162,7 @@ fn flowcell_metadata_conflicts_are_rejected_without_invented_ids() {
         ),
     )
     .unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .arg("analyze")
         .args([a, b])
         .arg("--output")
@@ -2341,7 +2344,7 @@ fn identity_free_sources_are_separate_unless_explicitly_grouped() {
     assert_eq!(report["metrics"]["total_yield_bp"], 20);
     let two_d = "channel\tstart_time\tsequence_length_2d\tmean_qscore_2d\n1\t0\t10\t9\n";
     fs::write(&b, two_d).unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .arg("analyze")
         .args([a, b])
         .arg("--group-inputs")
@@ -2490,7 +2493,7 @@ fn dense_minion_reports_embed_complete_offline_rasters_and_preserve_metrics() {
     assert_eq!(view, &reordered["diagnostics"]["minion_read_visualization"]);
     let combined = directory.0.join("combined");
     let input = directory.0.join("input.tsv");
-    let output = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let output = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .args(["analyze"])
         .arg(input)
         .args([
@@ -2744,7 +2747,7 @@ fn configured_mux_markers_use_relative_time_and_can_be_disabled() {
 #[test]
 fn output_compatibility_aliases_and_explicit_unsupported_formats_are_actionable() {
     let directory = TestDirectory::new();
-    let output = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let output = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .args(["analyze", "--input"])
         .arg(fixture("synthetic.tsv"))
         .args(["--outputdirectory"])
@@ -3414,7 +3417,7 @@ fn parallel_worker_failure_preserves_previous_collection_and_publishes_nothing_n
     .unwrap();
     run_collection(&directory, &[&a, &b], &[]);
     let before = report_snapshot(&directory.0.join("output"));
-    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .arg("analyze")
         .args([&a, &b])
         .args([
@@ -3454,7 +3457,7 @@ fn compatible_logical_flags_preserve_bare_flags_and_explicit_false() {
     assert_eq!(off["presentation"]["small_figures"], false);
     assert_eq!(off["presentation"]["add_stat"], false);
     let input = directory.0.join("input.tsv");
-    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .args(["analyze", "--smallfigures"])
         .arg(&input)
         .args(["-o"])
@@ -3488,7 +3491,7 @@ fn compatibility_output_is_opt_in_reserved_and_never_reuses_existing_directory()
     let data = format!("{HEADER}{ROW}");
     fs::write(&input, &data).unwrap();
     let run = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_poregauge"))
+        Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
             .arg("analyze")
             .arg(&input)
             .args(args)
@@ -3496,21 +3499,21 @@ fn compatibility_output_is_opt_in_reserved_and_never_reuses_existing_directory()
             .unwrap()
     };
     assert!(!run(&[]).status.success());
-    assert!(!directory.0.join("poregauge_qc").exists());
+    assert!(!directory.0.join("ontrunqc_qc").exists());
     let result = run(&["--minionqc-compat"]);
     assert!(
         result.status.success(),
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
-    let folder = directory.0.join("poregauge_qc");
+    let folder = directory.0.join("ontrunqc_qc");
     let snapshot = report_snapshot(&folder);
     assert!(folder.join("report.html").is_file());
     assert!(!folder.join("figures").exists()); // Safe HTML default, even in compatibility mode.
     assert!(!run(&["--minionqc-compat"]).status.success());
     assert_eq!(snapshot, report_snapshot(&folder));
     assert_eq!(data, fs::read_to_string(&input).unwrap());
-    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .arg("analyze")
         .args([&input, &input])
         .arg("--minionqc-compat")
@@ -3521,26 +3524,26 @@ fn compatibility_output_is_opt_in_reserved_and_never_reuses_existing_directory()
     let nested = directory.0.join("nested");
     fs::create_dir(&nested).unwrap();
     fs::write(nested.join("sequencing_summary.tsv"), &data).unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .arg("analyze")
         .arg(&nested)
         .args(["--minionqc-compat", "--processors", "2"])
         .output()
         .unwrap();
     assert!(result.status.success());
-    assert!(nested.join("poregauge_qc/combined/report.html").is_file());
+    assert!(nested.join("ontrunqc_qc/combined/report.html").is_file());
     let broken = directory.0.join("broken");
     fs::create_dir(&broken).unwrap();
     let bad = broken.join("bad.tsv");
     fs::write(&bad, "not a header").unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_poregauge"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
         .arg("analyze")
         .arg(&bad)
         .arg("--minionqc-compat")
         .output()
         .unwrap();
     assert!(!result.status.success());
-    assert!(!broken.join("poregauge_qc").exists());
+    assert!(!broken.join("ontrunqc_qc").exists());
 }
 
 #[test]

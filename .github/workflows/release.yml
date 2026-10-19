@@ -37,6 +37,8 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       commit: ${{ steps.version.outputs.commit }}
+      binary: ${{ steps.version.outputs.binary }}
+      product: ${{ steps.version.outputs.product }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v7
@@ -57,14 +59,19 @@ jobs:
 
           tag = os.environ['RELEASE_TAG']
           with open('Cargo.toml', 'rb') as manifest:
-              version = tomllib.load(manifest)['package']['version']
+              package = tomllib.load(manifest)['package']
+              version = package['version']
+              binary = package['name']
+          products = {'poregauge': 'PoreGauge', 'ontrunqc': 'ONTRunQC'}
+          if binary not in products:
+              raise SystemExit(f'Unsupported release package: {binary}')
           if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag):
               raise SystemExit('Release tags must use vMAJOR.MINOR.PATCH (stable releases only).')
           if tag != f'v{version}':
               raise SystemExit(f'Tag {tag} does not match Cargo.toml version {version}.')
           commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'tag={tag}\ncommit={commit}\n')
+              output.write(f'tag={tag}\ncommit={commit}\nbinary={binary}\nproduct={products[binary]}\n')
           PY
 
       - name: Install stable Rust
@@ -100,6 +107,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
+      BINARY_NAME: ${{ needs.validate.outputs.binary }}
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
       CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: rust-lld
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C target-feature=+crt-static -C link-self-contained=yes
@@ -149,7 +157,7 @@ jobs:
           import os
           import subprocess
 
-          binary = f"target/{os.environ['TARGET']}/release/poregauge"
+          binary = f"target/{os.environ['TARGET']}/release/{os.environ['BINARY_NAME']}"
           checks = [('--program-headers', 'INTERP'),
                     ('--dynamic', '(NEEDED)'),
                     ('--version-info', 'GLIBC_')]
@@ -166,14 +174,14 @@ jobs:
           TARGET: ${{ matrix.target }}
           PACKAGE_PLATFORM: ${{ matrix.asset }}
         run: |
-          binary="target/$TARGET/release/poregauge"
-          test "$("$binary" --version)" = "poregauge ${RELEASE_TAG#v}"
+          binary="target/$TARGET/release/$BINARY_NAME"
+          test "$("$binary" --version)" = "$BINARY_NAME ${RELEASE_TAG#v}"
           "$binary" analyze tests/fixtures/deep_qc.tsv \
             --flowcell-layout promethion-3000 --format png --output "$RUNNER_TEMP/release-smoke"
           test -s "$RUNNER_TEMP/release-smoke/report.json"
           test -s "$RUNNER_TEMP/release-smoke/report.html"
           test -s "$RUNNER_TEMP/release-smoke/figures/length-counts.png"
-          package="poregauge-$RELEASE_TAG-$PACKAGE_PLATFORM"
+          package="$BINARY_NAME-$RELEASE_TAG-$PACKAGE_PLATFORM"
           mkdir -p "dist/$package/docs"
           cp "$binary" README.md LICENSE "dist/$package/"
           cp docs/metrics.md "dist/$package/docs/"
@@ -186,19 +194,19 @@ jobs:
           RELEASE_TAG: ${{ needs.validate.outputs.tag }}
           PACKAGE_PLATFORM: ${{ matrix.asset }}
         run: |
-          package="poregauge-$RELEASE_TAG-$PACKAGE_PLATFORM"
+          package="$BINARY_NAME-$RELEASE_TAG-$PACKAGE_PLATFORM"
           mkdir -p "$RUNNER_TEMP/rocky8-package"
           tar -xzf "dist/$package.tar.gz" -C "$RUNNER_TEMP/rocky8-package"
           docker run --rm --network none \
             --mount "type=bind,src=$RUNNER_TEMP/rocky8-package/$package,dst=/package,readonly" \
             --mount "type=bind,src=$PWD/tests/fixtures,dst=/fixtures,readonly" \
-            --env RELEASE_TAG rockylinux:8 bash -euo pipefail -c '
+            --env RELEASE_TAG --env BINARY_NAME rockylinux:8 bash -euo pipefail -c '
               source /etc/os-release
               test "$ID" = rocky
               case "$VERSION_ID" in 8|8.*) ;; *) exit 1 ;; esac
               cat /etc/os-release
-              test "$(/package/poregauge --version)" = "poregauge ${RELEASE_TAG#v}"
-              /package/poregauge analyze /fixtures/deep_qc.tsv \
+              test "$(/package/$BINARY_NAME --version)" = "$BINARY_NAME ${RELEASE_TAG#v}"
+              /package/$BINARY_NAME analyze /fixtures/deep_qc.tsv \
                 --flowcell-layout promethion-3000 --format png --output /tmp/qc_results
               test -s /tmp/qc_results/report.json
               test -s /tmp/qc_results/report.html
@@ -237,7 +245,7 @@ jobs:
       - name: Upload archives and checksums
         uses: actions/upload-artifact@v7
         with:
-          name: poregauge-${{ needs.validate.outputs.tag }}
+          name: ${{ needs.validate.outputs.binary }}-${{ needs.validate.outputs.tag }}
           path: dist/*
           if-no-files-found: error
           compression-level: 0
@@ -255,12 +263,13 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      PRODUCT_NAME: ${{ needs.validate.outputs.product }}
       REPLACE_ASSETS: ${{ inputs.replace_assets && 'true' || 'false' }}
     steps:
       - name: Download archives and checksums
         uses: actions/download-artifact@v8
         with:
-          name: poregauge-${{ needs.validate.outputs.tag }}
+          name: ${{ needs.validate.outputs.binary }}-${{ needs.validate.outputs.tag }}
           path: dist
 
       - name: Verify checksums before publishing
@@ -279,7 +288,7 @@ jobs:
             fi
           else
             gh release create "$RELEASE_TAG" --verify-tag --draft \
-              --title "PoreGauge $RELEASE_TAG" --generate-notes
+              --title "$PRODUCT_NAME $RELEASE_TAG" --generate-notes
           fi
           gh release upload "$RELEASE_TAG" dist/*.tar.gz dist/SHA256SUMS --clobber
           if [ "$REPLACE_ASSETS" = true ]; then

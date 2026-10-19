@@ -279,7 +279,7 @@ mod tests {
         fn new(bytes: &[u8]) -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
             let directory = std::env::temp_dir().join(format!(
-                "poregauge-integrity-{}-{}",
+                "ontrunqc-integrity-{}-{}",
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));

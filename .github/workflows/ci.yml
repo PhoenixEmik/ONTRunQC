@@ -62,13 +62,13 @@ jobs:
           rustup target add x86_64-unknown-linux-musl
           cargo build --release --locked --target x86_64-unknown-linux-musl
           for format in png pdf ps jpeg tiff bmp; do
-            target/x86_64-unknown-linux-musl/release/poregauge analyze tests/fixtures/deep_qc.tsv \
+            target/x86_64-unknown-linux-musl/release/ontrunqc analyze tests/fixtures/deep_qc.tsv \
               --smallfigures --format "$format" --output "$RUNNER_TEMP/musl-$format"
             test -s "$RUNNER_TEMP/musl-$format/figures/length-counts.$format"
           done
           printf 'channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t10\t8\n' > "$RUNNER_TEMP/source-a.tsv"
           cp "$RUNNER_TEMP/source-a.tsv" "$RUNNER_TEMP/source-b.tsv"
-          target/x86_64-unknown-linux-musl/release/poregauge analyze \
+          target/x86_64-unknown-linux-musl/release/ontrunqc analyze \
             "$RUNNER_TEMP/source-a.tsv" "$RUNNER_TEMP/source-b.tsv" \
             --processors 2 --verify-input-content --format svg --output "$RUNNER_TEMP/musl-parallel"
           test -s "$RUNNER_TEMP/musl-parallel/combined/figures/length-counts.svg"

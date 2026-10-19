@@ -124,7 +124,7 @@ pub struct Run {
 impl Tool {
     pub fn current() -> Self {
         Self {
-            name: "PoreGauge",
+            name: "ONTRunQC",
             version: env!("CARGO_PKG_VERSION"),
         }
     }
@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn failed_render_cleans_both_staged_files_and_preserves_previous_reports() {
         let directory =
-            std::env::temp_dir().join(format!("poregauge-write-failure-{}", std::process::id()));
+            std::env::temp_dir().join(format!("ontrunqc-write-failure-{}", std::process::id()));
         fs::create_dir(&directory).unwrap();
         fs::write(directory.join("report.json"), "previous JSON").unwrap();
         fs::write(directory.join("report.html"), "previous HTML").unwrap();
@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn failed_rename_cleans_temporary_file_without_truncating_destination() {
         let directory =
-            std::env::temp_dir().join(format!("poregauge-rename-failure-{}", std::process::id()));
+            std::env::temp_dir().join(format!("ontrunqc-rename-failure-{}", std::process::id()));
         fs::create_dir(&directory).unwrap();
         let staged = StagedReport::prepare(&directory, "report.html", |writer| {
             writer.write_all(b"complete HTML")?;
@@ -380,10 +380,8 @@ mod tests {
     #[test]
     fn source_change_after_rendering_preserves_reports_and_cleans_every_stage() {
         use crate::{integrity::Source, metrics::Aggregator};
-        let directory = std::env::temp_dir().join(format!(
-            "poregauge-publication-guard-{}",
-            std::process::id()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("ontrunqc-publication-guard-{}", std::process::id()));
         fs::create_dir(&directory).unwrap();
         let input = directory.join("summary.tsv");
         fs::write(&input, b"original").unwrap();

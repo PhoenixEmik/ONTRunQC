@@ -38,7 +38,7 @@ def measure(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, default=ROOT / "target/release/poregauge")
+    parser.add_argument("--binary", type=Path, default=ROOT / "target/release/ontrunqc")
     parser.add_argument("--baseline-binary", type=Path)
     parser.add_argument("--output", type=Path, default=ROOT / "benchmark-results/html-performance")
     parser.add_argument("--browser", action="store_true", help="also create an offline browser measurement page")

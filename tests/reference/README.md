@@ -14,8 +14,8 @@ python3 tests/minionqc_reference.py /tmp/minionqc-reference --execute-r \
 Use an existing R installation; no environment is created by this command. There
 is no automatic R CI build. The optional Dockerfile remains an alternative for
 users who explicitly want a container: build it with `docker build -t
-poregauge-minionqc-r -f tests/reference/Dockerfile tests/reference`, then replace
-`--rscript /path/to/Rscript` with `--docker poregauge-minionqc-r`.
+ontrunqc-minionqc-r -f tests/reference/Dockerfile tests/reference`, then replace
+`--rscript /path/to/Rscript` with `--docker ontrunqc-minionqc-r`.
 
 The reference environment is R **4.4.1**, ggplot2 **3.5.1**, mgcv **1.9-1**, with
 transitive R dependencies from the **2024-07-01** CRAN snapshot. These versions
@@ -42,20 +42,20 @@ zero/cutoff/N50/ultralong edge cases, small/large/irregular/sparse fits and
 multimodal/skewed/constant/near-constant/outlier densities and singleton groups
 with unequal source sizes (18 cases). Nothing uses private sequencing data.
 
-Each case saves original R YAML/PDF, capture JSON, PoreGauge JSON/YAML, plot
+Each case saves original R YAML/PDF, capture JSON, ONTRunQC JSON/YAML, plot
 inventory and logs. `comparison.json` includes source/input hashes, Q cutoffs,
 reference values, differences, tolerances and six explicit status categories.
 Unknown mismatches are defects requiring investigation, never accepted silently.
 Counts/bases use exact comparisons; one-decimal summaries allow 0.050000001;
 serialized Gb yields allow 50.1 bp. Zero-denominator/N50 tie differences are named;
 the upstream ultralong endpoint bug requires a numerical proof before classification.
-Runs return 1 for suspected PoreGauge defects, 2 for unverified execution, 0 only
+Runs return 1 for suspected ONTRunQC defects, 2 for unverified execution, 0 only
 when every requested comparison is accounted for. Missing R never generates
 invented reference values. R's `quit()` or partial output may prevent comparisons;
 inspect logs and retain Not yet verified until the cause is established.
 
 Public files can contain several run IDs. MinIONQC groups by parent directory;
-PoreGauge correctly groups by run ID. Pooled statistics are compared on identical
+ONTRunQC correctly groups by run ID. Pooled statistics are compared on identical
 file populations; source/file versus instrument identity is not silently equated.
 Saved upstream YAML remains a separate fast independent check (omit `--execute-r`).
 Harness logic tests: `python3 -m unittest discover -s tests/reference`.
@@ -228,3 +228,8 @@ failures and 1,912 intermediate failures. New reference-harness unit tests verif
 that it never silently accepts a changed value, tolerance, status or incomplete
 execution. Exact check-array signatures are a same-environment regression
 contract; other BLAS environments are not automatically accepted.
+
+The project is now ONTRunQC. Historical `poregauge` comparison keys, status names,
+output subdirectories and explanation strings are retained by the differential
+harness so original numerical evidence and check signatures remain verifiable.
+Run it with `target/release/ontrunqc`; no reference targets or tolerances changed.

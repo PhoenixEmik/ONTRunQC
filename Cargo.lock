@@ -535,7 +535,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "poregauge"
+name = "ontrunqc"
 version = "0.4.1"
 dependencies = [
  "anyhow",

@@ -58,7 +58,7 @@ wc -c < "$summary_path" > benchmark-results/input-bytes.txt
 rustc --version > benchmark-results/rust-version.txt
 uname -a > benchmark-results/system.txt
 /usr/bin/time -v -o benchmark-results/time.txt \
-  target/release/poregauge analyze "$summary_path" \
+  target/release/ontrunqc analyze "$summary_path" \
   --output benchmark-results/qc/
 ```
 
@@ -112,7 +112,7 @@ for i in range(1000):
     reason = 'normal' if i % 3 else 'other'
     rows.append((f'scale-run\t{i%3000+1}\t{i%4+1}\t{(i*173)%86400}.5\t1.0\t'
                  f'{flag}\t{i*31+1}\t{(i*7)%50}.{i:03}\t{reason}\n').encode())
-with Path('/tmp/poregauge-synthetic-scale.tsv').open('wb') as f:
+with Path('/tmp/ontrunqc-synthetic-scale.tsv').open('wb') as f:
     f.write(header.encode())
     block = b''.join(rows)
     for _ in range(n // 1000):
@@ -139,11 +139,11 @@ Input: 1,542,325 bytes; SHA-256
 Build v0.4.0 separately, for example in a temporary checkout, and retain its binary:
 
 ```sh
-git worktree add --detach /tmp/poregauge-v040 v0.4.0
-cargo build --manifest-path /tmp/poregauge-v040/Cargo.toml --release --locked
+git worktree add --detach /tmp/ontrunqc-v040 v0.4.0
+cargo build --manifest-path /tmp/ontrunqc-v040/Cargo.toml --release --locked
 cargo build --release --locked
 python3 tests/report_performance.py \
-  --baseline-binary /tmp/poregauge-v040/target/release/poregauge --browser
+  --baseline-binary /tmp/ontrunqc-v040/target/release/poregauge --browser
 ```
 
 The helper uses Python's standard library and `rustc` to run the **same generator**
@@ -241,7 +241,7 @@ R environment (R 4.4.1, ggplot2 3.5.1, mgcv 1.9-1):
 ```sh
 cargo build --release --locked
 python3 tests/minion_visualization.py /path/to/pinned/minion_qc \
-  --baseline /path/to/baseline-poregauge --rscript /path/to/Rscript \
+  --baseline /path/to/baseline-ontrunqc --rscript /path/to/Rscript \
   --render-reference
 ```
 
@@ -339,7 +339,7 @@ The standard-library driver records child-specific `wait4` peak RSS, wall/user/
 system CPU, output bytes, binary hash, dimensions and decoded RGB hashes in
 ignored `measurements.json`. It requires actual independent decoders; a missing
 tool fails instead of marking verification successful. Decoder dependencies are
-not PoreGauge runtime dependencies.
+not ONTRunQC runtime dependencies.
 
 Cases: synthetic 120 records with PromethION-3000 maps, small figures, statistics
 and fitted curves (33 figures); combined 120+150 fictional records, Q-cutoff
