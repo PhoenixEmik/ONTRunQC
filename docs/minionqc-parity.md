@@ -533,3 +533,14 @@ bands within unchanged tolerances, tracked with #12 and still unsatisfied.
 Retain both gates/history and original evidence. Do not close #8 unless its
 original gate passes or a maintainer explicitly approves that revised contract.
 No release is created by this audit.
+
+## Streaming gzip input (#17)
+
+Gzip summaries use the same parser and metric engine as plain TSV, across all
+processing and publication-verification passes. Single/multi-member, mixed chunk
+collections, 1/2/4 workers, legacy/2D/RNA, dense MinION and output-equivalence tests
+cover this input enhancement. This is outside the pinned MinIONQC parity contract;
+it does not establish gzip support in the original R script. Core numerical
+implementations and original R evidence, including #12's 1,542 strict GAM
+differences, are unchanged. See [input definitions](metrics.md#plain-and-gzip-input)
+and [measurements](benchmark.md#streaming-gzip-input).

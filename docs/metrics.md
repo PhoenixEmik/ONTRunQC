@@ -7,6 +7,42 @@ required floating input must be finite; modern Q/time values are nonnegative,
 while legacy signed Q values are explicitly retained. There are no NaN/Infinity values
 in a valid report. Unavailable statistics are JSON `null`.
 
+## Plain and gzip input
+
+Compression changes transport only, not the TSV parser, populations, statistics
+or JSON schema. Recursive discovery accepts names containing `sequencing_summary`
+ending in `.txt`, `.tsv`, `.txt.gz` or `.tsv.gz`. Existing canonical/inode alias
+removal and directory-symlink protections are unchanged. Explicit paths may have
+any name: gzip magic bytes select gzip decoding; a canonical filename ending in
+`.gz` always requires gzip and a mislabeled plain file is rejected. Suffixes are
+case-sensitive for discovery. Compressed and plain chunks can share a run ID.
+
+`Source::open_summary` supplies one reader for discovery, aggregation, raw-fit
+and dense MinION passes, and strong publication verification. It uses a 64-KiB
+source buffer and `flate2`'s multi-member gzip decoder, with the existing pure
+Rust backend. All members (including empty ones), CRC32 and size trailers must
+validate. Invalid headers, truncated streams and any invalid trailing bytes
+(including zero padding) are errors with source/pass context. A concatenation is
+one decompressed TSV, with one header, not separately parsed summary files.
+An empty gzip payload has the same empty-input error as an empty plain file;
+header-only content remains valid. Parser line numbers refer to decompressed TSV.
+
+The raw source guard sits below buffering/decompression. File identity, size,
+metadata checkpoints, consumed-byte count and optional SHA-256 all refer to the
+**compressed file bytes**, including headers and trailers, not decoded text.
+Finalization requires error-free decoded EOF, no unread buffered source bytes
+and raw-file EOF before saving/checking a digest. Reading valid TSV rows without
+consuming the final gzip trailer is insufficient. An error cannot be cleared by
+reading EOF after a decoder failure. Changed gzip metadata bytes are detectable
+in strong mode even when the decompressed TSV is identical.
+
+No decoded TSV is buffered in full or extracted to disk. Every additional pass
+reopens and decompresses the source, including strong publication rereads; gzip
+may save storage/I/O while adding CPU. It does not remove exact-statistics memory
+requirements. Metadata/NFS limitations below still apply. `flate2` is now a core
+dependency, also available with `--no-default-features`; no dependency versions
+or numerical reference targets changed. See [measurements](benchmark.md#streaming-gzip-input).
+
 ## Overall sequencing metrics
 
 | Field under `metrics` | Definition |
@@ -933,7 +969,7 @@ are resolved once; the canonical target is the source being analyzed. Directory
 contents added after discovery are not automatically included.
 
 Every source open compares path/canonical identity and the open descriptor.
-Streaming reads recheck metadata each 8 MiB; EOF/finalization checks metadata,
+Streaming reads recheck metadata each 8 MiB of source bytes; EOF/finalization checks metadata,
 complete EOF and consumed byte count. Discovery, aggregation, GAM input and dense
 MinION passes all use this guard. Each completed parsed pass also compares its
 run-ID/count map, including missing-ID and control rows; no per-record strings
@@ -948,7 +984,8 @@ Publication is per file, not atomic across a run's files or a collection.
 `--verify-input-content` adds incremental SHA-256 over the exact bytes consumed
 by every processing pass, using the first completed pass as baseline. After each
 report is rendered it rereads that report's contributing files and compares the
-same digest before publication; the combined report verifies all sources.
+same digest before publication; gzip is decoded/validated again while hashing its
+compressed bytes. The combined report verifies all sources.
 Mixed-run sources/chunks can consequently be reread for several reports. This
 is explicit extra I/O, without full-file buffering; ordinary metadata mode adds
 no data scan. All numerical report fields/JSON are unchanged, and no digest,

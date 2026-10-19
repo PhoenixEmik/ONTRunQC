@@ -577,3 +577,53 @@ five input families, including the exact pooled values above. No private run or
 this session, so no new browser screenshot verification is claimed; unchanged
 HTML content and prior visual/decoder evidence are retained. Real NFS cache
 behavior was not measured; metadata/SHA modes are not filesystem snapshots.
+
+## Streaming gzip input
+
+Measured 2026-10-19 on local macOS arm64, Rust 1.98.1 release build, default
+allocator. The optional standard-library helper generates **1,000,000 synthetic
+records** from a bounded 10,000-row pattern, then streams them through Python
+`gzip`/zlib (independent of the Rust miniz decoder). Plain TSV: **71,364,733 bytes**;
+gzip: **14,975,242 bytes**. These are not private research inputs or an 11-GB run.
+Each table row is one execution; caches/load were not controlled and there is
+no universal gzip speedup claim.
+
+```sh
+cargo build --release --locked
+python3 tests/gzip_inputs.py --records 1000000 \
+  --output benchmark-results/gzip/measurement
+```
+
+Use a fresh output path for each repetition. The helper records child-specific
+`wait4` RSS, wall/user/system CPU, input size, code-path pass counts, output sizes,
+binary hash and sampled temporary storage in ignored `measurements.json`.
+
+| Mode | Input | Wall (s) | User (s) | System (s) | Peak RSS (MiB) | Passes | Temp peak (MiB) | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Default | plain | 0.8204 | 0.5694 | 0.0191 | 44.78 | 1 | 1.60 | 4,130,683 |
+| Default | gzip | 0.7388 | 0.7086 | 0.0126 | 44.88 | 1 | 3.94 | 4,130,683 |
+| Raw fits/KDE + SHA | plain | 1.9018 | 1.8406 | 0.0365 | 41.55 | 3 | 4.29 | 4,501,813 |
+| Raw fits/KDE + SHA | gzip | 1.8088 | 1.7558 | 0.0217 | 43.47 | 3 | 4.29 | 4,501,813 |
+| Dense MinION + SHA | plain | 1.6292 | 1.5642 | 0.0401 | 80.61 | 3 | 6.98 | 7,313,999 |
+| Dense MinION + SHA | gzip | 1.5320 | 1.4835 | 0.0241 | 78.86 | 3 | 6.98 | 7,313,999 |
+
+All JSON/HTML bytes match for each plain/gzip pair, including fitted/KDE curves
+and dense MinION rasters/counts. No temporary TSV is extracted. Temporary peaks
+are 10-ms sampled **lower bounds**, including staged reports and any existing
+fit scratch files; all scratch/staged files were cleaned after success. Counts
+are algorithmic pass accounting, not OS I/O tracing. Default mode scans once;
+fits + strong verification scan three times (aggregation, fit, publication);
+dense MinION + verification scans three times (aggregation, raster, publication).
+Every gzip pass decompresses again, while SHA-256 hashes original compressed
+bytes. Multi-run workers can add component discovery and publication can reread
+shared source files for more than one report. No actual NFS or private-run test
+was performed. The smaller compressed file trades storage/I/O for decompression
+CPU; these single executions do not establish general performance ordering.
+
+Both feature builds pass gzip regressions, including identical JSON/HTML/YAML/SVG
+and representative PNG output, mixed chunks, 1/2/4 workers, 2D/RNA/signed Q, empty
+members, invalid headers/CRC/size/trailing data, decoded EOF and compressed-header
+SHA mutations. No numerical algorithms, native converters or pinned R evidence
+were modified. The local x86-64 Linux musl cross-build passed ELF checks (no
+loader, shared-library requirements or GLIBC symbols); macOS cannot execute that
+Linux binary. CI provides native Linux gzip smoke execution and Rust 1.85 tests.

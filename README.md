@@ -122,7 +122,7 @@ ontrunqc analyze mixed_runs.tsv --split-runs --output split_qc/
 ```
 
 Directory discovery recursively selects files containing `sequencing_summary`
-in their name and ending in `.txt` or `.tsv`, in deterministic order. Explicit
+in their name and ending in `.txt`, `.tsv`, `.txt.gz` or `.tsv.gz`, in deterministic order. Explicit
 file paths can have any name. Path/inode aliases are deduplicated; directory
 symlinks are not followed. Separately copied duplicate reads are not deduplicated.
 
@@ -148,7 +148,19 @@ Discovery adds I/O, so more workers do not guarantee faster processing.
 
 ## Supported input
 
-Input is **uncompressed, unquoted TSV with a header**. Column order is arbitrary;
+```sh
+ontrunqc analyze sequencing_summary.txt.gz --output qc_results/
+```
+
+Gzip decoding is streaming: no full TSV is extracted to memory or temporary disk.
+Plain and gzip sources can be mixed in the same collection. A canonical source
+ending in `.gz` must contain valid gzip; gzip magic bytes also enable decoding
+for explicit files with another suffix. All concatenated members are validated;
+CRC errors, truncation and invalid trailing bytes fail the analysis. TSV line
+numbers refer to decompressed text. Each additional input pass decompresses the
+source again, including publication rereads with `--verify-input-content`.
+
+Input is **plain or gzip-compressed, unquoted TSV with a header**. Column order is arbitrary;
 LF/CRLF and additional columns are supported. CSV-style quoting and multiline
 fields are not supported. Malformed required values fail with line numbers.
 An empty file is rejected; header-only files produce unavailable statistics.
@@ -268,7 +280,7 @@ tables with a notice; full values remain in HTML/JSON.
 
 ONTRunQC is not a basecaller or a replacement for MinKNOW monitoring. It does not
 parse FASTQ/BAM/POD5, estimate pore occupancy, assign automatic run pass/fail,
-or provide live monitoring, barcode analysis or gzip input support.
+or provide live monitoring or barcode analysis.
 
 ## Development and validation
 
