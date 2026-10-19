@@ -47,6 +47,72 @@ MULTI = {
 }
 
 
+def write_gallery_index(gallery, evidence):
+    """Organize existing comparison cards without regenerating scientific evidence."""
+    lines = [
+        '<a id="actual-minionqc--ontrunqc-comparison-gallery"></a>', '',
+        '# MinIONQC / ONTRunQC scientific comparison gallery', '',
+        '[Scientific comparison](../../minionqc-comparison.md) · '
+        '[Documentation index](../../README.md) · '
+        '[Reference commands](../../../tests/reference/README.md)', '',
+        '## How to read the figures', '',
+        '| Panel | Content | Interpretation |',
+        '| --- | --- | --- |',
+        '| A | Original MinIONQC | Actual pinned R output, not a native reconstruction. |',
+        '| B | Actual ONTRunQC | Canonical native figures; related All/Q panels may be stacked. |',
+        '| C | Numerical diagnostic | Units, populations and differences identified in the caption; first panel/group unless stated. |', '',
+        'Each card uses identical source bytes and Q cutoff. File-scoped validation '
+        "matches R's grouping; source labels are not instrument run IDs. Different "
+        'histogram grids are not treated as commensurable residuals. Functional '
+        'coverage, numerical layer agreement and visual equivalence are separate claims.', '',
+        '**Strict GAM parity remains Partial:** the original-R comparison retains '
+        '1,542 fit/uncertainty discrepancies. These images do not replace that evidence.', '',
+        '## Browse by analysis', '',
+        '- [Single MinION flowcell](#single-minion-flowcell)',
+        '- [Device and legacy checks](#device-and-legacy-checks)',
+        '- [Pooled and per-source comparisons](#pooled-and-per-source-comparisons)',
+        '- [Reproduction and provenance](#reproduction-and-provenance)', '',
+    ]
+    groups = [
+        ('Single MinION flowcell', lambda row: row['case'] == 'minion',
+         'Single-source distributions, temporal views, channel summaries and physical/read-level plots.'),
+        ('Device and legacy checks', lambda row: row['case'] not in ('minion', 'combined'),
+         'PromethION, short-run, 1D2 and direct-RNA examples exercise distinct schemas and plot populations.'),
+        ('Pooled and per-source comparisons', lambda row: row['case'] == 'combined',
+         'Pooled distributions and per-source comparisons are labeled separately; pooled medians/N50 are not averages.'),
+    ]
+    for title, matches, description in groups:
+        lines += [f'## {title}', '', description, '']
+        for row in evidence['plots']:
+            if not row.get('card') or not matches(row):
+                continue
+            lines += [
+                f'<a id="{row["case"]}--{row["family"]}--{row["scope"]}"></a>', '',
+                f"### {row['family']} · {row['case']} · {row['scope']}", '',
+                row['description'], '',
+                f"Q cutoff: {row['qscore_cutoff']}; input SHA-256 prefixes: "
+                f"{', '.join(value[:16] for value in row['input_sha256'])}. "
+                'Axes, units and populations follow the A/B labels and C caption.', '',
+                f"![{row['case']} {row['family']}: original, native and numerical diagnostic]({row['card']})", '',
+            ]
+    versions = evidence['reference_versions']
+    lines += [
+        '## Reproduction and provenance', '',
+        f"- Source commit: `{evidence['reference_commit']}`.",
+        f"- Reference environment: R {versions['r']}, ggplot2 {versions['ggplot2']}, mgcv {versions['mgcv']}.",
+        '- Full input hashes, numerical checks, audit-script hashes and measurements: [measurements.json](measurements.json).',
+        '- Generate figures with `python3 tests/reference/plot_audit.py --help`; prerequisites and commands are in the [reference guide](../../../tests/reference/README.md#formula-and-visual-layer-audit-18).',
+        '- Full captures/reports remain outside Git in `benchmark-results/plot-audit/`.', '',
+        evidence['render_note'], '',
+        'This index is generated from recorded measurements; restructuring it does '
+        'not rerun R or alter reference curves, images or discrepancy classifications.', '',
+        "Public fixture figures derive from Rob Lanfear's MinIONQC (MIT). See the "
+        '[upstream license](https://github.com/roblanf/minion_qc/blob/'
+        f"{evidence['reference_commit']}/LICENSE).", '',
+    ]
+    (Path(gallery) / 'README.md').write_text('\n'.join(lines))
+
+
 def run(command, log, env=None):
     result = subprocess.run(list(map(str, command)), cwd=ROOT, env=env,
                             capture_output=True, text=True)
@@ -250,7 +316,7 @@ def main():
     assert not subprocess.check_output(['git','-C',str(upstream),'status','--porcelain'],text=True)
     output.mkdir(parents=True,exist_ok=True); gallery.mkdir(parents=True,exist_ok=True)
     scripts = Path(__file__).resolve().parent
-    inventory=[]; cards=[]; numerical_checks=[]; case_evidence=[]
+    inventory=[]; numerical_checks=[]; case_evidence=[]
     for name, paths, cutoff in cases(upstream, output):
         if name not in (args.case or ['minion','promethion','short','1d2','rna','combined']): continue
         case=output/name; case.mkdir(exist_ok=True)
@@ -340,7 +406,6 @@ def main():
                          '-pointsize','19','-annotate','+0+7',label,panel],case/'image.log')
                 card=f'{identity}.png'
                 run(['magick',*panels,'+append','-strip','-dither','None','-colors','256','-define','png:compression-level=9',gallery/card],case/'image.log')
-                cards.append(dict(file=card,case=name,family=family,scope=directory,note=data['description'],cutoff=cutoff,hashes=stamp['inputs']))
             inventory.append(dict(case=name,family=family,scope=directory,reference_plot=plot['file'],
                 native_figure=png.name,diagnostic=data,card=card,input_sha256=stamp['inputs'],qscore_cutoff=cutoff))
         print(name,len(capture['plots']),'actual figure families captured',flush=True)
@@ -357,12 +422,7 @@ def main():
     compact={**result,'plots':[{k:v for k,v in row.items() if k!='diagnostic'} | dict(
         description=row['diagnostic']['description'],measurements=row['diagnostic']['measurements']) for row in inventory]}
     (gallery/'measurements.json').write_text(json.dumps(compact,indent=2,allow_nan=False)+'\n')
-    index=['# Actual MinIONQC / ONTRunQC comparison gallery','',result['render_note'],'',
-           'Each card uses identical original input bytes and Q cutoff. File-scoped validation reports match R\'s grouping; these are not instrument run-ID reports. C never treats different histogram grids as commensurable residuals. Full captures/reports stay in ignored `benchmark-results/plot-audit/`.','']
-    for card in cards:
-        index += [f"## {card['case']} · {card['family']} · {card['scope']}",'',card['note'],f"Q cutoff: {card['cutoff']}; input SHA-256 prefixes: {', '.join(h[:16] for h in card['hashes'])}. Axes/units/populations: A/B labels; C first group only unless caption states otherwise.",'',f"![{card['family']} comparison]({card['file']})",'']
-    index += ['Public fixture figures derived from Rob Lanfear\'s MinIONQC (MIT), pinned source and input hashes in [measurements.json](measurements.json). See [upstream license](https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/LICENSE). Original scientific outputs are unchanged; rendering DPI alone is reduced.','']
-    (gallery/'README.md').write_text('\n'.join(index))
+    write_gallery_index(gallery, compact)
     unexplained=[c for c in numerical_checks if c['status']=='unexplained_difference']
     print(f'{len(numerical_checks)} layer checks; {len(unexplained)} unexplained differences',flush=True)
     return bool(unexplained)

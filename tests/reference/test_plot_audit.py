@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from plot_audit import FIGURES, MULTI, first_group, histogram_points
+from plot_audit import FIGURES, MULTI, first_group, histogram_points, write_gallery_index
 from plot_checks import checks, result
 
 
@@ -66,6 +66,23 @@ class PlotAuditTests(unittest.TestCase):
             self.assertEqual(len(plot['input_sha256'][0]),64)
             if plot['card']:
                 self.assertEqual((directory/plot['card']).read_bytes()[:8],b'\x89PNG\r\n\x1a\n')
+
+    def test_gallery_index_groups_all_cards_without_modifying_evidence(self):
+        directory=Path(__file__).resolve().parents[2]/'docs/figures/minionqc-comparison'
+        raw=(directory/'measurements.json').read_bytes()
+        evidence=json.loads(raw)
+        original=json.dumps(evidence,sort_keys=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            write_gallery_index(temporary,evidence)
+            generated=(Path(temporary)/'README.md').read_text()
+            self.assertEqual(generated,(directory/'README.md').read_text())
+            for title in ['Single MinION flowcell','Device and legacy checks','Pooled and per-source comparisons']:
+                self.assertIn('## '+title,generated)
+            for plot in evidence['plots']:
+                if plot.get('card'):
+                    self.assertEqual(generated.count(']('+plot['card']+')'),1)
+        self.assertEqual(json.dumps(evidence,sort_keys=True),original)
+        self.assertEqual((directory/'measurements.json').read_bytes(),raw)
 
 
 if __name__=='__main__':unittest.main()

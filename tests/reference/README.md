@@ -1,15 +1,56 @@
-# Optional executable MinIONQC reference
+<a id="optional-executable-minionqc-reference"></a>
 
-The normal Rust build never needs R. Use the clean upstream checkout at commit
-`54485d586038d8ee36f168dd94f31c423f52f581` (v1.4.1), including its public fixtures:
+# MinIONQC reference validation
+
+Optional developer validation against original MinIONQC; normal ONTRunQC analysis never requires R.
+[Documentation index](../../docs/README.md) · [Scientific comparison](../../docs/minionqc-comparison.md) · [Evidence ledger](../../docs/minionqc-parity.md)
+
+Pinned reference: MinIONQC commit `54485d586038d8ee36f168dd94f31c423f52f581`, R 4.4.1, ggplot2 3.5.1, mgcv 1.9-1. Original strict GAM failures remain failures; these instructions do not waive or replace numerical targets.
+
+## Contents
+
+- [Select a validation task](#select-a-validation-task)
+- [Prepare the reference source](#prepare-the-reference-source)
+- [Reference environment](#reference-environment)
+- [Run the paired suite](#run-the-paired-suite)
+- [Formula and visual layer audit (#18)](#formula-and-visual-layer-audit-18)
+- [Comparison populations and grouping](#comparison-populations-and-grouping)
+- [Tolerances and numerical capture](#tolerances-and-numerical-capture)
+- [Golden fixtures and provenance](#golden-fixtures-and-provenance)
+- [Final GAM/LOESS assessment](#final-gamloess-assessment)
+- [LOESS reference and notice](#loess-reference-and-notice)
+- [Input-integrity repetition (2026-10-19)](#input-integrity-repetition-2026-10-19)
+
+## Select a validation task
+
+Run commands from the repository root after a locked release build. Optional
+reference work never installs R automatically and does not affect the normal CLI.
+
+| Task | Command / section | Dependencies |
+| --- | --- | --- |
+| Fast harness tests | `python3 -m unittest discover -s tests/reference` | Python standard library. |
+| Documentation links | `python3 tests/check_docs.py` | Python standard library. |
+| Public statistics / saved upstream YAML | `python3 tests/minionqc_reference.py /path/to/reference` | Clean pinned source/fixtures; release binary. No R execution. |
+| Actual paired reference | [Run the paired suite](#run-the-paired-suite) | Pinned R/packages or explicitly chosen container. |
+| Actual plot-layer/gallery comparison | [Formula and visual audit](#formula-and-visual-layer-audit-18) | Pinned R, normal static-figures build, ImageMagick. |
+| Strict evidence repeat | [Revalidation](#input-integrity-repetition-2026-10-19) | Completed paired `comparison.json`; no fresh R run by the checker. |
+| Diagnose GAM/LOESS | [Controlled GAM](#final-gamloess-assessment), [LOESS goldens](#loess-reference-and-notice) | Pinned R and the named retained artifacts. |
+| Dense MinION / export / worker checks | `tests/minion_visualization.py`, `static_exports.py`, `parallel_runs.py` | See each script's `--help` and [measurements](../../docs/benchmark.md). |
+
+## Prepare the reference source
+
+Use the clean MinIONQC v1.4.1 checkout, including public fixtures:
 
 ```sh
 git clone https://github.com/roblanf/minion_qc /tmp/minionqc-reference
 git -C /tmp/minionqc-reference checkout 54485d586038d8ee36f168dd94f31c423f52f581
 cargo build --release --locked
-python3 tests/minionqc_reference.py /tmp/minionqc-reference --execute-r \
-  --rscript /path/to/Rscript --output benchmark-results/minionqc-r
 ```
+
+The harness verifies the source commit and clean working tree. Keep downloaded
+examples and generated reports outside Git. No private input is required.
+
+## Reference environment
 
 Use an existing R installation; no environment is created by this command. There
 is no automatic R CI build. The optional Dockerfile remains an alternative for
@@ -32,11 +73,22 @@ name never substitutes for these checks. Each completed case checkpoints the
 comparison report, records R's exit status and capture SHA-256, and distinguishes
 execution from successful completion. An interrupted suite retains prior cases.
 
+## Run the paired suite
+
+```sh
+python3 tests/minionqc_reference.py /tmp/minionqc-reference --execute-r \
+  --rscript /path/to/Rscript --capture-only \
+  --output benchmark-results/minionqc-r
+```
+
+Omit `--capture-only` to render original PDF reports as well. Use a fresh output
+folder for a new execution. Choose `--case short` to inspect a single case.
+
 This runs the unmodified script on unchanged source bytes, with matching Q
 cutoffs, one processor, explicit 8-hour mux references and PDF figures. The `ggsave` wrapper also calls
 `ggplot_build()` and records numerical layers, method/formula, panels, legends
 and axis labels. `--capture-only` skips figure rendering but still runs upstream
-summary/plot calculations. `--case short` selects a case. Full runs include
+summary/plot calculations. Full runs include
 MinION, PromethION, two MinION inputs/combined QC, short, 1D2, RNA and synthetic
 zero/cutoff/N50/ultralong edge cases, small/large/irregular/sparse fits and
 multimodal/skewed/constant/near-constant/outlier densities and singleton groups
@@ -54,6 +106,63 @@ when every requested comparison is accounted for. Missing R never generates
 invented reference values. R's `quit()` or partial output may prevent comparisons;
 inspect logs and retain Not yet verified until the cause is established.
 
+### Exit status and artifacts
+
+| Status | Meaning |
+| --- | --- |
+| 0 | Requested comparisons were accounted for under their stated classification; inspect intentional/upstream differences. |
+| 1 | Suspected native discrepancies remain. The retained 18-case baseline exits 1 for 1,542 GAM checks. |
+| 2 | Execution or reference evidence remains unverified, including missing/wrong reference dependencies. |
+
+Each case directory contains input copies, R/native logs, capture JSON, summaries
+and plot inventory. `comparison.json` is checkpointed across cases and records
+values, tolerances, status, explanations and source/input hashes. Classification
+is per check, not a count of independent bugs.
+
+## Formula and visual layer audit (#18)
+
+The separate optional tool observes existing built layers, with no changes to
+strict smoothing/density targets or normal R captures:
+
+```sh
+python3 tests/reference/plot_audit.py /path/to/pinned/minion_qc \
+  --rscript /path/to/Rscript
+Rscript tests/reference/plot_layers_test.R
+```
+
+Requires the existing pinned R environment, normal Cargo static-figures build
+and ImageMagick (`magick`); Python uses only its standard library. No environment
+is installed. Six public cases generate 85 actual R plots, native canonical PNG
+exports, bounded layer captures, numeric diagnostics and representative A/B/C
+cards. Use `--case promethion`, or `--reuse` for matching input/source hashes.
+Full reports live in ignored `benchmark-results/plot-audit/`. The small gallery,
+aggregate checks, input/source hashes and R sessions are in
+`docs/figures/minionqc-comparison/`. Original PNG is rendered at 60 DPI for this
+visual audit; native exports are 300 DPI, with gallery-only resize/palette
+reduction. These device changes do not change plot calculations.
+
+`PG_PLOT_AUDIT=true` plus `PG_PLOT_AUDIT_HELPER=.../plot_layers.R` enables bounded
+capture of StatBin/StatBin2d/StatCount, spatial tiles and full finite-row grids.
+Exact histogram boundaries are already transformed (log10 length where used).
+Large row samples are labelled samples, never complete plotted populations.
+Cumulative queries count all reads tied at a queried start time. Spatial yield is
+captured before mapping fill to colors. Missing/nonfinite/clipped rows remain
+explicit. `plot_checks.py` independently checks counts against original TSV
+populations and quantifies display interpolation separately from exact queries.
+
+Different bins are not interpolated/subtracted as a false residual. Diagnostic
+residuals use only matching X coordinates; the original strict suite still
+checks every fit/uncertainty group. A gallery first-group comparison cannot waive
+an unresolved Q-selected GAM discrepancy. Gallery execution returns nonzero for
+unexplained numeric differences; different aggregation/population is named.
+The production CLI is exercised separately by the paired differential suite.
+
+The existing ignored probe optionally writes actual canonical reports/figures
+with `PG_PROBE_FIGURES`; these explicitly use upstream file scope, not invented
+instrument identities. Minimal builds are not used for native PNG validation.
+
+## Comparison populations and grouping
+
 Public files can contain several run IDs. MinIONQC groups by parent directory;
 ONTRunQC correctly groups by run ID. Pooled statistics are compared on identical
 file populations; source/file versus instrument identity is not silently equated.
@@ -65,6 +174,13 @@ aggregator on the upstream file-scoped population for channel/curve comparisons.
 This is necessary because upstream drops run IDs before analysis. Normal CLI
 reports are also generated and checked; production run grouping is never changed.
 Probe artifacts are validation-only and cannot be mistaken for instrument metadata.
+
+Historical `poregauge` comparison keys, status names,
+output subdirectories and explanation strings are retained by the differential
+harness so original numerical evidence and check signatures remain verifiable.
+Run it with `target/release/ontrunqc`; no reference targets or tolerances changed.
+
+## Tolerances and numerical capture
 
 For numerical layers, the validation-only probe fits the exact upstream file
 populations and computes reference densities on shared domains. `capture.json`
@@ -88,6 +204,8 @@ negative fitted values hidden by an axis limit. Nonfinite reference predictions
 remain Not yet verified; null is not numerical evidence.
 Failed point/method comparisons are never automatically accepted.
 
+## Golden fixtures and provenance
+
 `trends-golden.json` is a small, synthetic-only numerical snapshot of the actual
 `predictdf`/`StatSmooth` values from `fit-small`, `fit-large`, `zero-cutoff`,
 `n50-tie` and `ultralong-endpoint`, including
@@ -104,7 +222,6 @@ singleton unavailable states), exact observations, actual layer coordinates and
 traced bandwidths, reference versions and capture hashes. Identical All/Q curves
 are stored once. Rust tests check all 11,264 density points, domains, bandwidths,
 integrals and peaks. Full paired results still include the distinct All/Q series.
-
 
 GAM intermediate capture includes natural-cubic F/S, raw eigenvectors/values,
 shrunk penalties, prediction design values, model-to-nodal transforms, model
@@ -123,22 +240,6 @@ Rob Lanfear's MinIONQC repository at the pinned commit (MIT licensed). A native
 Rust test reconstructs the model and checks the formerly 211 bp endpoint,
 all fitted values and uncertainties. Analytical REML derivatives also have an
 independent finite-difference test.
-
-Reproduce the remaining null-space sensitivity using the same public MinION file
-copied by the paired suite (existing pinned R installation, no new environment):
-
-```sh
-/path/to/Rscript tests/reference/cs_sensitivity.R \
-  benchmark-results/gam-paired/minion/inputs/source_001/sequencing_summary.txt \
-  7 benchmark-results/cs-sensitivity.json
-```
-
-This changes only test knot coordinates, never the normal reference run. It shows
-that R itself can swap .1/.01 null directions after an approximately 1e-15-hour
-perturbation. The canonical Rust convention is deterministic; mismatches with the
-original R result remain failures. No sensitivity result is used to widen target
-tolerances or declare issue #12 complete. The committed validation summary retains
-these measurements and the original-reference discrepancy counts.
 
 ## Final GAM/LOESS assessment
 
@@ -177,6 +278,27 @@ moments and actual controlled-R predictions, without read objects or metadata.
 Its test checks agreement with the named convention **and disagreement with the
 original reference endpoint**. It is not an unmodified-MinIONQC golden.
 
+
+### Null-space sensitivity
+
+Reproduce the remaining null-space sensitivity using the same public MinION file
+copied by the paired suite (existing pinned R installation, no new environment):
+
+```sh
+/path/to/Rscript tests/reference/cs_sensitivity.R \
+  benchmark-results/gam-paired/minion/inputs/source_001/sequencing_summary.txt \
+  7 benchmark-results/cs-sensitivity.json
+```
+
+This changes only test knot coordinates, never the normal reference run. It shows
+that R itself can swap .1/.01 null directions after an approximately 1e-15-hour
+perturbation. The canonical Rust convention is deterministic; mismatches with the
+original R result remain failures. No sensitivity result is used to widen target
+tolerances or declare issue #12 complete. The committed validation summary retains
+these measurements and the original-reference discrepancy counts.
+
+## LOESS reference and notice
+
 Regenerate synthetic LOESS goldens using:
 
 ```sh
@@ -206,7 +328,6 @@ exact hat-matrix residual df for R's default approximation. Original notice:
 > REPRESENTATION OR WARRANTY OF ANY KIND CONCERNING THE MERCHANTABILITY
 > OF THIS SOFTWARE OR ITS FITNESS FOR ANY PARTICULAR PURPOSE.
 
-
 ## Input-integrity repetition (2026-10-19)
 
 All 18 cases were executed again with the same installed pinned R environment
@@ -228,50 +349,3 @@ failures and 1,912 intermediate failures. New reference-harness unit tests verif
 that it never silently accepts a changed value, tolerance, status or incomplete
 execution. Exact check-array signatures are a same-environment regression
 contract; other BLAS environments are not automatically accepted.
-
-The project is now ONTRunQC. Historical `poregauge` comparison keys, status names,
-output subdirectories and explanation strings are retained by the differential
-harness so original numerical evidence and check signatures remain verifiable.
-Run it with `target/release/ontrunqc`; no reference targets or tolerances changed.
-
-## Formula and visual layer audit (#18)
-
-The separate optional tool observes existing built layers, with no changes to
-strict smoothing/density targets or normal R captures:
-
-```sh
-python3 tests/reference/plot_audit.py /path/to/pinned/minion_qc \
-  --rscript /path/to/Rscript
-Rscript tests/reference/plot_layers_test.R
-```
-
-Requires the existing pinned R environment, normal Cargo static-figures build
-and ImageMagick (`magick`); Python uses only its standard library. No environment
-is installed. Six public cases generate 85 actual R plots, native canonical PNG
-exports, bounded layer captures, numeric diagnostics and representative A/B/C
-cards. Use `--case promethion`, or `--reuse` for matching input/source hashes.
-Full reports live in ignored `benchmark-results/plot-audit/`. The small gallery,
-aggregate checks, input/source hashes and R sessions are in
-`docs/figures/minionqc-comparison/`. Original PNG is rendered at60 DPI for this
-visual audit; native exports are300 DPI, with gallery-only resize/palette
-reduction. These device changes do not change plot calculations.
-
-`PG_PLOT_AUDIT=true` plus `PG_PLOT_AUDIT_HELPER=.../plot_layers.R` enables bounded
-capture of StatBin/StatBin2d/StatCount, spatial tiles and full finite-row grids.
-Exact histogram boundaries are already transformed (log10 length where used).
-Large row samples are labelled samples, never complete plotted populations.
-Cumulative queries count all reads tied at a queried start time. Spatial yield is
-captured before mapping fill to colors. Missing/nonfinite/clipped rows remain
-explicit. `plot_checks.py` independently checks counts against original TSV
-populations and quantifies display interpolation separately from exact queries.
-
-Different bins are not interpolated/subtracted as a false residual. Diagnostic
-residuals use only matching X coordinates; the original strict suite still
-checks every fit/uncertainty group. A gallery first-group comparison cannot waive
-an unresolved Q-selected GAM discrepancy. Gallery execution returns nonzero for
-unexplained numeric differences; different aggregation/population is named.
-The production CLI is exercised separately by the paired differential suite.
-
-The existing ignored probe optionally writes actual canonical reports/figures
-with `PG_PROBE_FIGURES`; these explicitly use upstream file scope, not invented
-instrument identities. Minimal builds are not used for native PNG validation.

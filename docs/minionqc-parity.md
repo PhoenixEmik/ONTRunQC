@@ -1,6 +1,48 @@
-# MinIONQC parity
+<a id="minionqc-parity"></a>
 
-**Reader-facing comparison:** [MinIONQC v1.4.1 vs ONTRunQC — detailed compatibility comparison](minionqc-comparison.md). This file remains the engineering validation ledger and preserves the original strict numerical results and history.
+# MinIONQC engineering evidence ledger
+
+[Documentation index](README.md) · [Scientific comparison](minionqc-comparison.md) · [Reference commands](../tests/reference/README.md)
+
+Historical evidence is retained below in issue order. New documentation structure does not change any original acceptance criterion or numerical target.
+
+## Contents
+
+- [Reading this ledger](#reading-this-ledger)
+- [Functional audit against the pinned source (2026-10-19)](#functional-audit-against-the-pinned-source-2026-10-19)
+- [Inputs and metrics](#inputs-and-metrics)
+- [Plot families](#plot-families)
+- [CLI and outputs](#cli-and-outputs)
+- [Scientific differences and evidence](#scientific-differences-and-evidence)
+- [Executable reference validation (#11): Complete](#executable-reference-validation-11-complete)
+- [Fitted time trends (#12): Partial](#fitted-time-trends-12-partial)
+- [R-grid densities (#13): Complete within declared tolerances](#r-grid-densities-13-complete-within-declared-tolerances)
+- [Complete-data MinION plots (#14)](#complete-data-minion-plots-14)
+- [Native independent figure formats (#15)](#native-independent-figure-formats-15)
+- [CLI and independent-run completion (#16)](#cli-and-independent-run-completion-16)
+- [Input-integrity revalidation and proposed #8 split](#input-integrity-revalidation-and-proposed-8-split)
+- [Streaming gzip input (#17)](#streaming-gzip-input-17)
+
+## Reading this ledger
+
+The [scientific comparison](minionqc-comparison.md) is the researcher-facing
+assessment. This page preserves engineering acceptance and historical results;
+its dated sections are not a fresh validation of every current feature.
+
+| Evidence to review | Location |
+| --- | --- |
+| Formula and visual differences | [Source audit / discrepancy register](minionqc-comparison.md#discrepancies-and-priorities) |
+| Real R/native figures | [A/B/C gallery](figures/minionqc-comparison/README.md) |
+| Run a validation task | [Reference harness](../tests/reference/README.md) |
+| Numerical gates | [#12 GAM record](#fitted-time-trends-12-partial), [#8 acceptance discussion](#input-integrity-revalidation-and-proposed-8-split) |
+| Follow-up display work | #19 bins/bin2d, #20 hourly/cumulative paths, #21 length-yield display; see the comparison for acceptance details. |
+
+`Complete` entries describe the scoped functionality/evidence named in the row.
+They never override a documented population, binning, rendering or default
+exception. Strict original-R GAM parity remains Partial; reference targets,
+tolerances and failing classifications are preserved.
+
+### Reference and validation keys
 
 ONTRunQC was previously named PoreGauge. Historical validation artifacts and
 machine-readable comparison keys retain the old name; reference values,
@@ -287,7 +329,6 @@ sparse groups and 999 reads. The paired suite adds 664 separate LOESS diagnostic
 checks (248 exact, 416 tolerant), all passing. No private PBM95914 run was
 reprocessed; no runtime dependency or benchmark claim was introduced.
 
-
 ### Final controlled assessment
 
 | Strict check | 406e354 baseline | Current |
@@ -399,7 +440,6 @@ inspection verified the constant-domain points/axes/legend; no new mobile render
 check was performed. No private PBM95914 raw summary or large benchmark was run.
 No runtime dependencies were added; fits and KDE remain bounded as documented.
 
-
 ## Complete-data MinION plots (#14)
 
 The 16-reads/channel reservoir is removed. Every eligible observation contributes;
@@ -448,12 +488,11 @@ The 18-case R evidence, solver/KDE implementations and strict tolerances are
 unchanged. **#12 remains Partial/open, with 1,542 primary strict GAM differences**;
 this feature neither reclassifies them nor substitutes canonical-R targets.
 
-
 ## Native independent figure formats (#15)
 
 The standard/default-feature build exports real PNG, PDF, PS, JPEG, TIFF and BMP
 files, incrementally from canonical SVGs. JSON/HTML/SVG and existing statistics
-are preserved. [Definitions and limitations](metrics.md#native-static-figure-exports-15)
+are preserved. [Definitions and limitations](output.md#native-static-figure-exports-15)
 include physical sizes, 300-DPI metadata, white compositing, JPEG loss, vector
 PDF versus raster-backed Level-3 PS, PDF resource-order variation, bundled-font
 licensing and deliberately limited minimal builds. No browser/R/converter runtime.
@@ -477,7 +516,6 @@ another format does not erase them. See [actual results](benchmark.md#native-sta
 #12 remains Partial/open. Its solver, null-space penalties, strict tolerances,
 KDE implementation and the 18-case evidence (including **1,542** strict GAM
 failures) are not modified or reclassified by this work. #16 is not implemented.
-
 
 ## CLI and independent-run completion (#16)
 
@@ -506,7 +544,6 @@ formats/CLI/checklist requirements are covered by public numerical checks,
 #15's actual decoder evidence and #16 tests. #8 remains incomplete under its
 explicit strict fitted-curve acceptance update because #12 GAM discrepancies
 remain unresolved. #12 remains Partial/open; no targets or tolerances changed.
-
 
 ## Input-integrity revalidation and proposed #8 split
 
@@ -549,5 +586,5 @@ collections, 1/2/4 workers, legacy/2D/RNA, dense MinION and output-equivalence t
 cover this input enhancement. This is outside the pinned MinIONQC parity contract;
 it does not establish gzip support in the original R script. Core numerical
 implementations and original R evidence, including #12's 1,542 strict GAM
-differences, are unchanged. See [input definitions](metrics.md#plain-and-gzip-input)
+differences, are unchanged. See [input definitions](input.md#plain-and-gzip-input)
 and [measurements](benchmark.md#streaming-gzip-input).
