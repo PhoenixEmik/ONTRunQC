@@ -100,7 +100,7 @@ pub enum Command {
         /// Annotate length/Q histograms with existing exact summary statistics.
         #[arg(short = 'a', long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true", default_value = "false", value_parser = logical)]
         add_stat: bool,
-        /// Configured mux reference interval in hours; 0 disables markers.
+        /// Mux reference hours; 0 disables normally, auto interval in compatibility mode.
         #[arg(short = 'm', long = "muxes", alias = "mux-interval-hours", default_value = "0", value_parser = mux_hours)]
         muxes: f64,
         /// Maximum concurrent independent input-group aggregators (default 1).
@@ -115,7 +115,7 @@ pub enum Command {
         /// Opt in to historical mux reference defaults and safe implicit output.
         #[arg(long)]
         minionqc_compat: bool,
-        /// Directory for report.json and report.html (replaces existing reports).
+        /// Report directory (required unless --minionqc-compat; replaces existing reports).
         #[arg(short, long, alias = "outputdirectory", value_name = "DIRECTORY")]
         output: Option<PathBuf>,
     },
@@ -134,7 +134,10 @@ fn mux_hours(value: &str) -> Result<f64, String> {
         .parse::<f64>()
         .ok()
         .filter(|v| v.is_finite() && *v >= 0.0 && (v * 3600.0).is_finite())
-        .ok_or_else(|| "Mux interval must be finite nonnegative hours (0 disables markers)".into())
+        .ok_or_else(|| {
+            "Mux interval must be finite nonnegative hours (0 uses the selected mode default)"
+                .into()
+        })
 }
 
 fn logical(value: &str) -> Result<bool, String> {
