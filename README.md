@@ -245,7 +245,7 @@ through its manual `tag`/`publish=false` inputs.
 | [Reports and exports](docs/output.md) | JSON schema, HTML/YAML, figures and publication behavior. |
 | [MinIONQC comparison](docs/minionqc-comparison.md) | Source/plot mappings, current evidence and open differences. |
 | [Validation harness](tests/reference/README.md) | Optional public/pinned-R checks and numerical tolerances. |
-| [Benchmarks](docs/benchmark.md) | Reproduction procedures and historical measurements. |
+| [Benchmarks](docs/benchmark.md) | Reproduction procedures, historical measurements and [comparison figures](docs/benchmark.md#benchmark-figures). |
 | [Contributing](AGENTS.md) | Code organization, invariants and contribution checks. |
 
 Licensed under the [MIT License](LICENSE). Bundled fonts retain their

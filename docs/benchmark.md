@@ -10,6 +10,7 @@ Measurements are observations of named inputs/environments, not general throughp
 ## Contents
 
 - [Choose a measurement](#choose-a-measurement)
+- [Benchmark figures](#benchmark-figures)
 - [Full-run procedure on Linux/HPC](#full-run-procedure-on-linuxhpc)
 - [Reproducing the synthetic input](#reproducing-the-synthetic-input)
 - [Recorded observations](#recorded-observations)
@@ -36,6 +37,37 @@ Measurements are observations of named inputs/environments, not general throughp
 Read each section's input/options/environment before comparing numbers. Retain
 exit status, wall/user/system time, peak RSS, input/output sizes, pass count and
 scratch-storage method. Build/generation time is separate from analysis time.
+
+## Benchmark figures
+
+These figures visualize the recorded tables below. They do **not** represent new
+benchmark executions. Compare configurations only within the named experiment;
+inputs, builds and timing conditions differ between experiments. All bars start
+at zero; the export-size dot plot explicitly uses a logarithmic axis. No error
+bars are inferred from single executions.
+
+| Experiment | Figure | Recorded data |
+| --- | --- | --- |
+| HTML maintenance | [Size, DOM and browser costs](figures/benchmark/html-maintenance.svg) | [v0.4.0 / v0.4.1 tables](#html-report-maintenance-v041) |
+| Complete-data MinION plots | [Coverage cost: runtime and RSS](figures/benchmark/minion-full-count.svg) | [Sampling / full-count observations](#complete-data-minion-rendering-14) |
+| Static exports | [Runtime, RSS and figure size by format](figures/benchmark/static-exports.svg) | [Dense public MinION exports](#native-static-figure-exports-15) |
+| Workers and integrity | [1 / 2 / 4 workers with metadata or SHA-256](figures/benchmark/workers-and-integrity.svg) | [Final guarded-path observations](#input-integrity-and-final-parity-revalidation) |
+| gzip input | [Source size, runtime, CPU and RSS](figures/benchmark/gzip-input.svg) | [Equivalent plain / gzip summaries](#streaming-gzip-input) |
+
+Regenerate from the existing Markdown tables, from the repository root:
+
+```sh
+Rscript tests/plot_benchmarks.R
+# Optional second argument writes PNG previews outside Git:
+Rscript tests/plot_benchmarks.R docs/figures/benchmark /tmp/ontrunqc-benchmark-preview
+```
+
+The optional documentation generator requires R, ggplot2 and Cairo graphics;
+ONTRunQC itself does not require them. The committed figures were rendered with
+existing R 4.4.1 / ggplot2 3.5.1. The script reads the tables directly, validates
+paired measurements, and emits self-contained SVGs with titles, descriptions
+and embedded glyph paths. Missing or malformed source tables fail generation.
+Recreating these figures does not run the CLI, private data or R differential suite.
 
 ## Full-run procedure on Linux/HPC
 
@@ -225,6 +257,8 @@ v0.4.1 maintenance implementation, Chrome 155.0.0.0. Values below come from one
 final sequential browser pass with DevTools closed during timing; they are not
 statistical throughput guarantees. The generator and both binaries were local.
 
+![Historical v0.4.0 and v0.4.1 HTML size, SVG roots, mounted DOM, load time and handler time.](figures/benchmark/html-maintenance.svg)
+
 | Structural measure | v0.4.0 | v0.4.1 |
 | --- | ---: | ---: |
 | HTML bytes | 8,258,004 | 7,098,116 |
@@ -297,6 +331,8 @@ The extra ignored Rust probe measures the display-only phases on the source-file
 population, irrespective of run-ID grouping, as R does. Normal CLI output still
 splits known run IDs. `os.wait4` measures the specific CLI child's CPU and peak RSS
 (macOS bytes, Linux KiB converted); wall time uses `perf_counter`.
+
+![Runtime and memory cost of replacing sampled MinION points with complete-data visualization.](figures/benchmark/minion-full-count.svg)
 
 | Input | Bytes | Positive-length reads | CLI wall before /after (s) | Peak RSS before /after (MiB) |
 | --- | ---: | ---: | ---: | ---: |
@@ -392,6 +428,8 @@ includes a 440-read exact-point run and a 237,262-read dense raster run.
 
 Each entry below is **wall seconds /peak RSS MiB**. The final column sums only
 requested figure bytes for the dense public case, excluding JSON/HTML.
+
+![Six export formats compared on the same dense public MinION input: runtime, peak RSS and output size.](figures/benchmark/static-exports.svg)
 
 | Format | Synthetic | Combined | Short MinION | Dense MinION | Dense figure MiB |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -554,6 +592,8 @@ accounting for these inputs (not OS syscall traces); strong publication rereads
 are included. Output sizes exclude execution logs. Monitoring CPU/RSS is outside
 the child measurements.
 
+![Wall time and peak RSS at one, two and four configured workers for metadata and SHA-256 modes.](figures/benchmark/workers-and-integrity.svg)
+
 | Case | Mode / workers | Wall s | CPU user /sys s | RSS MiB | Temp MiB | File passes | Output bytes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | large | 356845b /1 | 0.8157 | 0.7767 /0.0198 | 71.91 | 2.13 | 4 | 3413203 |
@@ -638,6 +678,8 @@ python3 tests/gzip_inputs.py --records 1000000 \
 Use a fresh output path for each repetition. The helper records child-specific
 `wait4` RSS, wall/user/system CPU, input size, code-path pass counts, output sizes,
 binary hash and sampled temporary storage in ignored `measurements.json`.
+
+![Matched plain and gzip summaries compared by source size, wall time, total child CPU and peak RSS.](figures/benchmark/gzip-input.svg)
 
 | Mode | Input | Wall (s) | User (s) | System (s) | Peak RSS (MiB) | Passes | Temp peak (MiB) | Output bytes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

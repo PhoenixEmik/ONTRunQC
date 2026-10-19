@@ -16,7 +16,7 @@ compatibility evidence and historical measurements.
 | Assess MinIONQC compatibility | [Scientific comparison](minionqc-comparison.md) | Formula/plot mappings, actual evidence and current numerical differences. |
 | Inspect figures | [Comparison gallery](figures/minionqc-comparison/README.md) | Original R, actual native output and numerical diagnostic panels. |
 | Reproduce validation | [Reference harness](../tests/reference/README.md) | Pinned environment, public/R suites, classification and tolerance contracts. |
-| Measure resource use | [Benchmarking](benchmark.md) | Procedures, reproducible helpers and clearly dated measurements. |
+| Measure resource use | [Benchmarking](benchmark.md) | Procedures, dated measurements and [comparison figures](benchmark.md#benchmark-figures). |
 | Review engineering history | [Parity ledger](minionqc-parity.md) | Acceptance matrices and preserved evidence by issue. |
 | Contribute | [Repository guidelines](../AGENTS.md) | Architecture, scientific invariants, checks and commits. |
 
