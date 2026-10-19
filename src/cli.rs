@@ -103,6 +103,9 @@ pub enum Command {
         /// Mux reference hours; 0 disables normally, auto interval in compatibility mode.
         #[arg(short = 'm', long = "muxes", alias = "mux-interval-hours", default_value = "0", value_parser = mux_hours)]
         muxes: f64,
+        /// Compare streaming SHA-256 across passes and reread sources before publication.
+        #[arg(long)]
+        verify_input_content: bool,
         /// Maximum concurrent independent input-group aggregators (default 1).
         #[arg(short = 'p', long, default_value = "1", value_parser = clap::value_parser!(u16).range(1..))]
         processors: u16,

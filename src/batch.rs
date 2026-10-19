@@ -1,6 +1,7 @@
 //! Deterministic input discovery, run grouping, and exact pooled analysis.
 use crate::{
     input::SummaryReader,
+    integrity::{Membership, Source},
     layout::FlowcellLayout,
     metrics::Aggregator,
     report::{self, Collection, RunComparison, SourceMetadata},
@@ -8,12 +9,13 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, File},
+    fs,
     path::{Path, PathBuf},
 };
 
 pub struct AnalysisOptions {
     pub processors: usize,
+    pub verify_input_content: bool,
     pub minionqc_compat: bool,
     pub layout: Option<FlowcellLayout>,
     pub cutoff: f64,
@@ -48,21 +50,22 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         !files.is_empty(),
         "no sequencing_summary*.txt/tsv files found in supplied directories"
     );
+    let sources = Source::capture_all(&files, options.verify_input_content)?;
     let collection =
         inputs.len() != 1 || inputs[0].is_dir() || options.combined_only || options.split_runs;
     let indices: Vec<_> = (0..files.len()).collect();
     let mut groups = if options.processors > 1 && files.len() > 1 && !options.group_inputs {
-        let components = independent_components(&files, options)?;
+        let components = independent_components(&files, &sources, options)?;
         eprintln!(
             "Independent input components: {}; at most {} aggregation workers",
             components.len(),
             options.processors.min(components.len())
         );
         scan_components(&components, options.processors, |indices| {
-            scan_inputs(&files, indices, collection, options)
+            scan_inputs(&files, &sources, indices, collection, options)
         })?
     } else {
-        scan_inputs(&files, &indices, collection, options)?
+        scan_inputs(&files, &sources, &indices, collection, options)?
     };
     groups.sort_by_key(|g| g.first_seen);
     let mut known = BTreeMap::<String, usize>::new();
@@ -78,6 +81,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         collection || groups.len() == 1,
         "ambiguous run identity in input; use --split-runs or explicit --group-inputs"
     );
+    check_sources(&sources, "after aggregation")?;
     let mut plans = Vec::new();
     if options.minionqc_trends {
         let largest = groups
@@ -92,13 +96,16 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             .collect::<Result<Vec<_>>>()?;
         // Fit sufficient statistics on every raw observation, not bin means.
         for (file_index, path) in files.iter().enumerate() {
+            let mut pass = sources[file_index].open("fitted-trend pass")?;
+            let mut membership = Membership::default();
             let mut reader = SummaryReader::with_options(
-                File::open(path)?,
+                &mut pass,
                 options.input_schema,
                 options.read_representation,
             )?;
             reader.allow_multiple_runs();
             while let Some(record) = reader.next_record()? {
+                membership.observe(record.run_id);
                 let index = if options.group_inputs {
                     Some(0)
                 } else if let Some(id) = record.run_id {
@@ -116,8 +123,12 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
                 })?;
                 plans[index].add(&record, options.cutoff);
             }
+            drop(reader);
+            pass.finish()?;
+            sources[file_index].validate_membership(membership, "fitted-trend pass")?;
         }
     }
+    check_sources(&sources, "after fitted-trend passes")?;
     let mut fits = plans.into_iter();
     let mut domain = crate::density::Bounds::default();
     if options.minionqc_density {
@@ -144,8 +155,10 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             // One run's pixel grids are alive at a time, even in collections.
             for &file_index in &group.files {
                 let path = &files[file_index];
+                let mut pass = sources[file_index].open("MinION visualization pass")?;
+                let mut membership = Membership::default();
                 let mut reader = SummaryReader::with_options(
-                    File::open(path)?,
+                    &mut pass,
                     options.input_schema,
                     options.read_representation,
                 )?;
@@ -154,6 +167,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
                     .next_record()
                     .with_context(|| format!("MinION visualization input {}", path.display()))?
                 {
+                    membership.observe(record.run_id);
                     let belongs = if options.group_inputs {
                         true
                     } else if let Some(id) = record.run_id {
@@ -167,6 +181,9 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
                         })?;
                     }
                 }
+                drop(reader);
+                pass.finish()?;
+                sources[file_index].validate_membership(membership, "MinION visualization pass")?;
             }
         }
         let visualization = visualization
@@ -179,7 +196,9 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             drop(observations);
             report.presentation = options.presentation.clone();
             configure_presentation(&mut report, options, group.latest_start)?;
-            report::write(&report, output)?;
+            report::write(&report, output, |destinations| {
+                verify_publication(&sources, &group.files, destinations)
+            })?;
             return Ok(());
         }
         let source_id = format!("run_{:03}", index + 1);
@@ -192,7 +211,11 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         report.presentation = options.presentation.clone();
         configure_presentation(&mut report, options, group.latest_start)?;
         if !options.combined_only {
-            report::write(&report, &output.join("runs").join(&source_id))?;
+            report::write(
+                &report,
+                &output.join("runs").join(&source_id),
+                |destinations| verify_publication(&sources, &group.files, destinations),
+            )?;
         }
         runs.push(RunComparison::from_report(&report));
         pooled.absorb(&report, observations)?;
@@ -204,7 +227,9 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
     });
     report.presentation = options.presentation.clone();
     configure_presentation(&mut report, options, latest_start)?;
-    report::write(&report, &output.join("combined"))?;
+    report::write(&report, &output.join("combined"), |destinations| {
+        verify_publication(&sources, &indices.iter().copied().collect(), destinations)
+    })?;
     Ok(())
 }
 
@@ -279,6 +304,7 @@ fn supported_name(name: &str) -> bool {
 /// Preserve row/file order within each logical group, regardless of the worker.
 fn scan_inputs(
     files: &[PathBuf],
+    sources: &[Source],
     indices: &[usize],
     collection: bool,
     options: &AnalysisOptions,
@@ -287,8 +313,10 @@ fn scan_inputs(
     let mut known = BTreeMap::<String, usize>::new();
     for &file_index in indices {
         let path = &files[file_index];
+        let mut pass = sources[file_index].open("aggregation pass")?;
+        let mut membership = Membership::default();
         let mut reader = SummaryReader::with_options(
-            File::open(path).with_context(|| format!("cannot open input {}", path.display()))?,
+            &mut pass,
             options.input_schema,
             options.read_representation,
         )
@@ -308,6 +336,7 @@ fn scan_inputs(
             .with_context(|| format!("input {}", path.display()))?
         {
             had_record = true;
+            membership.observe(record.run_id);
             let run_id = record.run_id;
             let index = if options.group_inputs && !groups.is_empty() {
                 Some(0)
@@ -387,6 +416,9 @@ fn scan_inputs(
                 tracker.add(&record, options.cutoff)?;
             }
         }
+        drop(reader);
+        pass.finish()?;
+        sources[file_index].validate_membership(membership, "aggregation pass")?;
         if !had_record && options.group_inputs && !groups.is_empty() {
             let group = &mut groups[0];
             group.files.insert(file_index);
@@ -419,7 +451,11 @@ fn scan_inputs(
 
 /// Files sharing any run ID form an indivisible component. One mixed-run file
 /// stays intact; identity-free files remain explicitly labeled source units.
-fn independent_components(files: &[PathBuf], options: &AnalysisOptions) -> Result<Vec<Vec<usize>>> {
+fn independent_components(
+    files: &[PathBuf],
+    sources: &[Source],
+    options: &AnalysisOptions,
+) -> Result<Vec<Vec<usize>>> {
     let mut parent: Vec<usize> = (0..files.len()).collect();
     fn root(parent: &[usize], mut i: usize) -> usize {
         while parent[i] != i {
@@ -429,8 +465,10 @@ fn independent_components(files: &[PathBuf], options: &AnalysisOptions) -> Resul
     }
     let mut known = BTreeMap::<String, usize>::new();
     for (i, path) in files.iter().enumerate() {
+        let mut pass = sources[i].open("independent-component discovery")?;
+        let mut membership = Membership::default();
         let mut reader = SummaryReader::with_options(
-            File::open(path)?,
+            &mut pass,
             options.input_schema,
             options.read_representation,
         )
@@ -440,6 +478,7 @@ fn independent_components(files: &[PathBuf], options: &AnalysisOptions) -> Resul
             .next_record()
             .with_context(|| format!("input {} during independence scan", path.display()))?
         {
+            membership.observe(record.run_id);
             if let Some(id) = record.run_id {
                 if let Some(&previous) = known.get(id) {
                     let (a, b) = (root(&parent, i), root(&parent, previous));
@@ -449,6 +488,9 @@ fn independent_components(files: &[PathBuf], options: &AnalysisOptions) -> Resul
                 }
             }
         }
+        drop(reader);
+        pass.finish()?;
+        sources[i].validate_membership(membership, "independent-component discovery")?;
     }
     let mut components = BTreeMap::<usize, Vec<usize>>::new();
     for i in 0..files.len() {
@@ -523,6 +565,24 @@ fn configure_presentation(
         .map(|i| i as f64 * interval * 3600.0)
         .collect();
     Ok(())
+}
+
+fn check_sources(sources: &[Source], stage: &str) -> Result<()> {
+    sources.iter().try_for_each(|s| s.check(stage))
+}
+fn verify_publication(
+    sources: &[Source],
+    contributing: &BTreeSet<usize>,
+    destinations: &[&Path],
+) -> Result<()> {
+    Source::reject_outputs(sources, destinations)?;
+    sources.iter().enumerate().try_for_each(|(i, source)| {
+        if contributing.contains(&i) {
+            source.verify_for_publication()
+        } else {
+            source.check("publication")
+        }
+    })
 }
 
 #[cfg(test)]

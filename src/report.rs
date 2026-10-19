@@ -130,7 +130,11 @@ impl Tool {
     }
 }
 
-pub fn write(report: &Report, directory: &Path) -> Result<()> {
+pub fn write(
+    report: &Report,
+    directory: &Path,
+    verify_sources: impl FnOnce(&[&Path]) -> Result<()>,
+) -> Result<()> {
     fs::create_dir_all(directory)
         .with_context(|| format!("cannot create output directory {}", directory.display()))?;
     // Catch predictable destination failures before replacing either report.
@@ -226,6 +230,12 @@ pub fn write(report: &Report, directory: &Path) -> Result<()> {
     }
     // Every requested output is staged before replacing any previous report.
     // Publication remains per-file; no atomic transaction across the collection.
+    verify_sources(
+        &staged
+            .iter()
+            .map(|s| s.destination.as_path())
+            .collect::<Vec<_>>(),
+    )?;
     for file in staged {
         file.publish()?;
     }
@@ -364,6 +374,54 @@ mod tests {
             "previous data"
         );
         assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn source_change_after_rendering_preserves_reports_and_cleans_every_stage() {
+        use crate::{integrity::Source, metrics::Aggregator};
+        let directory = std::env::temp_dir().join(format!(
+            "poregauge-publication-guard-{}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).unwrap();
+        let input = directory.join("summary.tsv");
+        fs::write(&input, b"original").unwrap();
+        let source = Source::capture(&fs::canonicalize(&input).unwrap(), false).unwrap();
+        let output = directory.join("output");
+        let mut report = Aggregator::new(None, false).finish(None).unwrap();
+        report.presentation.write_yaml = true;
+        report.presentation.export_svg = true;
+        super::write(&report, &output, |_| Ok(())).unwrap();
+        let old_json = fs::read(output.join("report.json")).unwrap();
+        let old_html = fs::read(output.join("report.html")).unwrap();
+        let old_yaml = fs::read(output.join("summary.yaml")).unwrap();
+        report.run.run_id = Some("never-published".into());
+        let failed = super::write(&report, &output, |_| {
+            // The callback runs after every requested output has been staged.
+            assert!(
+                fs::read_dir(&output)?.any(|p| p
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|x| x == "tmp"))
+            );
+            fs::write(&input, b"changed source")?;
+            source.verify_for_publication()
+        });
+        assert!(failed.unwrap_err().to_string().contains("publication"));
+        assert_eq!(fs::read(output.join("report.json")).unwrap(), old_json);
+        assert_eq!(fs::read(output.join("report.html")).unwrap(), old_html);
+        assert_eq!(fs::read(output.join("summary.yaml")).unwrap(), old_yaml);
+        for dir in [&output, &output.join("figures")] {
+            assert!(
+                fs::read_dir(dir).unwrap().all(|p| !p
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".tmp"))
+            );
+        }
         fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -40,6 +40,9 @@ jobs:
       - name: Run tests
         run: cargo test --locked
 
+      - name: Verify reference-assessment harness logic
+        run: python3 -m unittest discover -s tests/reference
+
       - name: Check the minimal JSON/HTML/SVG build
         run: cargo test --locked --no-default-features
 
@@ -67,7 +70,7 @@ jobs:
           cp "$RUNNER_TEMP/source-a.tsv" "$RUNNER_TEMP/source-b.tsv"
           target/x86_64-unknown-linux-musl/release/poregauge analyze \
             "$RUNNER_TEMP/source-a.tsv" "$RUNNER_TEMP/source-b.tsv" \
-            --processors 2 --format svg --output "$RUNNER_TEMP/musl-parallel"
+            --processors 2 --verify-input-content --format svg --output "$RUNNER_TEMP/musl-parallel"
           test -s "$RUNNER_TEMP/musl-parallel/combined/figures/length-counts.svg"
 
   msrv:

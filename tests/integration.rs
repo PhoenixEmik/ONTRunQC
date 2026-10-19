@@ -3363,11 +3363,18 @@ fn parallel_groups_preserve_interleaved_chunks_legacy_empty_and_exact_outputs() 
     assert_eq!(report["collection"]["runs"][1]["run_id"], "beta");
     assert_eq!(report["collection"]["runs"][2]["run_id"], "gamma");
     let before = report_snapshot(&directory.0.join("output"));
-    let mut parallel = options.to_vec();
-    parallel.extend(["--processors", "2"]);
-    let after = run_collection(&directory, &inputs, &parallel);
-    assert_eq!(report, after);
-    assert_eq!(before, report_snapshot(&directory.0.join("output")));
+    for workers in ["2", "3", "4"] {
+        for strong in [false, true] {
+            let mut parallel = options.to_vec();
+            parallel.extend(["--processors", workers]);
+            if strong {
+                parallel.push("--verify-input-content");
+            }
+            let after = run_collection(&directory, &inputs, &parallel);
+            assert_eq!(report, after);
+            assert_eq!(before, report_snapshot(&directory.0.join("output")));
+        }
+    }
     // --group-inputs explicitly joins identity-free chunks, never splits them.
     let grouped = run_collection(&directory, &[&legacy, &empty], &["--group-inputs"]);
     assert_eq!(
@@ -3661,7 +3668,45 @@ fn independent_dense_minion_runs_are_identical_at_one_and_two_workers() {
     run_collection(
         &directory,
         &inputs,
-        &["--flowcell-layout", "minion-r9.5", "--processors", "2"],
+        &[
+            "--flowcell-layout",
+            "minion-r9.5",
+            "--processors",
+            "2",
+            "--verify-input-content",
+        ],
     );
     assert_eq!(before, report_snapshot(&directory.0.join("output")));
+}
+
+#[test]
+fn report_destinations_cannot_overwrite_input_sources() {
+    for figure in [false, true] {
+        let directory = TestDirectory::new();
+        let output = directory.0.join("output");
+        fs::create_dir(&output).unwrap();
+        fs::create_dir(output.join("figures")).unwrap();
+        let source = output.join(if figure {
+            "figures/length-counts.svg"
+        } else {
+            "report.json"
+        });
+        let data = format!("{HEADER}{ROW}");
+        fs::write(&source, &data).unwrap();
+        fs::write(output.join("report.html"), "previous valid HTML").unwrap();
+        let result =
+            directory.run_with_args(&source, &["--format", "svg", "--verify-input-content"]);
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("overwrite input"));
+        assert_eq!(fs::read_to_string(&source).unwrap(), data);
+        assert_eq!(
+            fs::read_to_string(output.join("report.html")).unwrap(),
+            "previous valid HTML"
+        );
+        assert!(
+            report_snapshot(&output)
+                .keys()
+                .all(|p| p.extension().is_none_or(|e| e != "tmp"))
+        );
+    }
 }

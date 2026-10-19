@@ -6,6 +6,7 @@ mod export;
 mod figure_render;
 mod html;
 mod input;
+mod integrity;
 mod layout;
 mod metrics;
 mod minion;
@@ -50,6 +51,7 @@ fn run(cli: Cli) -> Result<()> {
             processors,
             minionqc_trends,
             minionqc_density,
+            verify_input_content,
         } => {
             format.check_supported()?;
             input.extend(input_paths);
@@ -63,6 +65,7 @@ fn run(cli: Cli) -> Result<()> {
                 &output,
                 &batch::AnalysisOptions {
                     processors: usize::from(processors),
+                    verify_input_content,
                     minionqc_compat,
                     layout: flowcell_layout,
                     cutoff: qscore_cutoff,
