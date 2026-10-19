@@ -185,3 +185,29 @@ Further specialized tests: tests/minion_visualization.py for complete-data MinIO
 4. **Later product extensions:** gzip [#17](https://github.com/PhoenixEmik/ONTRunQC/issues/17) and other new QC families are deferred until compatibility documentation and gates receive explicit attention.
 
 This document is meant to be read as a **comparison and disclosure**, not a claim that every numerical output matches the original MinIONQC exactly.
+
+## 9. Priority audit: verify 'Complete' at formula and figure-layer level
+
+The tables above map *available scientific functionality*. A `Complete` entry in the engineering ledger may not establish numeric equality of the plotted layer. This is an **audit shortlist, not a confirmed defect list**. [Issue #18](https://github.com/PhoenixEmik/ONTRunQC/issues/18) defines the source-by-source verification and reproducible side-by-side figure requirements.
+
+| Candidate marked `Complete` in the engineering ledger | Evidence from pinned R | Current ONTRunQC definition | What remains to verify |
+| --- | --- | --- | --- |
+| `reads_per_hour` | Integer-hour counts with explicit zero-fill (`MinIONQC.R` 609–638) | 15-minute counts | Exact hour-boundary alignment, zero intervals, whether a reference-equivalent series should be opt-in |
+| `yield_over_time` | Each read's start time and cumulative yield (563–572) | 15-minute cumulative bins | Raw-reference curve versus binned curve; same terminal yield is insufficient |
+| `length_histogram`, `q_histogram` | `geom_histogram(bins=300)`, length plotted after log10 scale transformation (472–545) | Fixed intervals | ggplot computed bin edges/counts versus ONTRunQC displayed edges/counts, especially long tails |
+| `channel_summary` | `geom_histogram(bins=30)` and original count expression (406–420, 670–686) | Exact channel summary with different plot intervals, corrected read count | Independent source population and numeric corrections versus plot-bin differences |
+| `yield_by_length` | Per-read sorted cumulative bases, cropped X domain (575–584) | Exact underlying yield queries and bounded figure points | Points/curve deviations and axis limits distinct from exact threshold metrics |
+| PromethION `length_vs_q` | `geom_bin2d()` with ggplot bin rules (649–659) | Fixed bounded length–Q grid | 2D-bin geometry/count comparisons and log-axis semantics |
+
+The optional `--minionqc-trends` and `--minionqc-density` settings also require **default-behavior** comparison: the existence of a fitting/density implementation is different from matching the original command's automatic graph selection.
+
+### Visual comparison protocol
+
+For each matched public/synthetic run, generate a figure set:
+1. **Original R** figure at documented device size and Q cutoff.
+2. **ONTRunQC** equivalent, with the selected dataset and render options displayed.
+3. **Numeric diagnostic**: matching XY overlay and residual plot where both curves are commensurable, or bin-boundary/count comparison where the plots use different grids.
+
+Label the input hash, command, R dependency versions, scientific population, plot-layer method, X/Y scales, bin resolution, and the difference classification on each caption. Do not substitute pixel diff for a scientific numerical comparison, and do not claim tests were executed when figures are not available. Representative figures and a reproducible generator will be linked from here after source-level verification.
+
+The existing 1,542 original-R GAM strict mismatches remain outside tolerance. This audit must **not** mask them by comparing only to controlled canonical-penalty R models.
