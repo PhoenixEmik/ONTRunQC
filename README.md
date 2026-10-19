@@ -8,9 +8,7 @@ and produces structured JSON and a self-contained HTML report. It supports
 modern MinKNOW/Dorado summaries, legacy Albacore/Guppy and 2D/1D2 summaries,
 PromethION and MinION layouts, and individual or combined run reports.
 
-Formerly **PoreGauge**. The current development package is **0.4.1**; the executable
-is now `ontrunqc`. Historical tags and archives retain their original names.
-See [migration notes](#migrating-from-poregauge).
+Current development package: **0.4.1**. CLI executable: `ontrunqc`.
 
 ## Features
 
@@ -55,8 +53,7 @@ For JSON/HTML/SVG without the six native conversion formats, build with
 
 Download a matching archive and `SHA256SUMS` from
 [GitHub Releases](https://github.com/PhoenixEmik/ONTRunQC/releases), verify the
-checksum, and extract the archive. Archives published as PoreGauge contain
-`poregauge`; builds from renamed source contain `ontrunqc`.
+checksum, and extract the archive.
 
 | Platform | Archive platform suffix |
 | --- | --- |
@@ -271,16 +268,6 @@ ONTRunQC is not a basecaller or a replacement for MinKNOW monitoring. It does no
 parse FASTQ/BAM/POD5, estimate pore occupancy, assign automatic run pass/fail,
 or provide live monitoring, barcode analysis or gzip input support.
 
-## Migrating from PoreGauge
-
-- Use `ontrunqc` in scripts; old installations and old release binaries still use
-  `poregauge`. New reports identify the tool as `ONTRunQC`; metric definitions,
-  schema version and report filenames are unchanged.
-- The opt-in implicit output folder is now `ontrunqc_qc/`.
-- Update existing clones with `git remote set-url origin https://github.com/PhoenixEmik/ONTRunQC.git`.
-- Historical validation keys, reference targets and discrepancy classifications
-  keep the PoreGauge name so previously recorded evidence remains verifiable.
-
 ## Development and validation
 
 ```sh
@@ -301,8 +288,7 @@ concurrently. Keep private sequencing data and identifying reports out of Git.
 
 [Release automation](.github/workflows/release.yml) uses matching
 `vMAJOR.MINOR.PATCH` tags. Maintainers can build an existing tag without publishing
-through its manual `tag`/`publish=false` inputs; old tags retain their old package
-and archive names. Renaming the project does not republish historical releases.
+through its manual `tag`/`publish=false` inputs.
 
 Further documentation: [metric definitions and schema](docs/metrics.md),
 [MinIONQC parity](docs/minionqc-parity.md), [benchmarks](docs/benchmark.md),
