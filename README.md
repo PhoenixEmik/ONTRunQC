@@ -146,14 +146,17 @@ See [discovery, grouping and workers](docs/input.md).
 ontrunqc analyze sequencing_summary.txt --output qc_results/ --yaml \
   --format pdf --smallfigures --add-stat --muxes 8
 ontrunqc analyze /data/flowcells/ --output comparison_qc/ \
-  --minionqc-trends --minionqc-density
+  --minionqc-trends --minionqc-density --minionqc-plot-bins
 ```
 
 `--format` exports one independent format and a figure manifest. PNG/TIFF/BMP
 are lossless 300-DPI RGB; JPEG is lossy, PDF preserves vector content where
 possible, and **PS is raster-backed**. Optional raw-read fits cost an additional
 input pass; the R-grid density estimator has its own documented definition.
-See [output files, dimensions and controls](docs/output.md).
+`--minionqc-plot-bins` adds separately labeled ggplot2-compatible histograms and
+Bin2D layers using one extra streaming pass; native statistics/bins are preserved.
+See [plot population and bin definitions](docs/metrics.md#optional-minionqc-histogram-layers-19)
+and [output files, dimensions and controls](docs/output.md).
 
 <a id="supported-input"></a>
 <a id="scientific-interpretation-and-minionqc-compatibility"></a>
@@ -185,7 +188,8 @@ identical populations, bins, curves, rendering or CLI defaults.
 | Exact core metrics and pooled summaries | Validated under the documented populations and edge-case definitions. |
 | LOESS and optional R-grid KDE | Actual pinned-R validation within declared tolerances. |
 | Original-R GAM | **Partial:** 1,542 fit/uncertainty discrepancies remain in the 18-case strict suite. |
-| Histogram/time/yield display layers | Different native resolutions and representations; tracked in #19–#21. |
+| Histogram/Bin2D layers | Exact pinned-R comparisons with `--minionqc-plot-bins`; native fixed bins remain default. |
+| Time/yield display layers | Native resolutions and representations still differ; tracked in #20–#21. |
 
 Start with the [source-backed comparison](docs/minionqc-comparison.md),
 [actual A/B/C figure gallery](docs/figures/minionqc-comparison/README.md) and

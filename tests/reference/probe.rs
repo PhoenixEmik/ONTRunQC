@@ -51,6 +51,9 @@ fn export_report() {
         }
         trackers.push(tracker);
     }
+    if std::env::var_os("PG_PROBE_PLOT_BINS").is_some() {
+        aggregator.plot_bins = Some(plot_bins(&paths, cutoff));
+    }
     let domain = aggregator.density_bounds();
     aggregator.set_density_domain(domain);
     let mut report = aggregator.finish(None).unwrap();
@@ -105,6 +108,9 @@ fn export_report() {
                     renderer.add(&record).unwrap();
                 }
             }
+            if std::env::var_os("PG_PROBE_PLOT_BINS").is_some() {
+                source.plot_bins = Some(plot_bins(std::slice::from_ref(path), cutoff));
+            }
             let mut source = source.finish(None).unwrap();
             source.diagnostics.minion_read_visualization =
                 visualization.map(|v| v.finish().unwrap());
@@ -145,4 +151,24 @@ fn export_report() {
         &report,
     )
     .unwrap();
+}
+
+fn plot_bins(paths: &[std::path::PathBuf], cutoff: f64) -> crate::plot_bins::PlotBins {
+    let mut bounds = crate::plot_bins::Bounds::default();
+    for path in paths {
+        let mut r = crate::input::SummaryReader::new(std::fs::File::open(path).unwrap()).unwrap();
+        r.allow_multiple_runs();
+        while let Some(record) = r.next_record().unwrap() {
+            bounds.add(&record);
+        }
+    }
+    let mut bins = crate::plot_bins::Plan::new(bounds).unwrap();
+    for path in paths {
+        let mut r = crate::input::SummaryReader::new(std::fs::File::open(path).unwrap()).unwrap();
+        r.allow_multiple_runs();
+        while let Some(record) = r.next_record().unwrap() {
+            bins.add(&record, cutoff).unwrap();
+        }
+    }
+    bins.finish()
 }

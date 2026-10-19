@@ -22,6 +22,7 @@ Historical evidence is retained below in issue order. New documentation structur
 - [CLI and independent-run completion (#16)](#cli-and-independent-run-completion-16)
 - [Input-integrity revalidation and proposed #8 split](#input-integrity-revalidation-and-proposed-8-split)
 - [Streaming gzip input (#17)](#streaming-gzip-input-17)
+- [Reference histogram / Bin2D closure (#19)](#reference-histogram--bin2d-closure-19)
 
 ## Reading this ledger
 
@@ -132,10 +133,12 @@ all existing intentional differences remain visible below.
 
 ## Plot families
 
-**Issue #18 correction:** the affected automatic-histogram, hourly/cumulative,
-length-yield and PromethION bin2d rows below are now **Partial** at the numerical
-plot-layer level. Their analysis families remain implemented and core totals
-remain exact; old Complete labels did not verify original ggplot bins/paths.
+**Issue #18 correction:** automatic-histogram, hourly/cumulative, length-yield
+and PromethION bin2d rows were originally reclassified **Partial** at the
+numerical plot-layer level. The #19 record now supersedes automatic binning
+for explicit reference mode; hourly/cumulative and length-yield remain Partial.
+Native fixed-bin totals remain exact; old Complete labels did not verify
+original ggplot bins/paths.
 See the [source/formula audit and actual gallery](minionqc-comparison.md#9-source-level-audit-formulas-and-population-contract).
 No strict GAM result or original tolerance is changed by this reassessment.
 
@@ -145,17 +148,18 @@ KDE differences are intentional and documented in [metrics](metrics.md).
 
 | Upstream report family | Status | Implementation / validation |
 | --- | --- | --- |
-| `length_histogram`, `q_histogram` | Partial | All/Q count and yield histograms; fixed documented bins rather than 300 automatic bins; U histogram conservation / offline tests, V. |
+| `length_histogram`, `q_histogram` | Complete in explicit reference mode | `--minionqc-plot-bins`; actual pinned-R edges/counts verified, including zero-length Q observations. Native fixed bins remain default. See #19 record below. |
 | `yield_over_time`, `reads_per_hour` | Partial | Absolute cumulative yield and counts in 15-minute bins, All/Q; U interval/cumulative conservation and gap tests, V. Counts are per 15 min, explicitly labeled. |
 | `yield_by_length` | Partial | Exact retained bp at bounded display queries, exact threshold counts; All/Q, full yield range rather than R's 99% crop; U `every_display_query_uses_exact_lengths_including_ties`, P, V. |
 | `length_by_hour`, `q_by_hour` | Partial | Unchanged 15-minute means plus opt-in interpolated LOESS/cubic-shrinkage REML fits; U temporal/fitting tests. Exact unique-time knots, singular two-row LOESS solves and GAM ribbons are implemented; public GAM numerical parity remains incomplete; LOESS pointwise Student-t intervals are verified against actual R. |
-| `channel_summary` | Partial | Four channel distributions and exact values, All-summary/Q; U channel summary tests, V. |
+| `channel_summary` | Complete with documented upstream correction in reference mode | Three original-R distribution families match; true read-count family intentionally corrects the triangular count bug. Exact 30-bin geometry/control tests and independent membership proofs. |
 | `gb_per_channel_overview` | Complete | Explicit-layout yield heatmaps including All/Q (native maps additionally available); U layout/yield conservation, V. |
 | MinION `flowcell_overview` | Complete | All positive-length reads: exact points ≤4,096, otherwise 64×40 full-count pixels/channel plus actual extrema; exact R9.5 layout, shared time/log-length axes, Q color. U count/extrema/order/mapping tests; actual R plot-data/pixel validation below. Explicit aggregation and zero-length differences, not ggplot pixel identity. |
 | MinION `length_vs_q` | Complete | Every positive-length read: exact points or 512×256 full-count pixels plus extrema, log-length X/Q Y, natural-log positive events/base inferno colors. Missing/zero events explicit. U legacy/control/event/count tests; actual R axes/alpha/population/pixel validation below. Dense mixed colors are documented reductions. |
 | PromethION physical read-level overview | Not applicable | Upstream omits the per-read channel panels for PromethION. |
-| PromethION `length_vs_q` | Partial | Bounded logarithmic-length/Q count heatmaps, matching the upstream bin2d analysis family; fixed documented bins, no individual read points; U joint count conservation, V. |
-| `combined_length_histogram`, `combined_q_histogram`, `combined_yield_by_length` | Partial | Pooled All/Q observations and exact yield queries; U pooled conservation/exact median/N50, P multiple inputs, V. |
+| PromethION `length_vs_q` | Complete in explicit reference mode | All 516 public occupied cells, boundaries and counts match pinned R with `--minionqc-plot-bins`; native fixed heatmaps retained; colors/layout differ. |
+| `combined_length_histogram`, `combined_q_histogram` | Complete in explicit reference mode | Exact pooled All/Q bin layers match R; native fixed bins remain available. |
+| `combined_yield_by_length` | Partial | Exact retained-yield queries; bounded display differences remain #21. |
 | Per-source `length_distributions`, `q_distributions` | Complete | Opt-in shared-domain R-grid estimator, including summary Q observations; actual pinned-R comparison of 52 curves meets documented tolerances. U synthetic R goldens; executable evidence below. Legacy KDE remains separately labeled. |
 | Per-source `yield_over_time`, `yield_by_length` | Partial | Absolute yields, common units/colors; U combined report/curve tests, P pooled totals, V. Run/source labels never invent flowcell identity. |
 | Per-source `length_by_hour`, `q_by_hour` | Partial | All/Q unsmoothed means plus opt-in raw-read fits with global method selection; U collection/time and fit tests. LOESS intervals verified; strict original-R GAM fits/ribbons remain Partial. |
@@ -588,3 +592,27 @@ it does not establish gzip support in the original R script. Core numerical
 implementations and original R evidence, including #12's 1,542 strict GAM
 differences, are unchanged. See [input definitions](input.md#plain-and-gzip-input)
 and [measurements](benchmark.md#streaming-gzip-input).
+
+
+## Reference histogram / Bin2D closure (#19)
+
+This supersedes the #18 automatic-bin numerical limitation **only when**
+`--minionqc-plot-bins` is enabled. Native bins and CLI defaults remain intact.
+R 4.4.1 / ggplot2 3.5.1 / mgcv 1.9-1 executed the unchanged original MinIONQC
+on six public cases (85 plots). Seventy-five comparable panel/layer groups match
+all counts/coordinates exactly, including 516 PromethION cells / 75,160 reads.
+Fourteen channel-count panels remain intentionally non-identical: independent
+true-n/triangular-n membership checks prove the upstream formula defect.
+Nine synthetic cases and four corrected-count channel families have actual-R
+bin goldens; empty or unsupported R layers remain explicitly unavailable.
+
+The [detailed comparison](minionqc-comparison.md#reference-histogram-and-bin2d-validation-19)
+and [validation summary](../tests/reference/bin-validation-summary.json) distinguish
+functional, numerical and visual claims. Canonical JSON is unchanged after
+removing the additive field, and gzip/parallel/grouped/combined, optional fits,
+density, dense MinION and figure exports have regression coverage.
+One extra guarded streaming pass is used; no second per-read population is stored.
+
+Original GAM evidence, targets and tolerances are unchanged: #12 remains Partial
+with 1,542 primary and 1,912 intermediate differences. #8/#18 are not closed by
+histogram agreement, and #20/#21 presentation work has not begun here.

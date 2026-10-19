@@ -349,3 +349,33 @@ failures and 1,912 intermediate failures. New reference-harness unit tests verif
 that it never silently accepts a changed value, tolerance, status or incomplete
 execution. Exact check-array signatures are a same-environment regression
 contract; other BLAS environments are not automatically accepted.
+
+
+## Reference histogram and Bin2D suite (#19)
+
+The existing plot audit accepts `--reference-bins` to enable the production
+`--minionqc-plot-bins` model in its file-scoped validation probe. Original R
+scripts, input bytes, grouping and cutoffs are unchanged. Capture still retains
+original layers; no corrected Rust result replaces an R target.
+
+```sh
+Rscript tests/reference/bin_layers.R tests/reference/bin-layers-golden.json
+cargo test --locked plot_bins::tests
+python3 tests/reference/plot_audit.py /path/to/pinned/minion_qc \
+  --rscript /path/to/Rscript --reference-bins \
+  --output benchmark-results/bin-audit --gallery benchmark-results/bin-gallery
+```
+
+The synthetic generator verifies installed pinned versions, records upstream
+empty/degenerate failures, and emits bounded edges/counts plus four corrected
+channel-count-control families. Rust tests consume the committed goldens without
+R. Public comparisons check every corresponding bin/cell (integer counts exact;
+coordinates `1e-12 + 1e-13*abs(reference)`). The true-count exception requires
+independent membership checks against raw public channel observations for both
+native n and reference n(n+1)/2; an unexplained mismatch fails.
+
+See [executed validation](bin-validation-summary.json) and
+[scientific interpretation](../../docs/minionqc-comparison.md#reference-histogram-and-bin2d-validation-19).
+Original smoothing/KDE goldens and the 1,542 primary / 1,912 intermediate GAM
+failure classifications remain independent. `--reuse` may reuse hash-identical
+R captures but always recomputes conclusions; omit it for a fresh R execution.

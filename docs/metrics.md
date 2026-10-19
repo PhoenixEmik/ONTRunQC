@@ -12,6 +12,7 @@ Scientific definitions and exact JSON fields for ONTRunQC. Counts, filtering pop
 - [Overall sequencing metrics](#overall-sequencing-metrics)
 - [Quality](#quality)
 - [Histograms and joint distributions](#histograms-and-joint-distributions)
+- [Optional MinIONQC histogram layers (#19)](#optional-minionqc-histogram-layers-19)
 - [Yield over time](#yield-over-time)
 - [Channels, muxes and termination](#channels-muxes-and-termination)
 - [Sequencing speed proxy](#sequencing-speed-proxy)
@@ -187,6 +188,67 @@ cells; their widths do not represent an infinite numeric interval. Both maps
 share a sequential indigo scale normalized by `log10(1 + cell_count)` against the
 all-read maximum. Accessible SVG cell labels/tooltips and a nonzero-cell table
 retain integer counts. Histogram boundaries impose no filtering threshold.
+
+## Optional MinIONQC histogram layers (#19)
+
+`--minionqc-plot-bins` adds `minionqc_plot_bins` to JSON and a separate HTML
+section/standalone figure family. Native histograms and every existing canonical
+statistic retain their definitions. It is **not** implicitly enabled by
+`--minionqc-compat`, which retains its established mux/output behavior.
+
+| Layer | Population and coordinates | Bin construction |
+| --- | --- | --- |
+| `length` | Positive-length summary rows, then `log10(length_bp)`; All/Q-selected | `StatBin(bins=300)` after transformation. |
+| `quality` | All retained summary rows, including zero lengths; All/Q-selected | `StatBin(bins=300)` in signed per-read Q coordinates. |
+| `channels` | Summary-read bases/count/mean/median per observed channel; All/Q-selected include eligible zero lengths | `StatBin(bins=30)` per metric, shared All/Q X limits. |
+| `length_vs_q` | All retained rows with finite log-length; Q limits train on all summary rows | `StatBin2d`, 30 requested bins per axis; occupied cells only. |
+
+For 1D range `[a,b]`, ggplot2 3.5.1 uses width `(b-a)/(bins-1)`, or **0.1**
+for its `zero_range` condition. The default boundary is `width/2`; the origin is
+`boundary + floor((a-boundary)/width)*width`. Breaks extend through
+`b + (1-1e-8)*width`. Assignment is right-closed, lowest edge included, with
+`1e-8 * median(diff(breaks))` fuzz. Fuzz affects assignment, not reported 1D
+geometry. Each emitted bin records `x`, `xmin`, `xmax`, `width`, integer `count`;
+empty bins within an observed population are retained. An absent finite
+population has an empty array. All/Q facets share X limits, with independent Y
+scales; a requested bin count need not equal the resulting number of bins.
+
+For 2D, widths are `(b-a)/30`; origins are `floor(a/width)*width`.
+`adjust_breaks` shifts the first edge down and others up by
+`1e-7 * median(diff(breaks))`. These adjusted edges determine both assignment
+and plotted cell geometry. JSON records axis breaks and occupied cells with
+`x/xmin/xmax/y/ymin/ymax/count`. Colors represent **linear read count**,
+normalized over occupied-cell minimum/maximum, with constant counts at mid-color.
+Empty or constant axes yield an explicit unavailable reason, corresponding to
+upstream's inability to build a positive-width grid. Native empty reports still
+succeed. Unrepresentable floating ranges fail with an actionable error; they
+are not silently truncated or serialized as infinite coordinates.
+
+Q histograms count zero-length Q measurements **only as reference plot data**;
+they never enter canonical basecalled Q statistics. `summary_records`,
+`q_selected_summary_records` and `zero_length_records` expose plotting
+populations. Channel selected-summary medians reuse existing sorted partitions
+plus counted zero lengths; native selected-basecalled medians remain unchanged.
+True channel counts intentionally replace upstream's `n(n+1)/2` defect, so that
+one channel-distribution family is not numerically identical to original R.
+
+Bounds are tracked during normal aggregation. One additional source-guarded
+streaming pass fills bounded histograms/cells, including gzip trailer/digest and
+run-membership validation. No extra per-read vector is retained. Work/storage
+scales with run groups, at most roughly 300 bins/population, about 31×31 cells,
+and observed channels. Combined bins are rebuilt against pooled limits, never
+summed from incompatible per-run grids; combined-only skips individual bin plans.
+Existing exact numeric observations still determine whole-process memory use.
+
+Bin2D is device-neutral without a selected physical layout. Explicit MinION mode
+keeps its original read-level view; explicit PromethION mode includes Bin2D.
+Neither this histogram nor channel IDs infer physical device geometry.
+Reference validation uses the original default `--add-stat FALSE`. Native
+`--add-stat` adds canonical basecalled-statistic text without retraining bins;
+R annotation layers can expand X limits, so that separate rendering setting is
+not claimed numerically equivalent.
+Schema version remains 1: this opt-in field is additive and omitted by default.
+See [verified comparisons](minionqc-comparison.md#reference-histogram-and-bin2d-validation-19).
 
 ## Yield over time
 

@@ -50,6 +50,7 @@ are `null`. `tool.name` is `ONTRunQC`; `tool.version` is the Cargo package versi
 | `input`, `presentation` | Validated input capabilities/exclusions and requested report settings. |
 | `source`, `collection` | Optional source identity and exact pooled/per-run comparisons. |
 | `fitted_trends`, `minionqc_density` | Optional raw-read fits and R-grid density estimates. |
+| `minionqc_plot_bins` | Opt-in reference histogram/Bin2D layers with explicit summary-read populations; omitted by default. |
 
 Channel/mux arrays sort numerically, time bins by start, histogram bins by lower
 bound, and `end_reasons` by Rust string order. The separate diagnostic termination

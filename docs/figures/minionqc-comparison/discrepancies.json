@@ -30,7 +30,14 @@
       "proposed_correction": "Optional source-compatible automatic bins; preserve native fixed-bin schema/defaults.",
       "acceptance_criteria": "Compare exact actual-R boundaries/counts and transformations for All/Q, constant, boundary and outlier cases.",
       "related_issue": 19,
-      "state": "documented; not changed"
+      "state": "reference mode verified; native fixed-bin differences retained intentionally",
+      "reference_mode_19": {
+        "state": "Implemented and numerically verified under documented default R layer settings",
+        "option": "--minionqc-plot-bins",
+        "evidence": "tests/reference/bin-validation-summary.json",
+        "native_defaults": "Preserved; different from reference binning",
+        "unexplained_differences": 0
+      }
     },
     {
       "id": "A02",
@@ -117,7 +124,14 @@
       "proposed_correction": "Optional reference bin geometry on corrected scientific counts.",
       "acceptance_criteria": "Compare four families and All/Q edges/counts separately from known R count bug.",
       "related_issue": 19,
-      "state": "documented; not changed"
+      "state": "reference mode verified; native fixed-bin differences retained intentionally",
+      "reference_mode_19": {
+        "state": "Implemented and numerically verified under documented default R layer settings",
+        "option": "--minionqc-plot-bins",
+        "evidence": "tests/reference/bin-validation-summary.json",
+        "native_defaults": "Preserved; different from reference binning",
+        "unexplained_differences": 0
+      }
     },
     {
       "id": "A06",
@@ -166,7 +180,14 @@
       "proposed_correction": "Optional compatible bounded bin2d on original All population.",
       "acceptance_criteria": "Compare source boundaries, transformations, cells, count conservation and overflow behavior to actual R.",
       "related_issue": 19,
-      "state": "documented; not changed"
+      "state": "reference mode verified; native fixed-bin differences retained intentionally",
+      "reference_mode_19": {
+        "state": "Implemented and numerically verified under documented default R layer settings",
+        "option": "--minionqc-plot-bins",
+        "evidence": "tests/reference/bin-validation-summary.json",
+        "native_defaults": "Preserved; different from reference binning",
+        "unexplained_differences": 0
+      }
     },
     {
       "id": "A08",
@@ -412,5 +433,6 @@
       "acceptance_criteria": "Negative and nonnegative boundary tests; full checks; same-public-report JSON byte equality; actual before/after figure inspection.",
       "state": "fixed; before/after validation recorded in comparison document"
     }
-  ]
+  ],
+  "reference_bin_validation": "tests/reference/bin-validation-summary.json"
 }

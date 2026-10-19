@@ -27,6 +27,7 @@ execution or change any scientific reference value.
 - [Scientific formulas and source mapping](#scientific-formulas-and-source-mapping)
 - [Plot-family inventory](#plot-family-inventory)
 - [CLI defaults and output behavior](#cli-defaults-and-output-behavior)
+- [Reference histogram and Bin2D validation (#19)](#reference-histogram-and-bin2d-validation-19)
 - [Strict numerical GAM limitation](#strict-numerical-gam-limitation)
 - [Executed validation and limits](#executed-validation-and-limits)
 - [Reproduce the evidence](#reproduce-the-evidence)
@@ -70,8 +71,8 @@ GAM/LOESS, KDE or reference target was changed to make plots agree.
 | Finding | Classification / impact | Measured evidence | Action |
 | --- | --- | --- | --- |
 | Negative-Q underflow labels | Confirmed native presentation defect, fixed | Sentinel `-1.798e308` and shifted8/18/28 ticks replaced by explicit `<0` category and10/20/30 ticks; JSON unchanged | Regression plus actual public before/after figure |
-| Automatic length/Q and channel histogram edges | Numerically different; coarse intervals can conceal distribution structure | R 300 bins/population, native fixed bins; channel plots both30 but centred vs zero-anchored boundaries | [#19](https://github.com/PhoenixEmik/ONTRunQC/issues/19): optional reference-compatible bins, preserve valid native defaults |
-| PromethION bin2d | Numerically different; different cluster/cell geometry | Actual public R 516 occupied cells,75,160 reads; fixed native grid conserves75,160 | #19: compare exact transformed edges/cells, not only total counts |
+| Automatic length/Q and channel histogram edges | Verified optional reference mode; native defaults retain different bins | 75 comparable panel/layer groups match original R exactly; true channel count correction remains separate | [#19 validation](#reference-histogram-and-bin2d-validation-19); native definitions preserved |
+| PromethION bin2d | Verified optional reference mode | All 516 cells / 75,160 reads match actual R coordinates and counts exactly | Explicit `--minionqc-plot-bins`; fixed native heatmap retained |
 | Hourly reads | Numerically different exposure/population | R 3600 s vs native 900 s; actual R hourly rows checked independently | [#20](https://github.com/PhoenixEmik/ONTRunQC/issues/20): explicit reference hourly series/zero fill |
 | Read-start cumulative path | Numerically different temporal support | Public MinION largest 15-minute bin 83,967,188 bp; overview can defer that yield within a bin | #20: bounded reference-compatible curve and disclosed simplification |
 | Minimum-length retained-yield curve | Numerically different display, exact stored queries | Max linear interpolation error at observed lengths: MinION 1,555,278.312bp; PromethION 5,464,673.009bp; pooled 4,431,919.159bp | [#21](https://github.com/PhoenixEmik/ONTRunQC/issues/21): preserve exact queries; quantify/improve display contract |
@@ -84,8 +85,8 @@ GAM/LOESS, KDE or reference target was changed to make plots agree.
 | Validation lockfile mutation | Confirmed tooling defect, fixed | Unlocked probe could reorder Cargo.lock; now uses `cargo test --locked` | Repeated suite leaves lockfile unchanged |
 
 **Completion boundary:** this audit delivers evidence and runnable comparisons;
-reference-compatible rendering paths in #19–#21 are proposed follow-up work,
-not implemented features. #8 and #12 remain open. No release is published.
+reference-compatible histogram/Bin2D layers in #19 are now implemented and
+verified below; #20/#21 remain follow-up work. #8 and #12 remain open. No release is published.
 
 <a id="2-input-compatibility-and-population-definitions"></a>
 
@@ -173,8 +174,8 @@ Original metrics source: [summary.stats / channel.summary](https://github.com/ro
 
 | Original MinIONQC output (single-run) | Original layer/semantics | ONTRunQC equivalent | Difference / verification |
 | --- | --- | --- | --- |
-| length_histogram | Two All/Q panels, 300 ggplot bins after length transform | Read-length histograms (count/yield) and independent figures | Fixed, documented bins; count/yield conserved, not pixel-identical |
-| q_histogram | Mean-read-Q distribution by All/Q | Quality histograms (count/yield) | Fixed bins and full-precision totals; rounded display differs |
+| length_histogram | Two All/Q panels, 300 ggplot bins after length transform | Native fixed bins plus explicit reference layers | Reference-mode boundaries/counts verified; palettes/layout differ |
+| q_histogram | Mean-read-Q distribution by All/Q | Native basecalled bins plus reference summary-population bins | Reference mode includes zero lengths; native core remains basecalled-only |
 | flowcell_overview (MinION only) | Faceted read start-time vs log length, colored by Q | Full-data MinION R9.5 physical overview | Exact points for small inputs; all-count 64×40 pixels/channel for dense inputs + extrema; explicitly not point-for-point ggplot |
 | yield_over_time | Per-read cumulative gigabases vs time | Yield-over-time cumulative series | ONTRunQC 15-minute end bins, not original read-level path |
 | yield_by_length | Yield retained above minimum read length, cropped display X | Exact retained-yield queries and graph | ONTRunQC shows broader range, exact integer underlying queries |
@@ -182,15 +183,15 @@ Original metrics source: [summary.stats / channel.summary](https://github.com/ro
 | q_by_hour | ggplot geom_smooth of per-read Q vs start-time | Optional Q-score fitted trends and observed means | Same remaining GAM issue; do not substitute binned means for R raw fit |
 | reads_per_hour | Counts in integer-hour bins; missing hours zero-filled | Start-time interval read-count chart | ONTRunQC 15-minute bins, different time support |
 | length_vs_q | MinION scatter (events/base color); PromethION bin2d | MinION exact/full-count scatter, PromethION count heatmap | Natural-log positive events/base meaning preserved; dense colors and alpha differ |
-| channel_summary | Four per-channel distribution facets | Channel-distribution charts and exact tables | True read counts rather than reference count bug; bins differ |
+| channel_summary | Four per-channel distribution facets | Native charts/tables plus reference geometry | Bases/mean/median match R; true-count correction intentionally changes count distribution |
 | gb_per_channel_overview | Spatial channel yield tiles by All/Q | Explicit MinION/PromethION physical yield maps | Verified layouts; legend/colors/missing-vs-zero and optional native map differ |
 
 Original single-run figures: [R single.flowcell, lines 423–723](https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L423-L723). ONTRunQC charts are embedded in offline report.html, and requested independent figures in figures/ with manifest.json. Do not assume identical file basenames when cross-comparing.
 
 | Original combined/per-source output | Reference meaning | ONTRunQC equivalent | Difference / status |
 | --- | --- | --- | --- |
-| combined_length_histogram | Pooled All/Q length distributions | Exact pooled histograms | Same pooled question, independent bins |
-| combined_q_histogram | Pooled All/Q Q distributions | Exact pooled quality histograms | Same pooled question, independent bins |
+| combined_length_histogram | Pooled All/Q length distributions | Native bins or opt-in reference layers | Pooled reference boundaries/counts verified exactly |
+| combined_q_histogram | Pooled All/Q Q distributions | Native bins or opt-in reference layers | Pooled reference summary-population bins verified exactly |
 | combined_yield_by_length | Pooled minimum-length yield | Exact pooled retained-yield chart | Underlying counts/bases exact; original hardcodes .png filename in one path |
 | length_distributions | Per-flowcell log-read-length density | Optional shared R-grid KDE comparisons | 52 total measured density curves within declared tolerance |
 | q_distributions | Per-flowcell Q density | Optional R-grid Q density | Same R-grid evidence, distinct summary-zero-Q population handling |
@@ -239,6 +240,83 @@ Use --minionqc-compat only if the historical mux marker/output semantics are nee
 ONTRunQC always writes report.json and report.html; --yaml additionally writes summary.yaml. --format svg/png/pdf/ps/jpeg/tiff/bmp creates independent scientific figures. PNG/TIFF/BMP are lossless 300-DPI RGB; JPEG is lossy quality 95; PDF preserves vector text/graphics where possible; **PS is raster-backed Level 3 at 300 DPI**, not vector-equivalent to ggplot output. Minimal --no-default-features builds explicitly omit the six static conversions. See [static figure definitions](output.md#native-static-figure-exports-15).
 
 <a id="6-strict-numeric-gam-difference-measured-rather-than-waived"></a>
+
+## Reference histogram and Bin2D validation (#19)
+
+`--minionqc-plot-bins` is a separate opt-in presentation. It preserves native
+bins and all canonical statistics, including basecalled-only Q statistics.
+`--minionqc-compat` alone does not enable it. Definition/formulas and additional
+pass accounting are in [metric definitions](metrics.md#optional-minionqc-histogram-layers-19).
+
+The original script at `54485d586038d8ee36f168dd94f31c423f52f581` was executed
+again under **R 4.4.1 / ggplot2 3.5.1 / mgcv 1.9-1**, using unchanged public
+MinION, PromethION, short, 1D2, RNA and two-MinION/combined inputs and the same
+cutoffs and the original default `--add-stat FALSE`. The optional audit captured 85 actual R plots; numerical acceptance
+compares corresponding built bins/cells, never resized image pixels.
+
+| Scope | Comparable panel/layer groups | Maximum coordinate error | Count L1 |
+| --- | ---: | ---: | ---: |
+| Public MinION | 10 | 0 | 0 |
+| Public PromethION | 11 | 0 | 0 |
+| Public short run | 10 | 0 | 0 |
+| Public 1D2 | 10 | 0 | 0 |
+| Public direct RNA | 10 | 0 | 0 |
+| Two MinION sources and pooled histograms | 24 | 0 | 0 |
+
+The **75 comparable groups** match exactly in this environment, including all
+516 occupied PromethION cells / 75,160 reads. Every cell's six coordinates and
+count are checked. Histograms check All/Q populations, every empty/occupied bin,
+midpoints and both edges. Limits are shared across All/Q facets, with pooled
+limits recomputed from pooled observations. Q reference histograms include zero
+lengths without changing canonical basecalled-read quality statistics.
+
+Another **14 original channel read-count panels intentionally differ**. For each,
+independent input counts prove both native true-`n` membership and original
+`n(n+1)/2` membership, including counts outside captured limits. Only a zero-error
+proof permits that classification; unexplained membership failures still fail.
+The bases, mean and median channel families match original R. Corrected-count
+30-bin geometry also has separate actual-R synthetic goldens; the defective
+original read-count distribution is not advertised as numerically identical.
+
+Coordinate checks retain absolute `1e-12` plus relative `1e-13` tolerance;
+counts and row counts require exact equality. Observed zero error is stronger
+than that tolerance, not a reason to broaden it. Nine synthetic ggplot cases
+exercise constant/singleton/empty groups, boundaries/ties, signed Q, zero-length
+Q training and wide tails; four corrected channel families have 30-bin goldens.
+Original R failures for empty/nonfinite/constant-axis plots are recorded, not
+fabricated as successful reference figures. Native reports show explicit
+unavailable states where the original cannot produce a finite layer.
+
+Evidence: [machine-readable bin validation](../tests/reference/bin-validation-summary.json),
+[synthetic layers](../tests/reference/bin-layers-golden.json), and the
+[updated A/B/C gallery](figures/minionqc-comparison/README.md).
+Thirteen individual/combined JSON reports match prior audit reports after
+removing only the additive plotting field. This is distinct from the unchanged
+18-case strict GAM evidence: **1,542 primary / 1,912 intermediate differences**
+remain. No GAM/LOESS/KDE source, target or tolerance was changed.
+
+Reproduce with the existing environment and clean pinned public checkout:
+
+```sh
+Rscript tests/reference/bin_layers.R tests/reference/bin-layers-golden.json
+python3 tests/reference/plot_audit.py /path/to/pinned/minion_qc \
+  --rscript /path/to/Rscript --reference-bins \
+  --output benchmark-results/bin-audit --gallery benchmark-results/bin-gallery
+```
+
+Native `--add-stat` retains canonical basecalled annotations without retraining
+bins. Original R text/line annotation layers can expand scale limits; numerical
+equality under R `--add-stat TRUE` is outside this verified default-layer
+contract. This is an explicit presentation-policy difference, not an accepted
+zero residual or a change to any reference target.
+
+Original R/native images use different palettes, typography and physical sizing.
+B shows actual canonical Rust exports in explicit reference-bin mode; C shows
+matched-bin/cell count residuals and boundary-error annotations. The corrected
+channel-count panel instead shows separate distributions with the proven formula
+difference. Bin agreement is **not** pixel-identical rendering. Native hourly,
+cumulative and retained-yield presentation differences remain tracked in #20/#21;
+#8, #12 and the parent audit remain separate acceptance concerns.
 
 ## Strict numerical GAM limitation
 
@@ -367,12 +445,12 @@ ImageMagick, Python plotting libraries, browser or network access.
 
 | Track | Required next step |
 | --- | --- |
-| [#19 automatic histogram/bin2d layers](https://github.com/PhoenixEmik/ONTRunQC/issues/19) | Compare transformed bin boundaries/counts; retain existing fixed-bin metrics and corrected true channel counts. |
+| [#19 automatic histogram/bin2d layers](https://github.com/PhoenixEmik/ONTRunQC/issues/19) | Verified opt-in layers under documented R settings: 75 exact groups, 14 proven count-formula exceptions; native defaults retained. |
 | [#20 hourly and cumulative paths](https://github.com/PhoenixEmik/ONTRunQC/issues/20) | Add explicitly labelled compatible series with population, zero-fill and bounded-display guarantees. |
 | [#21 length-yield display](https://github.com/PhoenixEmik/ONTRunQC/issues/21) | Preserve exact threshold answers while quantifying/improving interpolation and optional crop behavior. |
 | [#12 original GAM](https://github.com/PhoenixEmik/ONTRunQC/issues/12) | Keep original failing targets/tolerances; no closure while the strict contract remains unmet. |
 | [#8 combined acceptance](https://github.com/PhoenixEmik/ONTRunQC/issues/8) | Preserve its fitted-curve requirement or obtain explicit approval for an acceptance separation. |
-| [#18 audit review](https://github.com/PhoenixEmik/ONTRunQC/issues/18) | Review the published source mapping, gallery and discrepancy evidence; proposed paths are not already implemented. |
+| [#18 audit review](https://github.com/PhoenixEmik/ONTRunQC/issues/18) | Review the published source mapping, gallery and discrepancy evidence; #19 is verified, while #20/#21 remain unimplemented. |
 
 Streaming gzip (#17) is implemented independently of these scientific parity
 gates. The engineering ledger preserves historical decisions; this comparison

@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tests'))
 from minionqc_differential import cases, digest
 from minionqc_reference import REVISION
-from plot_checks import checks as plot_checks, curve_measurements, input_rows
+from plot_checks import checks as plot_checks, curve_measurements, input_rows, compatible_bin_checks
 
 # Every source plot family has an actual renderer mapping, not a redrawn proxy.
 FIGURES = {
@@ -67,6 +67,7 @@ def write_gallery_index(gallery, evidence):
         'coverage, numerical layer agreement and visual equivalence are separate claims.', '',
         '**Strict GAM parity remains Partial:** the original-R comparison retains '
         '1,542 fit/uncertainty discrepancies. These images do not replace that evidence.', '',
+        *(['**Plot mode:** `--minionqc-plot-bins`. Histogram/Bin2D geometry and counts use the original statistical layers; true channel counts intentionally correct the upstream count defect.', ''] if evidence.get('plotting_mode')=='minionqc_plot_bins' else []),
         '## Browse by analysis', '',
         '- [Single MinION flowcell](#single-minion-flowcell)',
         '- [Device and legacy checks](#device-and-legacy-checks)',
@@ -255,8 +256,29 @@ def diagnostic(plot, report, family, multi=False):
         p = [[v['channel'],v['total_yield_bp']/1e9] for v in report['channels']]
         r = sorted([v['channel'],v['value']/1e9] for v in plot.get('source_tiles',[]) if v['Q_cutoff']=='All reads')
         description = 'C compares exact yield/channel; source spatial cells and panel/population totals retained. A/B share verified mapping, different missing-cell styling and palette.'
+    compatible = report.get('minionqc_plot_bins')
+    comparable=False
+    if compatible and ('length_histogram' in family or 'q_histogram' in family):
+        key='length' if 'length_histogram' in family else 'quality'
+        p=[[b['x'],b['count']] for b in compatible[key]['all']]
+        description='Original R vs explicit --minionqc-plot-bins, All summary population; selected facet separately validated. Log10 length before StatBin; Q includes zero lengths. Matched-bin residuals; see exact edge/count checks.'
+        comparable=True
+    elif compatible and family=='length_vs_q' and layer and layer['stat']=='StatBin2d':
+        r=[[i,v['count']] for i,v in enumerate(sorted(rows_of(layer),key=lambda v:(v['x'],v['y']))) ]
+        p=[[i,v['count']] for i,v in enumerate(sorted(compatible['length_vs_q']['cells'],key=lambda v:(v['x'],v['y']))) ]
+        description='Original R vs explicit --minionqc-plot-bins: corresponding occupied cells ordered by transformed X/Y; cell counts and all six boundaries independently compared. C uses cell index, not a reconstructed 1D distribution.'
+        comparable=True
+    elif compatible and family=='channel_summary':
+        hist=next(v['histogram'] for v in compatible['channels'] if v['metric']=='read_count')
+        p=[[b['x'],b['count']] for b in hist['all']]
+        description='Explicit compatible binning on TRUE channel counts; original R uses n(n+1)/2. This intentional upstream-defect correction changes values AND bin limits; no false zero residual. Other three channel families validated separately.'
+    if compatible and comparable:
+        scope='combined' if plot['directory']=='combinedQC' else plot['directory']
+        validation=compatible_bin_checks(dict(plots=[plot]),{scope:report})
+        counts['compatible_layer_checks']=validation
+        description += ' Exact count L1='+str(sum(c['count_L1'] for c in validation))+'; max boundary error='+str(max((c['maximum_absolute_boundary_error'] for c in validation),default=0))+'.'
     residual = []
-    if (family in ('length_by_hour','q_by_hour','length_distributions','q_distributions','yield_over_time','gb_per_channel_overview','flowcell_overview') or (family=='length_vs_q' and layer and layer['stat']=='StatIdentity')) and r and p:
+    if (comparable or family in ('length_by_hour','q_by_hour','length_distributions','q_distributions','yield_over_time','gb_per_channel_overview','flowcell_overview') or (family=='length_vs_q' and layer and layer['stat']=='StatIdentity')) and r and p:
         # No interpolation across unlike histogram bins. Only compare matching X.
         reference_x = {round(x,10): y for x,y in r}
         residual = [[x,y-reference_x[round(x,10)]] for x,y in p if round(x,10) in reference_x]
@@ -266,7 +288,7 @@ def diagnostic(plot, report, family, multi=False):
     counts.update(native_display_points=len(p), reference_diagnostic_points=len(r),
                   native_total_records=report['metrics']['total_records'],
                   native_basecalled_reads=report['metrics']['basecalled_reads'])
-    histogram = 'histogram' in family or family == 'channel_summary' or (family=='length_vs_q' and layer and layer['stat']=='StatBin2d')
+    histogram = not comparable and ('histogram' in family or family == 'channel_summary' or (family=='length_vs_q' and layer and layer['stat']=='StatBin2d'))
     if 'length_histogram' in family or family in ('length_vs_q','length_distributions'):
         xlabel = 'log10(read length / bp)'
     elif 'q_histogram' in family or family=='q_distributions': xlabel = 'Mean read Q-score'
@@ -274,7 +296,8 @@ def diagnostic(plot, report, family, multi=False):
     elif family=='channel_summary': xlabel = 'Reads per channel (upstream count bug)'
     elif family in ('gb_per_channel_overview','flowcell_overview'): xlabel = 'Channel ID'
     else: xlabel = 'Time from run start (hours)'
-    ylabel = ('Count per bin' if histogram else 'Density per X unit' if 'distributions' in family else
+    if comparable and family=='length_vs_q': xlabel='Occupied cell index (sorted transformed X, Y)'
+    ylabel = ('Count per bin' if histogram or comparable else 'Density per X unit' if 'distributions' in family else
               'Yield (Gb)' if 'yield' in family or family=='gb_per_channel_overview' else
               'Read length (bp)' if family=='length_by_hour' else 'Mean read Q-score' if family=='q_by_hour' else 'Reads')
     return dict(reference=r, native=p, residual=residual, histogram=histogram, x_label=xlabel,y_label=ylabel, description=description, measurements=counts)
@@ -309,6 +332,7 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT/'benchmark-results/plot-audit')
     parser.add_argument('--gallery', type=Path, default=ROOT/'docs/figures/minionqc-comparison')
     parser.add_argument('--case', action='append', choices=['minion','promethion','short','1d2','rna','combined'])
+    parser.add_argument('--reference-bins', action='store_true', help='Validate/render explicit ggplot-compatible bins without changing original R targets')
     parser.add_argument('--reuse', action='store_true', help='Reuse only hash-matching captured reports, not cached conclusions')
     args = parser.parse_args()
     upstream=args.upstream.resolve(); output=args.output.resolve(); gallery=args.gallery.resolve()
@@ -328,7 +352,7 @@ def main():
                    source_sha256=digest(upstream/'MinIONQC.R'),capture_sha256=digest(scripts/'capture.R'),
                    helper_sha256=digest(scripts/'plot_layers.R'),probe_sha256=digest(scripts/'probe.rs'),
                    native_sources={str(p.relative_to(ROOT)):digest(p) for p in sorted((ROOT/'src').glob('*')) if p.is_file()},
-                   lockfile=digest(ROOT/'Cargo.lock'))
+                   lockfile=digest(ROOT/'Cargo.lock'),reference_bins=args.reference_bins)
         stampfile=case/'stamp.json'
         previous=json.loads(stampfile.read_text()) if stampfile.exists() else {}
         same_native = all(previous.get(k)==v for k,v in stamp.items() if k not in ('capture_sha256','helper_sha256'))
@@ -345,6 +369,7 @@ def main():
             env=dict(os.environ,PG_PROBE_INPUTS=json.dumps(list(map(str,copied))),PG_PROBE_CUTOFF=str(cutoff),
                      PG_PROBE_OUTPUT=str(case/'probe.json'),PG_PROBE_CURVES='1',
                      PG_PROBE_FIGURES=str(case/'native'),PG_PROBE_LAYOUT='promethion-3000' if name=='promethion' else 'minion-r9.5')
+            if args.reference_bins: env['PG_PROBE_PLOT_BINS']='1'
             run(['cargo','test','--release','--locked','reference_probe::export_report','--','--ignored','--exact'],case/'Rust.log',env)
         stampfile.write_text(json.dumps(stamp,indent=2)+'\n')
         assert [digest(p) for p in copied]==stamp['inputs'], 'Copied audit input changed during processing'
@@ -359,6 +384,8 @@ def main():
             basecalled_reads=reports['combined']['metrics']['basecalled_reads'],
             yield_bp=reports['combined']['metrics']['total_yield_bp'],
             display_differences=curve_measurements(reports['combined'],list(input_rows(copied)))))
+        if args.reference_bins:
+            numerical_checks.extend(dict(case=name,**check) for check in compatible_bin_checks(capture,reports,copied,cutoff))
         for plot in capture['plots']:
             family=plot['file'].rsplit('.',1)[0]
             multi=plot['directory']=='combinedQC' and not family.startswith('combined_')
@@ -366,6 +393,11 @@ def main():
             report=json.loads((case/'native'/directory/'report.json').read_text())
             target=(MULTI if multi and family in MULTI else FIGURES).get(family)
             if name=='promethion' and family=='length_vs_q': target='length-quality-all'
+            if args.reference_bins:
+                if 'length_histogram' in family: target='reference-length-all'
+                elif 'q_histogram' in family: target='reference-q-all'
+                elif family=='channel_summary': target='reference-channel-read_count-all'
+                elif name=='promethion' and family=='length_vs_q': target='reference-bin2d'
             candidates=list((case/'native'/directory/'figures').glob('*.png'))
             png=case/'native'/directory/'figures'/f'{target}.png'
             if not png.exists():
@@ -383,6 +415,7 @@ def main():
             # Keep one readable A/B/C per family, plus distinct legacy/device cases.
             selected=(name=='minion' or (name=='combined' and directory=='combined') or
                       (name in ('promethion','1d2') and family=='length_vs_q') or
+                      (args.reference_bins and name=='promethion' and family in ('length_histogram','q_histogram','channel_summary')) or
                       (name=='rna' and family=='q_histogram') or (name=='short' and family=='reads_per_hour'))
             card=None
             if selected:
@@ -393,10 +426,18 @@ def main():
                 elif family == 'channel_summary': companions = ['channel-summary-'+m for m in ['total_yield_bp','mean_read_length_bp','median_read_length_bp']]
                 elif multi and family in ('length_distributions','q_distributions','length_by_hour','q_by_hour'):
                     companions = [target.rsplit('-',1)[0]+'-true']
+                if args.reference_bins:
+                    if 'length_histogram' in family: companions=['reference-length-q-selected']
+                    elif 'q_histogram' in family: companions=['reference-q-q-selected']
+                    elif family=='channel_summary': companions=['reference-channel-'+m+'-'+p for m in ('read_count','total_yield_bp','mean_read_length_bp','median_read_length_bp') for p in ('all','q-selected') if 'reference-channel-'+m+'-'+p != target]
                 native_panel = png
                 if companions:
                     native_panel = case/f'{identity}-native-panels.png'
-                    run(['magick',png,*[png.with_name(c+'.png') for c in companions],'-append',native_panel],case/'image.log')
+                    if args.reference_bins and family=='channel_summary':
+                        panels=[png.with_name(f'reference-channel-{m}-{p}.png') for p in ('all','q-selected') for m in ('total_yield_bp','read_count','mean_read_length_bp','median_read_length_bp')]
+                        run(['magick','montage',*panels,'-tile','4x2','-geometry','+4+4',native_panel],case/'image.log')
+                    else:
+                        run(['magick',png,*[png.with_name(c+'.png') for c in companions],'-append',native_panel],case/'image.log')
                 images=[case/'minionqc'/plot['directory']/plot['file'],native_panel,case/f'{identity}-difference.png']
                 panels=[]
                 for i,(image,label) in enumerate(zip(images,['A  Original MinIONQC','B  Actual ONTRunQC','C  Numerical diagnostic'])):
@@ -412,6 +453,7 @@ def main():
     edge = rna_missing_labels(args,upstream,output) if not args.case or 'rna' in args.case else None
     result=dict(reference_commit=REVISION,reference_source_sha256=digest(upstream/'MinIONQC.R'),
                 reference_versions=dict(r='4.4.1',ggplot2='3.5.1',mgcv='1.9-1'),
+                plotting_mode='minionqc_plot_bins' if args.reference_bins else 'native_fixed_bins',
                 native_probe_sha256=digest(scripts/'probe.rs'),capture_script_sha256=digest(scripts/'capture.R'),
                 audit_script_sha256=digest(Path(__file__)),lockfile_sha256=digest(ROOT/'Cargo.lock'),
                 render_note='Original R smallfigures TRUE, PNG 60 DPI for audit readability; native canonical figures 300 DPI; gallery resized and palette-reduced to 256 colours only for documentation. Original files remain unchanged.',

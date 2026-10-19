@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from plot_audit import FIGURES, MULTI, first_group, histogram_points, write_gallery_index
-from plot_checks import checks, result
+from plot_checks import checks, result, compatible_bin_checks
 
 
 class PlotAuditTests(unittest.TestCase):
@@ -55,6 +55,34 @@ class PlotAuditTests(unittest.TestCase):
             measured=checks(capture,{'source_001':{}},[path],7)
             self.assertEqual(measured[0]['status'],'exact_match')
             self.assertEqual(measured[0]['reference'],2)
+
+    def test_reference_bin_mismatches_are_not_hidden_by_total_conservation(self):
+        bins=[dict(x=0,xmin=-.5,xmax=.5,count=2),dict(x=1,xmin=.5,xmax=1.5,count=1)]
+        capture=dict(plots=[dict(file='q_histogram.png',directory='source_001',panels=[dict(PANEL=1,Q_cutoff='All reads')],layers=[dict(stat='StatBin',audit=dict(data=[dict(PANEL=1,**b) for b in bins]))])])
+        native=json.loads(json.dumps(bins))
+        reports={'source_001':dict(minionqc_plot_bins=dict(quality=dict(all=native)))}
+        self.assertEqual(compatible_bin_checks(capture,reports)[0]['status'],'exact_match')
+        native[0]['count']=1;native[1]['count']=2
+        failed=compatible_bin_checks(capture,reports)[0]
+        self.assertEqual(failed['status'],'unexplained_difference')
+        self.assertEqual(failed['count_L1'],2)
+        native[0]['count']=2;native[1]['count']=1;native[0]['xmin']-=.01
+        self.assertEqual(compatible_bin_checks(capture,reports)[0]['failed_coordinates'],1)
+
+    def test_channel_count_exception_requires_independent_formula_proof(self):
+        def bin(x,count): return dict(x=x,xmin=x-.5,xmax=x+.5,count=count)
+        reference=[bin(1,1),bin(3,1)]
+        native=[bin(1,1),bin(2,1)]
+        capture=dict(plots=[dict(file='channel_summary.png',directory='source_001',panels=[dict(PANEL=1,Q_cutoff='All reads',variable='Number of reads per channel')],layers=[dict(stat='StatBin',audit=dict(data=[dict(PANEL=1,**b) for b in reference]))])])
+        reports={'source_001':dict(minionqc_plot_bins=dict(channels=[dict(metric='read_count',histogram=dict(all=native))]))}
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'summary.tsv'
+            path.write_text('channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t10\t9\n1\t1\t20\t9\n2\t2\t30\t9\n')
+            row=compatible_bin_checks(capture,reports,[path],7)[0]
+            self.assertEqual(row['status'],'intentional_upstream_defect_difference')
+            self.assertEqual(set(row['upstream_defect_proof'].values()),{0})
+            native[0]['count']=3
+            self.assertEqual(compatible_bin_checks(capture,reports,[path],7)[0]['status'],'unexplained_difference')
 
     def test_committed_gallery_has_resolvable_cards_and_original_hashes(self):
         directory=Path(__file__).resolve().parents[2]/'docs/figures/minionqc-comparison'

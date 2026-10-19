@@ -16,6 +16,8 @@ Each card uses identical source bytes and Q cutoff. File-scoped validation match
 
 **Strict GAM parity remains Partial:** the original-R comparison retains 1,542 fit/uncertainty discrepancies. These images do not replace that evidence.
 
+**Plot mode:** `--minionqc-plot-bins`. Histogram/Bin2D geometry and counts use the original statistical layers; true channel counts intentionally correct the upstream count defect.
+
 ## Browse by analysis
 
 - [Single MinION flowcell](#single-minion-flowcell)
@@ -31,7 +33,7 @@ Single-source distributions, temporal views, channel summaries and physical/read
 
 ### length_histogram · minion · source_001
 
-Counts on DIFFERENT grids: R 300 automatic log10 bins; ONTRunQC fixed bp intervals (centres shown). No binwise residual is defined.
+Original R vs explicit --minionqc-plot-bins, All summary population; selected facet separately validated. Log10 length before StatBin; Q includes zero lengths. Matched-bin residuals; see exact edge/count checks. Exact count L1=0; max boundary error=0.0.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populations follow the A/B labels and C caption.
 
@@ -41,7 +43,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populatio
 
 ### q_histogram · minion · source_001
 
-Counts on DIFFERENT grids: R 300 automatic Q bins; ONTRunQC fixed Q intervals. Zero-length Q population differs.
+Original R vs explicit --minionqc-plot-bins, All summary population; selected facet separately validated. Log10 length before StatBin; Q includes zero lengths. Matched-bin residuals; see exact edge/count checks. Exact count L1=0; max boundary error=0.0.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populations follow the A/B labels and C caption.
 
@@ -121,7 +123,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populatio
 
 ### channel_summary · minion · source_001
 
-Original read-count statistic is n(n+1)/2 (BUG); Rust uses true n. Both show channel frequency, with different bin boundaries.
+Explicit compatible binning on TRUE channel counts; original R uses n(n+1)/2. This intentional upstream-defect correction changes values AND bin limits; no false zero residual. Other three channel families validated separately.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populations follow the A/B labels and C caption.
 
@@ -141,15 +143,45 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populatio
 
 PromethION, short-run, 1D2 and direct-RNA examples exercise distinct schemas and plot populations.
 
+<a id="promethion--length_histogram--source_001"></a>
+
+### length_histogram · promethion · source_001
+
+Original R vs explicit --minionqc-plot-bins, All summary population; selected facet separately validated. Log10 length before StatBin; Q includes zero lengths. Matched-bin residuals; see exact edge/count checks. Exact count L1=0; max boundary error=0.0.
+
+Q cutoff: 7; input SHA-256 prefixes: dd508d9dc645519e. Axes, units and populations follow the A/B labels and C caption.
+
+![promethion length_histogram: original, native and numerical diagnostic](promethion-source_001-length_histogram.png)
+
+<a id="promethion--q_histogram--source_001"></a>
+
+### q_histogram · promethion · source_001
+
+Original R vs explicit --minionqc-plot-bins, All summary population; selected facet separately validated. Log10 length before StatBin; Q includes zero lengths. Matched-bin residuals; see exact edge/count checks. Exact count L1=0; max boundary error=0.0.
+
+Q cutoff: 7; input SHA-256 prefixes: dd508d9dc645519e. Axes, units and populations follow the A/B labels and C caption.
+
+![promethion q_histogram: original, native and numerical diagnostic](promethion-source_001-q_histogram.png)
+
 <a id="promethion--length_vs_q--source_001"></a>
 
 ### length_vs_q · promethion · source_001
 
-C sums each length column over Q: R automatic log10 bin2d versus fixed log2 length intervals. Different boundaries; A/B show actual 2D geometry. Native final overflow is plotted at its lower bound.
+Original R vs explicit --minionqc-plot-bins: corresponding occupied cells ordered by transformed X/Y; cell counts and all six boundaries independently compared. C uses cell index, not a reconstructed 1D distribution. Exact count L1=0; max boundary error=0.0.
 
 Q cutoff: 7; input SHA-256 prefixes: dd508d9dc645519e. Axes, units and populations follow the A/B labels and C caption.
 
 ![promethion length_vs_q: original, native and numerical diagnostic](promethion-source_001-length_vs_q.png)
+
+<a id="promethion--channel_summary--source_001"></a>
+
+### channel_summary · promethion · source_001
+
+Explicit compatible binning on TRUE channel counts; original R uses n(n+1)/2. This intentional upstream-defect correction changes values AND bin limits; no false zero residual. Other three channel families validated separately.
+
+Q cutoff: 7; input SHA-256 prefixes: dd508d9dc645519e. Axes, units and populations follow the A/B labels and C caption.
+
+![promethion channel_summary: original, native and numerical diagnostic](promethion-source_001-channel_summary.png)
 
 <a id="short--reads_per_hour--source_001"></a>
 
@@ -175,7 +207,7 @@ Q cutoff: 8; input SHA-256 prefixes: c71245ad265ed1a1. Axes, units and populatio
 
 ### q_histogram · rna · source_001
 
-Counts on DIFFERENT grids: R 300 automatic Q bins; ONTRunQC fixed Q intervals. Zero-length Q population differs.
+Original R vs explicit --minionqc-plot-bins, All summary population; selected facet separately validated. Log10 length before StatBin; Q includes zero lengths. Matched-bin residuals; see exact edge/count checks. Exact count L1=0; max boundary error=0.0.
 
 Q cutoff: 7; input SHA-256 prefixes: 1d1860dabc15ed69. Axes, units and populations follow the A/B labels and C caption.
 
@@ -189,7 +221,7 @@ Pooled distributions and per-source comparisons are labeled separately; pooled m
 
 ### combined_length_histogram · combined · combined
 
-Counts on DIFFERENT grids: R 300 automatic log10 bins; ONTRunQC fixed bp intervals (centres shown). No binwise residual is defined.
+Original R vs explicit --minionqc-plot-bins, All summary population; selected facet separately validated. Log10 length before StatBin; Q includes zero lengths. Matched-bin residuals; see exact edge/count checks. Exact count L1=0; max boundary error=0.0.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
 
@@ -199,7 +231,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, u
 
 ### combined_q_histogram · combined · combined
 
-Counts on DIFFERENT grids: R 300 automatic Q bins; ONTRunQC fixed Q intervals. Zero-length Q population differs.
+Original R vs explicit --minionqc-plot-bins, All summary population; selected facet separately validated. Log10 length before StatBin; Q includes zero lengths. Matched-bin residuals; see exact edge/count checks. Exact count L1=0; max boundary error=0.0.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
 

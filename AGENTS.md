@@ -10,6 +10,7 @@ ONTRunQC is a single-package Rust 2024 CLI for post-sequencing QC of PromethION 
 | `input.rs`, `record.rs` | Validate streaming TSV and hold borrowed fields. |
 | `batch.rs`, `integrity.rs` | Discover and route run chunks; open plain/gzip streams above canonical metadata, pass-membership and optional raw-byte digest guards. |
 | `metrics.rs` | Own QC calculations. |
+| `plot_bins.rs` | Opt-in ggplot-compatible histogram/Bin2D layers, using bounds plus a guarded streaming pass; never replace canonical statistics. |
 | `trends.rs`, `trend_knots.rs`, `density.rs` | Optional raw-read fits, bounded exact knot selection and reference-grid estimation. |
 | `layout.rs`, `minion.rs` | Explicit reference-based channel maps and exact points or bounded full-count display rasters. |
 | `report.rs`, `export.rs`, `figure_render.rs` | Stage outputs, emit YAML/canonical SVG, optionally convert native formats using bundled `assets/fonts/`. |
