@@ -1291,7 +1291,11 @@ fn read_time_plot(out: &mut String, report: &Report, quality: bool) {
 
 fn length_quality_heatmaps(out: &mut String, report: &Report) {
     let h = &report.diagnostics.length_quality_histogram;
-    out.push_str("<h3 id=\"length-quality\">Read length vs Q-score</h3><p class=\"annotation\">Log₂ read-length intervals and 2-point Q-score intervals; zero-length records excluded. The final length column (≥ 1,048,576 bp) and Q-score row (≥ 50) are open-ended overflow bins, drawn with dashed borders. High values remain counted. Both maps use the same indigo log-count scale; filtering is the native flag.</p><div class=\"chart-grid\">");
+    out.push_str("<h3 id=\"length-quality\">Read length vs Q-score</h3><p class=\"annotation\">Log₂ read-length intervals and 2-point Q-score intervals; zero-length records excluded. The final length column (≥ 1,048,576 bp) and Q-score row (≥ 50) are open-ended overflow bins, drawn with dashed borders. High values remain counted. Both maps use the same indigo log-count scale; filtering is the native flag.</p>");
+    if h.qscore_lower_bounds.first().is_some_and(|v| *v < 0.0) {
+        out.push_str("<p class=\"annotation\">Legacy negative Q-scores occupy a separate below-zero category. Its stored lower boundary is a finite sentinel, not an observed minimum or a proportional Q-score range.</p>");
+    }
+    out.push_str("<div class=\"chart-grid\">");
     let maximum = h
         .all_read_counts
         .iter()
@@ -1356,6 +1360,7 @@ fn length_quality_map(
     }
     let columns = histogram.length_lower_bounds_bp.len();
     let rows = histogram.qscore_lower_bounds.len();
+    let underflow = histogram.qscore_lower_bounds[0] < 0.0;
     let width = (RIGHT - LEFT) / columns as f64;
     let height = 14.0;
     let bottom = 48.0 + rows as f64 * height;
@@ -1388,14 +1393,34 @@ fn length_quality_map(
             write!(out, "<rect class=\"joint-cell\" x=\"{x:.2}\" y=\"{y:.2}\" width=\"{width:.2}\" height=\"{height}\" fill=\"hsl(225 45% {:.2}%)\" data-length-bin=\"{l}\" data-qscore-bin=\"{q}\" data-read-count=\"{reads}\" role=\"img\" aria-label=\"{}\"><title>{}</title></rect>", 97.0 - 65.0 * intensity, escape(&label), escape(&label)).unwrap();
         }
     }
-    for (q, &bound) in histogram.qscore_lower_bounds.iter().enumerate().step_by(5) {
-        let y = bottom - q as f64 * height - if q + 1 == rows { height / 2.0 } else { 0.0 };
+    for (q, &bound) in histogram.qscore_lower_bounds.iter().enumerate() {
+        // An inserted categorical underflow row must neither expose -MAX as an
+        // observed Q nor shift the nonnegative ticks from 0/10/20 to 8/18/28.
+        let negative = underflow && q == 0;
+        let regular = q.saturating_sub(usize::from(underflow)) % 5 == 0;
+        if !negative && (!regular || (underflow && bound == 0.0)) {
+            continue;
+        }
+        let y = bottom
+            - q as f64 * height
+            - if negative || q + 1 == rows {
+                height / 2.0
+            } else {
+                0.0
+            };
+        let label = if negative {
+            "&lt; 0".to_owned()
+        } else {
+            format!(
+                "{}{}",
+                if q + 1 == rows { "≥ " } else { "" },
+                decimal(bound)
+            )
+        };
         write!(
             out,
-            "<text class=\"tick\" x=\"68\" y=\"{:.2}\" text-anchor=\"end\">{}{}</text>",
+            "<text class=\"tick\" x=\"68\" y=\"{:.2}\" text-anchor=\"end\">{label}</text>",
             y + 4.0,
-            if q + 1 == rows { "≥ " } else { "" },
-            decimal(bound)
         )
         .unwrap();
     }
@@ -2657,6 +2682,9 @@ fn length_interval(lower: u64, upper: Option<u64>) -> String {
 }
 
 fn quality_interval(lower: f64, upper: Option<f64>) -> String {
+    if lower == -f64::MAX && upper == Some(0.0) {
+        return "below 0".to_owned();
+    }
     upper.map_or_else(
         || format!("≥ {}", decimal(lower)),
         |u| format!("[{}, {})", decimal(lower), decimal(u)),

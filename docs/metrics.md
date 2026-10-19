@@ -562,6 +562,11 @@ validated and excluded before QC aggregation; excluded rows do not contribute
 zero-length/basecalled/filtering metrics. This reproduces MinIONQC's named-control
 policy, not a universal RNA filtering recommendation. Source rows with malformed
 required values still fail, unlike upstream's silent malformed-row removal.
+Legacy blank/`NA` calibration labels are unknown, so they are retained. Pinned
+MinIONQC's `subset(label != "YHR174W")` also drops missing labels: a synthetic
+10/20/30/40-bp missing/NA/ordinary/control fixture retains 3 reads/60 bp here and
+1 read/30 bp in actual R. This intentional population difference is tested; no
+unknown label is inferred to be a control.
 
 The explicit `minion-r9.5` map is the exact upstream p1..p8/q1..q8 construction,
 zero-based, 32 rows ×16 columns. Left block starts: 33,481,417,353,289,225,161,97;

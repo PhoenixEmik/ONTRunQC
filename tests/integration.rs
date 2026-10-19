@@ -2293,6 +2293,23 @@ fn direct_rna_controls_are_excluded_and_counted_separately() {
 }
 
 #[test]
+fn unknown_rna_calibration_labels_are_retained_instead_of_assumed_controls() {
+    // Pinned R subset(label != "YHR174W") also drops missing labels. Our
+    // documented exact-name policy retains unknown observations explicitly.
+    let report = TestDirectory::new().analyze(
+        "channel\tstart_time\tsequence_length_template\tmean_qscore_template\tcalibration_strand_genome_template\n\
+         1\t0\t10\t9\t\n\
+         1\t1\t20\t9\tNA\n\
+         1\t2\t30\t9\tno_match\n\
+         1\t3\t40\t9\tYHR174W\n",
+    );
+    assert_eq!(report["input"]["input_records"], 4);
+    assert_eq!(report["input"]["excluded_control_records"], 1);
+    assert_eq!(report["metrics"]["total_records"], 3);
+    assert_eq!(report["metrics"]["total_yield_bp"], 60);
+}
+
+#[test]
 fn legacy_signed_qscores_are_preserved_with_histogram_conservation() {
     let directory = TestDirectory::new();
     let input = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t5\t-0.1\n1\t900\t10\t7\n";
@@ -2315,6 +2332,23 @@ fn legacy_signed_qscores_are_preserved_with_histogram_conservation() {
             .map(|v| v.as_u64().unwrap())
             .sum::<u64>(),
         2
+    );
+    let html = directory.html();
+    let joint = html
+        .split("id=\"length-quality-all-caption\"")
+        .nth(1)
+        .unwrap()
+        .split("</figure>")
+        .next()
+        .unwrap();
+    assert!(joint.contains("&lt; 0"));
+    assert!(joint.contains(">10</text>") && joint.contains(">≥ 50</text>"));
+    assert!(!joint.contains(">8</text>") && !joint.contains("-1.798e308"));
+    assert!(html.contains("below 0"));
+    // The finite sentinel remains in canonical JSON; only its display changes.
+    assert_eq!(
+        report["diagnostics"]["length_quality_histogram"]["qscore_lower_bounds"][0],
+        -f64::MAX
     );
     let extreme = input
         .replace("-0.1", "-1.7976931348623157e308")
