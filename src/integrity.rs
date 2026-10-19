@@ -1,10 +1,11 @@
 //! Source guards for streaming/repeated reads; not a filesystem snapshot or lock.
 use anyhow::{Context, Result, ensure};
+use flate2::bufread::MultiGzDecoder;
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs::{self, File, Metadata},
-    io::{self, Read},
+    io::{self, BufRead, BufReader, Read},
     path::{Path, PathBuf},
     sync::Mutex,
     time::SystemTime,
@@ -178,6 +179,31 @@ impl Source {
             hash: self.verify_content.then(Sha256::new),
         })
     }
+    /// Decode above the raw-byte guard: identities, byte counts and digests
+    /// always refer to the original file, including its gzip headers/trailers.
+    pub fn open_summary(&self, stage: &'static str) -> Result<SummaryPass<'_>> {
+        let mut input = BufReader::with_capacity(64 * 1024, self.open(stage)?);
+        let magic = input.fill_buf().with_context(|| {
+            format!(
+                "cannot inspect input {} during {stage}",
+                self.path.display()
+            )
+        })?;
+        let gzip = self.path.extension().is_some_and(|ext| ext == "gz")
+            || magic.starts_with(&[0x1f, 0x8b]);
+        let reader = if gzip {
+            Stream::Gzip(Box::new(MultiGzDecoder::new(input)))
+        } else {
+            Stream::Plain(input)
+        };
+        Ok(SummaryPass {
+            reader,
+            source: self,
+            stage,
+            complete: false,
+            failed: false,
+        })
+    }
     pub fn validate_membership(&self, membership: Membership, stage: &str) -> Result<()> {
         let mut saved = self
             .membership
@@ -198,13 +224,76 @@ impl Source {
     /// Strong mode rereads contributing sources once here; ordinary mode stats only.
     pub fn verify_for_publication(&self) -> Result<()> {
         if self.verify_content {
-            let mut pass = self.open("publication content verification")?;
+            let mut pass = self.open_summary("publication content verification")?;
             io::copy(&mut pass, &mut io::sink())?;
             pass.finish()?;
         } else {
             self.check("publication")?;
         }
         Ok(())
+    }
+}
+
+// One decoder per pass; never a decompressed file or retained read dataset.
+enum Stream<'a> {
+    Plain(BufReader<Pass<'a>>),
+    Gzip(Box<MultiGzDecoder<BufReader<Pass<'a>>>>),
+}
+
+pub struct SummaryPass<'a> {
+    reader: Stream<'a>,
+    source: &'a Source,
+    stage: &'static str,
+    complete: bool,
+    failed: bool,
+}
+impl Read for SummaryPass<'_> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        if output.is_empty() {
+            return Ok(0);
+        }
+        let (kind, result) = match &mut self.reader {
+            Stream::Plain(reader) => ("plain TSV", reader.read(output)),
+            Stream::Gzip(reader) => ("gzip", reader.read(output)),
+        };
+        match result {
+            Ok(n) => {
+                self.complete |= n == 0;
+                Ok(n)
+            }
+            Err(error) => {
+                self.failed = true;
+                Err(io::Error::new(
+                    error.kind(),
+                    format!(
+                        "cannot read {kind} input {} during {}: {error}",
+                        self.source.path.display(),
+                        self.stage
+                    ),
+                ))
+            }
+        }
+    }
+}
+impl SummaryPass<'_> {
+    pub fn finish(self) -> Result<()> {
+        ensure!(
+            self.complete && !self.failed,
+            "{}: summary stream was not completely validated",
+            self.source.context(self.stage)
+        );
+        let input = match self.reader {
+            Stream::Plain(input) => input,
+            Stream::Gzip(input) => input.into_inner(),
+        };
+        // Decoder EOF alone is insufficient: no unread compressed suffix may
+        // remain, and the raw guard must have observed EOF on the actual file.
+        ensure!(
+            input.buffer().is_empty(),
+            "{}: unread source bytes remain after decoding",
+            self.source.context(self.stage)
+        );
+        input.into_inner().finish()
     }
 }
 
@@ -485,5 +574,104 @@ mod tests {
                 .to_string()
                 .contains("aliases input")
         );
+    }
+
+    fn gzip_bytes(bytes: &[u8], mtime: u32) -> Vec<u8> {
+        let mut encoder = flate2::GzBuilder::new()
+            .mtime(mtime)
+            .write(Vec::new(), flate2::Compression::default());
+        encoder.write_all(bytes).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    fn decoded(source: &Source, stage: &'static str) -> Result<Vec<u8>> {
+        let mut pass = source.open_summary(stage)?;
+        let mut bytes = Vec::new();
+        pass.read_to_end(&mut bytes)?;
+        pass.finish()?;
+        Ok(bytes)
+    }
+
+    #[test]
+    fn gzip_all_passes_hash_compressed_bytes_including_headers() {
+        let payload =
+            b"channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t10\t8\n";
+        let compressed = gzip_bytes(payload, 1);
+        // No extension: magic-byte detection must also use the original guard.
+        let fixture = Fixture::new(&compressed);
+        let mut source = fixture.source(true);
+        for stage in [
+            "independent-component discovery",
+            "aggregation pass",
+            "fitted-trend pass",
+            "MinION visualization pass",
+        ] {
+            assert_eq!(decoded(&source, stage).unwrap(), payload);
+        }
+        source.verify_for_publication().unwrap();
+        assert_eq!(
+            *source.digest.lock().unwrap(),
+            Some(Sha256::digest(&compressed).into())
+        );
+        let changed = gzip_bytes(payload, 2);
+        assert_eq!(changed.len(), compressed.len());
+        fs::write(&fixture.0, changed).unwrap();
+        source.stamp = Stamp::new(&fs::metadata(&fixture.0).unwrap()).unwrap();
+        let error = decoded(&source, "fitted-trend pass")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("SHA-256"), "{error}");
+        assert!(source.verify_for_publication().is_err());
+    }
+
+    #[test]
+    fn gzip_mutations_between_and_during_passes_reject_publication() {
+        for replace in [false, true] {
+            let fixture = Fixture::new(&gzip_bytes(b"same payload", 0));
+            let source = fixture.source(true);
+            decoded(&source, "aggregation pass").unwrap();
+            let mut pass = source.open_summary("MinION visualization pass").unwrap();
+            let mut bytes = Vec::new();
+            pass.read_to_end(&mut bytes).unwrap();
+            if replace {
+                let next = fixture.0.with_extension("next");
+                fs::write(&next, gzip_bytes(b"same payload", 0)).unwrap();
+                fs::rename(next, &fixture.0).unwrap();
+            } else {
+                fs::write(&fixture.0, b"truncated").unwrap();
+            }
+            assert!(pass.finish().is_err());
+            let error = decoded(&source, "fitted-trend pass")
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("fitted-trend pass"), "{error}");
+            assert!(source.verify_for_publication().is_err());
+        }
+    }
+
+    #[test]
+    fn gzip_requires_decoded_eof_even_if_raw_bytes_are_buffered() {
+        let fixture = Fixture::new(&gzip_bytes(&vec![b'x'; 1_000_000], 0));
+        let source = fixture.source(true);
+        let mut pass = source.open_summary("aggregation pass").unwrap();
+        pass.read_exact(&mut [0; 4]).unwrap();
+        assert!(pass.finish().is_err());
+        assert!(source.digest.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn gzip_finish_never_accepts_a_swallowed_crc_error() {
+        let mut bytes = gzip_bytes(b"payload", 0);
+        let n = bytes.len();
+        bytes[n - 8] ^= 1;
+        let fixture = Fixture::new(&bytes);
+        let source = fixture.source(true);
+        let mut pass = source.open_summary("aggregation pass").unwrap();
+        assert!(io::copy(&mut pass, &mut io::sink()).is_err());
+        // The decoder may report EOF after its error; it is still a failed pass.
+        let _ = io::copy(&mut pass, &mut io::sink());
+        assert!(pass.finish().is_err());
+        assert!(source.digest.lock().unwrap().is_none());
+        assert!(source.verify_for_publication().is_err());
     }
 }

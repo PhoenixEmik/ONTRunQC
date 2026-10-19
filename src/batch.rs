@@ -48,7 +48,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
     let files = discover(inputs)?;
     ensure!(
         !files.is_empty(),
-        "no sequencing_summary*.txt/tsv files found in supplied directories"
+        "no sequencing_summary*.txt/tsv (or .txt.gz/.tsv.gz) files found in supplied directories"
     );
     let sources = Source::capture_all(&files, options.verify_input_content)?;
     let collection =
@@ -96,7 +96,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             .collect::<Result<Vec<_>>>()?;
         // Fit sufficient statistics on every raw observation, not bin means.
         for (file_index, path) in files.iter().enumerate() {
-            let mut pass = sources[file_index].open("fitted-trend pass")?;
+            let mut pass = sources[file_index].open_summary("fitted-trend pass")?;
             let mut membership = Membership::default();
             let mut reader = SummaryReader::with_options(
                 &mut pass,
@@ -155,7 +155,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             // One run's pixel grids are alive at a time, even in collections.
             for &file_index in &group.files {
                 let path = &files[file_index];
-                let mut pass = sources[file_index].open("MinION visualization pass")?;
+                let mut pass = sources[file_index].open_summary("MinION visualization pass")?;
                 let mut membership = Membership::default();
                 let mut reader = SummaryReader::with_options(
                     &mut pass,
@@ -298,6 +298,7 @@ fn visit(directory: &Path, files: &mut BTreeSet<PathBuf>) -> Result<()> {
 }
 
 fn supported_name(name: &str) -> bool {
+    let name = name.strip_suffix(".gz").unwrap_or(name);
     name.contains("sequencing_summary") && (name.ends_with(".txt") || name.ends_with(".tsv"))
 }
 
@@ -313,7 +314,7 @@ fn scan_inputs(
     let mut known = BTreeMap::<String, usize>::new();
     for &file_index in indices {
         let path = &files[file_index];
-        let mut pass = sources[file_index].open("aggregation pass")?;
+        let mut pass = sources[file_index].open_summary("aggregation pass")?;
         let mut membership = Membership::default();
         let mut reader = SummaryReader::with_options(
             &mut pass,
@@ -465,7 +466,7 @@ fn independent_components(
     }
     let mut known = BTreeMap::<String, usize>::new();
     for (i, path) in files.iter().enumerate() {
-        let mut pass = sources[i].open("independent-component discovery")?;
+        let mut pass = sources[i].open_summary("independent-component discovery")?;
         let mut membership = Membership::default();
         let mut reader = SummaryReader::with_options(
             &mut pass,

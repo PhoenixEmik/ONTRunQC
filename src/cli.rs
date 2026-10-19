@@ -59,7 +59,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Analyze uncompressed sequencing summaries from files or a directory.
+    /// Analyze plain or gzip sequencing summaries from files or a directory.
     Analyze {
         /// Sequencing-summary files or directories (recursively discovered).
         #[arg(num_args = 0..)]

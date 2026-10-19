@@ -68,10 +68,20 @@ jobs:
           done
           printf 'channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t10\t8\n' > "$RUNNER_TEMP/source-a.tsv"
           cp "$RUNNER_TEMP/source-a.tsv" "$RUNNER_TEMP/source-b.tsv"
-          target/x86_64-unknown-linux-musl/release/ontrunqc analyze \
-            "$RUNNER_TEMP/source-a.tsv" "$RUNNER_TEMP/source-b.tsv" \
-            --processors 2 --verify-input-content --format svg --output "$RUNNER_TEMP/musl-parallel"
-          test -s "$RUNNER_TEMP/musl-parallel/combined/figures/length-counts.svg"
+          python3 - <<'PY'
+          import gzip, os
+          from pathlib import Path
+          source = Path(os.environ['RUNNER_TEMP']) / 'source-b.tsv'
+          source.with_suffix('.tsv.gz').write_bytes(gzip.compress(source.read_bytes(), mtime=0))
+          PY
+          for workers in 1 2 4; do
+            target/x86_64-unknown-linux-musl/release/ontrunqc analyze \
+              "$RUNNER_TEMP/source-a.tsv" "$RUNNER_TEMP/source-b.tsv.gz" \
+              --processors "$workers" --verify-input-content --format svg --output "$RUNNER_TEMP/musl-gzip-$workers"
+            test -s "$RUNNER_TEMP/musl-gzip-$workers/combined/figures/length-counts.svg"
+            cmp "$RUNNER_TEMP/musl-gzip-1/combined/report.json" "$RUNNER_TEMP/musl-gzip-$workers/combined/report.json"
+            cmp "$RUNNER_TEMP/musl-gzip-1/combined/report.html" "$RUNNER_TEMP/musl-gzip-$workers/combined/report.html"
+          done
 
   msrv:
     name: Rust 1.85 compatibility

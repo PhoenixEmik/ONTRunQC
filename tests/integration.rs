@@ -3680,6 +3680,22 @@ fn independent_dense_minion_runs_are_identical_at_one_and_two_workers() {
         ],
     );
     assert_eq!(before, report_snapshot(&directory.0.join("output")));
+    let compressed = paths[1].with_extension("tsv.gz");
+    fs::write(&compressed, gzip(&fs::read(&paths[1]).unwrap())).unwrap();
+    for workers in ["1", "2", "4"] {
+        run_collection(
+            &directory,
+            &[&paths[0], &compressed],
+            &[
+                "--flowcell-layout",
+                "minion-r9.5",
+                "--processors",
+                workers,
+                "--verify-input-content",
+            ],
+        );
+        assert_eq!(before, report_snapshot(&directory.0.join("output")));
+    }
 }
 
 #[test]
@@ -3711,5 +3727,334 @@ fn report_destinations_cannot_overwrite_input_sources() {
                 .keys()
                 .all(|p| p.extension().is_none_or(|e| e != "tmp"))
         );
+    }
+}
+
+fn gzip(data: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(data).unwrap();
+    encoder.finish().unwrap()
+}
+
+#[test]
+fn gzip_and_plain_inputs_have_identical_reports_across_schemas_and_members() {
+    let legacy = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\tcalibration_strand_genome_template\n1\t900\t10\t-1\tNA\n2\t0\t20\t7\tYHR174W\n1\t1800\t0\t-2\tNA\n2\t0\t30\t8\tNA\n";
+    let two_d = "channel\tstart_time\tsequence_length_2d\tmean_qscore_2d\tsequence_length_template\tmean_qscore_template\n1\t900\t20\t-1\t100\t9\n2\t0\t40\t8\t200\t10\n";
+    let zero = format!("{HEADER}{}", ROW.replace("\t10\t12.5", "\t0\t0"));
+    for data in [
+        fs::read_to_string(fixture("synthetic.tsv")).unwrap(),
+        fs::read_to_string(fixture("reordered.tsv")).unwrap(),
+        legacy.into(),
+        two_d.into(),
+        HEADER.into(),
+        zero,
+    ] {
+        let directory = TestDirectory::new();
+        let plain = directory.0.join("input.tsv");
+        fs::write(&plain, &data).unwrap();
+        let options = [
+            "--yaml",
+            "--format",
+            "svg",
+            "--minionqc-trends",
+            "--minionqc-density",
+            "-q",
+            "-1",
+        ];
+        let result = directory.run_with_args(&plain, &options);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let expected = report_snapshot(&directory.0.join("output"));
+        for name in [
+            "reads.txt.gz",
+            "reads.tsv.gz",
+            "arbitrary.gz",
+            "no-extension",
+        ] {
+            let path = directory.0.join(name);
+            for multi in [false, true] {
+                let bytes = if multi {
+                    let middle = data.len() / 2; // Can split a TSV record, not just a line.
+                    [
+                        gzip(&data.as_bytes()[..middle]),
+                        gzip(b""),
+                        gzip(&data.as_bytes()[middle..]),
+                    ]
+                    .concat()
+                } else {
+                    gzip(data.as_bytes())
+                };
+                fs::write(&path, bytes).unwrap();
+                let mut args = options.to_vec();
+                args.push("--verify-input-content");
+                let result = directory.run_with_args(&path, &args);
+                assert!(
+                    result.status.success(),
+                    "{name}: {}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                assert_eq!(
+                    expected,
+                    report_snapshot(&directory.0.join("output")),
+                    "{name}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn invalid_gzip_and_invalid_decompressed_tsv_never_publish_reports() {
+    let data = format!("{HEADER}{ROW}");
+    let valid = gzip(data.as_bytes());
+    let mut crc = valid.clone();
+    let n = crc.len();
+    crc[n - 8] ^= 1;
+    let mut size = valid.clone();
+    size[n - 4] ^= 1;
+    let mut signature = valid.clone();
+    signature[0] = 0;
+    let variants = [
+        (Vec::new(), "gzip"),
+        (valid[..1].to_vec(), "gzip"),
+        (valid[..valid.len() / 2].to_vec(), "gzip"),
+        (valid[..valid.len() - 1].to_vec(), "gzip"),
+        (crc, "gzip"),
+        (size, "gzip"),
+        (signature, "gzip"),
+        ([valid.clone(), b"garbage".to_vec()].concat(), "gzip"),
+        ([valid.clone(), vec![0; 16]].concat(), "gzip"),
+        (
+            [valid.clone(), gzip(b"later member")[..12].to_vec()].concat(),
+            "gzip",
+        ),
+        (data.as_bytes().to_vec(), "gzip"),
+        (gzip(b""), "empty input"),
+        (
+            gzip(format!("{HEADER}{}", ROW.replace("12.5", "bad")).as_bytes()),
+            "line 2",
+        ),
+    ];
+    for (bytes, message) in variants {
+        let directory = TestDirectory::new();
+        let input = directory.0.join("input.tsv.gz");
+        fs::write(&input, &valid).unwrap();
+        assert!(directory.run(&input).status.success());
+        let expected = report_snapshot(&directory.0.join("output"));
+        fs::write(&input, bytes).unwrap();
+        let result = directory.run_with_args(&input, &["--verify-input-content"]);
+        assert!(!result.status.success());
+        let error = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            error.contains(message) && error.contains("input.tsv.gz"),
+            "{error}"
+        );
+        if message == "gzip" {
+            assert!(error.contains("aggregation pass"), "{error}");
+        }
+        assert_eq!(expected, report_snapshot(&directory.0.join("output")));
+    }
+}
+
+#[test]
+fn mixed_gzip_chunks_discovery_and_parallel_groups_preserve_every_output() {
+    let directory = TestDirectory::new();
+    let inputs = directory.0.join("inputs with spaces");
+    fs::create_dir(&inputs).unwrap();
+    let chunks = [
+        format!("{HEADER}{}", ROW.replace("synthetic-run", "alpha")),
+        format!("{HEADER}{}", ROW.replace("synthetic-run", "beta")),
+        format!(
+            "{HEADER}{}{}",
+            ROW.replace("synthetic-run", "alpha"),
+            ROW.replace("synthetic-run", "gamma")
+        ),
+        "channel\tstart_time\tsequence_length_2d\tmean_qscore_2d\n1\t0\t25\t-1\n".into(),
+        HEADER.into(),
+    ];
+    let paths: Vec<_> = (0..chunks.len())
+        .map(|i| inputs.join(format!("sequencing_summary_{i}.tsv")))
+        .collect();
+    for (path, data) in paths.iter().zip(&chunks) {
+        fs::write(path, data).unwrap();
+    }
+    // Unrelated files must stay excluded, even when compressed.
+    fs::write(inputs.join("unrelated.txt.gz"), b"bad gzip").unwrap();
+    let options = [
+        "--yaml",
+        "--format",
+        "svg",
+        "--minionqc-trends",
+        "--minionqc-density",
+    ];
+    run_collection(&directory, &[&inputs], &options);
+    let expected = report_snapshot(&directory.0.join("output"));
+    for i in [0, 2, 3, 4] {
+        let path = paths[i].with_extension("tsv.gz");
+        fs::write(&path, gzip(chunks[i].as_bytes())).unwrap();
+        fs::remove_file(&paths[i]).unwrap();
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&inputs, inputs.join("directory-cycle")).unwrap();
+        fs::hard_link(
+            inputs.join("sequencing_summary_0.tsv.gz"),
+            inputs.join("sequencing_summary_alias.txt.gz"),
+        )
+        .unwrap();
+    }
+    for workers in ["1", "2", "4"] {
+        let mut args = options.to_vec();
+        args.extend(["--processors", workers, "--verify-input-content"]);
+        run_collection(&directory, &[&inputs], &args);
+        assert_eq!(expected, report_snapshot(&directory.0.join("output")));
+    }
+    let mixed = inputs.join("sequencing_summary_2.tsv.gz");
+    run_collection(
+        &directory,
+        &[&mixed],
+        &[
+            "--split-runs",
+            "--combined-only",
+            "--processors",
+            "4",
+            "--verify-input-content",
+        ],
+    );
+    let split: Value =
+        serde_json::from_slice(&fs::read(directory.0.join("output/combined/report.json")).unwrap())
+            .unwrap();
+    assert_eq!(split["metrics"]["total_records"], 2);
+    assert_eq!(split["collection"]["runs"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn gzip_identity_free_grouping_and_dense_minion_passes_are_compression_independent() {
+    let directory = TestDirectory::new();
+    let legacy =
+        "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t0\t20\t-1\n";
+    let a = directory.0.join("a.tsv");
+    let b = directory.0.join("b.tsv.gz");
+    fs::write(&a, legacy).unwrap();
+    fs::write(&b, gzip(legacy.as_bytes())).unwrap();
+    let report = run_collection(
+        &directory,
+        &[&a, &b],
+        &[
+            "--group-inputs",
+            "--processors",
+            "4",
+            "--verify-input-content",
+        ],
+    );
+    assert_eq!(report["collection"]["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(report["metrics"]["total_yield_bp"], 40);
+    let data: String = (0..4100)
+        .map(|i| {
+            format!(
+                "synthetic-run\t{}\t1\t{}\t1\tTRUE\t{}\t{}\tunknown\n",
+                i % 512 + 1,
+                i * 23,
+                i + 1,
+                7 + i % 10
+            )
+        })
+        .collect();
+    fs::write(&a, format!("{HEADER}{data}")).unwrap();
+    let options = [
+        "--flowcell-layout",
+        "minion-r9.5",
+        "--format",
+        "svg",
+        "--yaml",
+        "--minionqc-trends",
+        "--minionqc-density",
+    ];
+    assert!(directory.run_with_args(&a, &options).status.success());
+    let expected = report_snapshot(&directory.0.join("output"));
+    fs::write(&b, gzip(format!("{HEADER}{data}").as_bytes())).unwrap();
+    let mut args = options.to_vec();
+    args.push("--verify-input-content");
+    let result = directory.run_with_args(&b, &args);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(expected, report_snapshot(&directory.0.join("output")));
+    let report: Value =
+        serde_json::from_slice(&fs::read(directory.0.join("output/report.json")).unwrap()).unwrap();
+    assert_eq!(
+        report["diagnostics"]["minion_read_visualization"]["eligible_reads"],
+        4100
+    );
+    assert_eq!(
+        report["diagnostics"]["minion_read_visualization"]["additional_input_passes"],
+        1
+    );
+}
+
+#[test]
+#[cfg(feature = "static-figures")]
+fn gzip_native_png_exports_are_byte_identical() {
+    let directory = TestDirectory::new();
+    let data = fs::read(fixture("synthetic.tsv")).unwrap();
+    let a = directory.0.join("input.tsv");
+    let b = directory.0.join("input.tsv.gz");
+    fs::write(&a, &data).unwrap();
+    fs::write(&b, gzip(&data)).unwrap();
+    let options = ["--format", "png", "--smallfigures", "--add-stat", "--yaml"];
+    assert!(directory.run_with_args(&a, &options).status.success());
+    let expected = report_snapshot(&directory.0.join("output"));
+    assert!(directory.run_with_args(&b, &options).status.success());
+    assert_eq!(expected, report_snapshot(&directory.0.join("output")));
+}
+
+#[test]
+fn gzip_python_encoded_fixture_and_parallel_discovery_failure() {
+    use base64::Engine;
+    // Python 3 gzip.compress(payload, mtime=0), backed by zlib rather than miniz.
+    let encoded = "H4sIAAAAAAAA/z3IMQ6AMAgF0Jmept28DSHkx5oA2oL3d/ONT6dEwChLdnFdDkqsF6FgQ5w1ueCPSYEcErxS740/26BOo9PRPpZ5GKVKAAAA";
+    let directory = TestDirectory::new();
+    let a = directory.0.join("a.tsv.gz");
+    let b = directory.0.join("b.tsv.gz");
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .unwrap();
+    fs::write(&a, &data).unwrap();
+    let report = run_collection(
+        &directory,
+        &[&a],
+        &["--verify-input-content", "--split-runs"],
+    );
+    assert_eq!(report["metrics"]["total_yield_bp"], 10);
+    let expected = report_snapshot(&directory.0.join("output"));
+    fs::write(&b, [&data[..], b"invalid trailing member"].concat()).unwrap();
+    for workers in ["2", "4"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_ontrunqc"))
+            .arg("analyze")
+            .args([&a, &b])
+            .args([
+                "--processors",
+                workers,
+                "--verify-input-content",
+                "--output",
+            ])
+            .arg(directory.0.join("output"))
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        let error = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            error.contains("b.tsv.gz")
+                && error.contains("gzip")
+                && error.contains("independent-component discovery"),
+            "{error}"
+        );
+        assert_eq!(expected, report_snapshot(&directory.0.join("output")));
     }
 }
