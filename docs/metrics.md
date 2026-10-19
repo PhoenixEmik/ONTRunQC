@@ -15,7 +15,9 @@ ending in `.txt`, `.tsv`, `.txt.gz` or `.tsv.gz`. Existing canonical/inode alias
 removal and directory-symlink protections are unchanged. Explicit paths may have
 any name: gzip magic bytes select gzip decoding; a canonical filename ending in
 `.gz` always requires gzip and a mislabeled plain file is rejected. Suffixes are
-case-sensitive for discovery. Compressed and plain chunks can share a run ID.
+case-sensitive for discovery. Source ordering ignores the final `.gz` suffix,
+with full canonical paths breaking ties; uncompressed ordering is unchanged.
+Compressed and plain chunks can share a run ID.
 
 `Source::open_summary` supplies one reader for discovery, aggregation, raw-fit
 and dense MinION passes, and strong publication verification. It uses a 64-KiB

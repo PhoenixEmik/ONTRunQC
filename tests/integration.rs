@@ -4058,3 +4058,37 @@ fn gzip_python_encoded_fixture_and_parallel_discovery_failure() {
         assert_eq!(expected, report_snapshot(&directory.0.join("output")));
     }
 }
+
+#[test]
+fn gzip_suffix_does_not_change_source_order_for_prefix_colliding_names() {
+    let directory = TestDirectory::new();
+    let sources = directory.0.join("sources");
+    fs::create_dir(&sources).unwrap();
+    let first = sources.join("sequencing_summary.tsv");
+    let second = sources.join("sequencing_summary.tsv.extra.tsv");
+    fs::write(
+        &first,
+        format!("{HEADER}{}", ROW.replace("synthetic-run", "alpha")),
+    )
+    .unwrap();
+    fs::write(
+        &second,
+        format!("{HEADER}{}", ROW.replace("synthetic-run", "beta")),
+    )
+    .unwrap();
+    let report = run_collection(&directory, &[&sources], &["--yaml", "--processors", "2"]);
+    assert_eq!(report["collection"]["runs"][0]["run_id"], "alpha");
+    let expected = report_snapshot(&directory.0.join("output"));
+    fs::write(
+        first.with_extension("tsv.gz"),
+        gzip(&fs::read(&first).unwrap()),
+    )
+    .unwrap();
+    fs::remove_file(first).unwrap();
+    run_collection(
+        &directory,
+        &[&sources],
+        &["--yaml", "--processors", "4", "--verify-input-content"],
+    );
+    assert_eq!(expected, report_snapshot(&directory.0.join("output")));
+}

@@ -249,6 +249,17 @@ fn discover(inputs: &[PathBuf]) -> Result<Vec<PathBuf>> {
             candidates.insert(fs::canonicalize(path)?);
         }
     }
+    // Ignore only the gzip suffix for source order; adding compression must not
+    // swap e.g. summary.tsv and summary.tsv.extra.tsv. Full paths break ties.
+    let mut candidates: Vec<_> = candidates.into_iter().collect();
+    candidates.sort_by_cached_key(|path| {
+        let logical = if path.extension().is_some_and(|ext| ext == "gz") {
+            path.with_extension("")
+        } else {
+            path.clone()
+        };
+        (logical, path.clone())
+    });
     // Canonical paths remove symlink aliases; inode identity additionally removes
     // hard links on supported Unix targets. File names never become run metadata.
     let mut identities = BTreeSet::new();

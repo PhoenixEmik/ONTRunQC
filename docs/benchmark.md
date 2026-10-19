@@ -585,8 +585,9 @@ allocator. The optional standard-library helper generates **1,000,000 synthetic
 records** from a bounded 10,000-row pattern, then streams them through Python
 `gzip`/zlib (independent of the Rust miniz decoder). Plain TSV: **71,364,733 bytes**;
 gzip: **14,975,242 bytes**. These are not private research inputs or an 11-GB run.
-Each table row is one execution; caches/load were not controlled and there is
-no universal gzip speedup claim.
+Each table row is one execution; caches/load were not controlled. Background
+compilation overlapped part of this capture, so these are illustrative resource
+measurements, not controlled throughput results or a universal gzip speedup claim.
 
 ```sh
 cargo build --release --locked
@@ -600,12 +601,12 @@ binary hash and sampled temporary storage in ignored `measurements.json`.
 
 | Mode | Input | Wall (s) | User (s) | System (s) | Peak RSS (MiB) | Passes | Temp peak (MiB) | Output bytes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Default | plain | 0.8204 | 0.5694 | 0.0191 | 44.78 | 1 | 1.60 | 4,130,683 |
-| Default | gzip | 0.7388 | 0.7086 | 0.0126 | 44.88 | 1 | 3.94 | 4,130,683 |
-| Raw fits/KDE + SHA | plain | 1.9018 | 1.8406 | 0.0365 | 41.55 | 3 | 4.29 | 4,501,813 |
-| Raw fits/KDE + SHA | gzip | 1.8088 | 1.7558 | 0.0217 | 43.47 | 3 | 4.29 | 4,501,813 |
-| Dense MinION + SHA | plain | 1.6292 | 1.5642 | 0.0401 | 80.61 | 3 | 6.98 | 7,313,999 |
-| Dense MinION + SHA | gzip | 1.5320 | 1.4835 | 0.0241 | 78.86 | 3 | 6.98 | 7,313,999 |
+| Default | plain | 1.0250 | 0.5787 | 0.0215 | 45.38 | 1 | 1.60 | 4,130,683 |
+| Default | gzip | 0.7419 | 0.7067 | 0.0123 | 43.39 | 1 | 3.94 | 4,130,683 |
+| Raw fits/KDE + SHA | plain | 2.4735 | 1.9688 | 0.0458 | 42.92 | 3 | 4.29 | 4,501,813 |
+| Raw fits/KDE + SHA | gzip | 2.3336 | 1.8951 | 0.0283 | 43.08 | 3 | 4.29 | 4,501,813 |
+| Dense MinION + SHA | plain | 1.6962 | 1.5608 | 0.0375 | 77.02 | 3 | 6.98 | 7,313,999 |
+| Dense MinION + SHA | gzip | 1.5294 | 1.4788 | 0.0223 | 77.08 | 3 | 6.98 | 7,313,999 |
 
 All JSON/HTML bytes match for each plain/gzip pair, including fitted/KDE curves
 and dense MinION rasters/counts. No temporary TSV is extracted. Temporary peaks
