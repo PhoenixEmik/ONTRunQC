@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tests'))
 from minionqc_differential import cases, digest
 from minionqc_reference import REVISION
-from plot_checks import checks as plot_checks, curve_measurements, input_rows, compatible_bin_checks
+from plot_checks import checks as plot_checks, curve_measurements, input_rows, compatible_bin_checks, compatible_time_checks
 
 # Every source plot family has an actual renderer mapping, not a redrawn proxy.
 FIGURES = {
@@ -68,6 +68,7 @@ def write_gallery_index(gallery, evidence):
         '**Strict GAM parity remains Partial:** the original-R comparison retains '
         '1,542 fit/uncertainty discrepancies. These images do not replace that evidence.', '',
         *(['**Plot mode:** `--minionqc-plot-bins`. Histogram/Bin2D geometry and counts use the original statistical layers; true channel counts intentionally correct the upstream count defect.', ''] if evidence.get('plotting_mode')=='minionqc_plot_bins' else []),
+        *(['**Temporal mode:** `--minionqc-time-series`. Integer-hour counts include zero lengths and zero-filled gaps. Large cumulative curves are bounded full-data polylines; original-R tied-row ordering and simplification errors are reported separately. C temporal residuals are bounded samples; maxima evaluate every original timestamp/one-sided limit.', ''] if evidence.get('temporal_mode')=='minionqc_time_series' else []),
         '## Browse by analysis', '',
         '- [Single MinION flowcell](#single-minion-flowcell)',
         '- [Device and legacy checks](#device-and-legacy-checks)',
@@ -256,6 +257,23 @@ def diagnostic(plot, report, family, multi=False):
         p = [[v['channel'],v['total_yield_bp']/1e9] for v in report['channels']]
         r = sorted([v['channel'],v['value']/1e9] for v in plot.get('source_tiles',[]) if v['Q_cutoff']=='All reads')
         description = 'C compares exact yield/channel; source spatial cells and panel/population totals retained. A/B share verified mapping, different missing-cell styling and palette.'
+    temporal=source.get('minionqc_time_series')
+    if temporal and family=='reads_per_hour':
+        p=[[h['hour'],h['read_count']] for h in temporal['all']['hourly']]
+        description='Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.'
+    elif temporal and family=='yield_over_time':
+        groups=layer['audit'].get('temporal_comparisons') or []
+        if isinstance(groups,dict):groups=list(groups.values())
+        candidates=[c for g in groups for c in g['comparisons'] if c.get('candidate')==('source_001' if multi else plot['directory'])+':all']
+        # Select the actual All R group; candidates for other groups are also
+        # measured but must not be confused with a matching population.
+        candidates=[c for c in candidates if c.get('reference_observations')==temporal['all']['observations'] and c.get('reference_terminal_yield_bp')==temporal['all']['total_yield_bp']]
+        c=candidates[0]
+        r=[[v['hours'],v['reference_bp']/1e9] for v in c['samples']]
+        p=[[v['hours'],v['native_bp']/1e9] for v in c['samples']]
+        counts['full_reference_time_comparison']={k:v for k,v in c.items() if k!='samples'}
+        counts['yield_error_bound_bp']=temporal['all']['cumulative']['yield_error_bound_bp']
+        description='EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error '+str(c['maximum_envelope_error_bp'])+' bp, original polyline error '+str(c['maximum_original_polyline_error_bp'])+' bp, display bound '+str(counts['yield_error_bound_bp'])+' bp. Tied internal order is a separately reported difference, not point-for-point parity.'
     compatible = report.get('minionqc_plot_bins')
     comparable=False
     if compatible and ('length_histogram' in family or 'q_histogram' in family):
@@ -272,7 +290,8 @@ def diagnostic(plot, report, family, multi=False):
         hist=next(v['histogram'] for v in compatible['channels'] if v['metric']=='read_count')
         p=[[b['x'],b['count']] for b in hist['all']]
         description='Explicit compatible binning on TRUE channel counts; original R uses n(n+1)/2. This intentional upstream-defect correction changes values AND bin limits; no false zero residual. Other three channel families validated separately.'
-    if compatible and comparable:
+    if temporal and family in ('reads_per_hour','yield_over_time'): comparable=True
+    if compatible and comparable and family not in ('reads_per_hour','yield_over_time'):
         scope='combined' if plot['directory']=='combinedQC' else plot['directory']
         validation=compatible_bin_checks(dict(plots=[plot]),{scope:report})
         counts['compatible_layer_checks']=validation
@@ -300,6 +319,9 @@ def diagnostic(plot, report, family, multi=False):
     ylabel = ('Count per bin' if histogram or comparable else 'Density per X unit' if 'distributions' in family else
               'Yield (Gb)' if 'yield' in family or family=='gb_per_channel_overview' else
               'Read length (bp)' if family=='length_by_hour' else 'Mean read Q-score' if family=='q_by_hour' else 'Reads')
+    if temporal and family in ('reads_per_hour','yield_over_time'):
+        ylabel='Summary records per integer hour' if family=='reads_per_hour' else 'Cumulative yield (Gb)'
+        counts['actual_rendered_points']=len(temporal['all']['hourly'] if family=='reads_per_hour' else temporal['all']['cumulative']['points'])
     return dict(reference=r, native=p, residual=residual, histogram=histogram, x_label=xlabel,y_label=ylabel, description=description, measurements=counts)
 
 
@@ -332,6 +354,7 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT/'benchmark-results/plot-audit')
     parser.add_argument('--gallery', type=Path, default=ROOT/'docs/figures/minionqc-comparison')
     parser.add_argument('--case', action='append', choices=['minion','promethion','short','1d2','rna','combined'])
+    parser.add_argument('--reference-time', action='store_true', help='Validate actual R hourly/read-start layers against optional native temporal model')
     parser.add_argument('--reference-bins', action='store_true', help='Validate/render explicit ggplot-compatible bins without changing original R targets')
     parser.add_argument('--reuse', action='store_true', help='Reuse only hash-matching captured reports, not cached conclusions')
     args = parser.parse_args()
@@ -352,25 +375,41 @@ def main():
                    source_sha256=digest(upstream/'MinIONQC.R'),capture_sha256=digest(scripts/'capture.R'),
                    helper_sha256=digest(scripts/'plot_layers.R'),probe_sha256=digest(scripts/'probe.rs'),
                    native_sources={str(p.relative_to(ROOT)):digest(p) for p in sorted((ROOT/'src').glob('*')) if p.is_file()},
-                   lockfile=digest(ROOT/'Cargo.lock'),reference_bins=args.reference_bins)
+                   lockfile=digest(ROOT/'Cargo.lock'),reference_bins=args.reference_bins, reference_time=args.reference_time)
         stampfile=case/'stamp.json'
         previous=json.loads(stampfile.read_text()) if stampfile.exists() else {}
-        same_native = all(previous.get(k)==v for k,v in stamp.items() if k not in ('capture_sha256','helper_sha256'))
+        same_native = all(previous.get(k)==v for k,v in stamp.items() if k not in ('capture_sha256','helper_sha256','temporal_candidates_sha256'))
         reuse_native = args.reuse and same_native
         reuse_reference = args.reuse and all(previous.get(k)==stamp[k] for k in ('inputs','cutoff','reference_commit','source_sha256','capture_sha256','helper_sha256'))
-        if not reuse_reference:
-            rdir=case/'minionqc';rdir.mkdir(exist_ok=True)
-            env=dict(os.environ,TZ='UTC',LC_ALL='C',PG_REFERENCE_SOURCE=str(upstream/'MinIONQC.R'),
-                     PG_REFERENCE_CAPTURE=str(case/'capture.json'),PG_REFERENCE_RENDER='true',
-                     PG_PLOT_AUDIT='true',PG_PLOT_AUDIT_HELPER=str(scripts/'plot_layers.R'),PG_REFERENCE_DPI='60')
-            run([args.rscript,scripts/'capture.R','-i',case/'inputs' if len(paths)>1 else copied[0],
-                 '-o',rdir,'-q',cutoff,'-p','1','-m','8','-f','png','-s','TRUE'],case/'R.log',env)
         if not reuse_native:
             env=dict(os.environ,PG_PROBE_INPUTS=json.dumps(list(map(str,copied))),PG_PROBE_CUTOFF=str(cutoff),
                      PG_PROBE_OUTPUT=str(case/'probe.json'),PG_PROBE_CURVES='1',
                      PG_PROBE_FIGURES=str(case/'native'),PG_PROBE_LAYOUT='promethion-3000' if name=='promethion' else 'minion-r9.5')
             if args.reference_bins: env['PG_PROBE_PLOT_BINS']='1'
+            if args.reference_time: env['PG_PROBE_TIME_SERIES']='1'
             run(['cargo','test','--release','--locked','reference_probe::export_report','--','--ignored','--exact'],case/'Rust.log',env)
+        if args.reference_time:
+            candidates=[]
+            for report_path in sorted((case/'native').glob('source_*/report.json')):
+                report=json.loads(report_path.read_text())
+                for population,p in report['minionqc_time_series'].items():
+                    if population not in ('all','q_selected'): continue
+                    candidates.append(dict(id=report_path.parent.name+':'+population,
+                        observations=p['observations'],total_yield_bp=p['total_yield_bp'],
+                        points=[dict(hours=v['start_seconds']/3600,yield_bp=v['cumulative_yield_bp']) for v in p['cumulative']['points']]))
+            candidate_file=case/'temporal-candidates.json'
+            candidate_file.write_text(json.dumps(candidates,allow_nan=False))
+        if args.reference_time:
+            reuse_reference = reuse_reference and previous.get('temporal_candidates_sha256')==digest(candidate_file)
+            stamp['temporal_candidates_sha256']=digest(candidate_file)
+        if not reuse_reference:
+            rdir=case/'minionqc';rdir.mkdir(exist_ok=True)
+            env=dict(os.environ,TZ='UTC',LC_ALL='C',PG_REFERENCE_SOURCE=str(upstream/'MinIONQC.R'),
+                     PG_REFERENCE_CAPTURE=str(case/'capture.json'),PG_REFERENCE_RENDER='true',
+                     PG_TEMPORAL_CANDIDATES=str(case/'temporal-candidates.json') if args.reference_time else '',
+                     PG_PLOT_AUDIT='true',PG_PLOT_AUDIT_HELPER=str(scripts/'plot_layers.R'),PG_REFERENCE_DPI='60')
+            run([args.rscript,scripts/'capture.R','-i',case/'inputs' if len(paths)>1 else copied[0],
+                 '-o',rdir,'-q',cutoff,'-p','1','-m','8','-f','png','-s','TRUE'],case/'R.log',env)
         stampfile.write_text(json.dumps(stamp,indent=2)+'\n')
         assert [digest(p) for p in copied]==stamp['inputs'], 'Copied audit input changed during processing'
         capture=json.loads((case/'capture.json').read_text())
@@ -384,6 +423,8 @@ def main():
             basecalled_reads=reports['combined']['metrics']['basecalled_reads'],
             yield_bp=reports['combined']['metrics']['total_yield_bp'],
             display_differences=curve_measurements(reports['combined'],list(input_rows(copied)))))
+        if args.reference_time:
+            numerical_checks.extend(dict(case=name,**check) for check in compatible_time_checks(capture,reports))
         if args.reference_bins:
             numerical_checks.extend(dict(case=name,**check) for check in compatible_bin_checks(capture,reports,copied,cutoff))
         for plot in capture['plots']:
@@ -393,6 +434,9 @@ def main():
             report=json.loads((case/'native'/directory/'report.json').read_text())
             target=(MULTI if multi and family in MULTI else FIGURES).get(family)
             if name=='promethion' and family=='length_vs_q': target='length-quality-all'
+            if args.reference_time:
+                if family=='reads_per_hour': target='reference-hourly'
+                elif family=='yield_over_time': target='reference-cumulative-false' if multi else 'reference-cumulative'
             if args.reference_bins:
                 if 'length_histogram' in family: target='reference-length-all'
                 elif 'q_histogram' in family: target='reference-q-all'
@@ -416,7 +460,7 @@ def main():
             selected=(name=='minion' or (name=='combined' and directory=='combined') or
                       (name in ('promethion','1d2') and family=='length_vs_q') or
                       (args.reference_bins and name=='promethion' and family in ('length_histogram','q_histogram','channel_summary')) or
-                      (name=='rna' and family=='q_histogram') or (name=='short' and family=='reads_per_hour'))
+                      (name=='rna' and family=='q_histogram') or (name=='short' and family=='reads_per_hour') or (args.reference_time and family in ('reads_per_hour','yield_over_time')))
             card=None
             if selected:
                 companions = []
@@ -426,6 +470,7 @@ def main():
                 elif family == 'channel_summary': companions = ['channel-summary-'+m for m in ['total_yield_bp','mean_read_length_bp','median_read_length_bp']]
                 elif multi and family in ('length_distributions','q_distributions','length_by_hour','q_by_hour'):
                     companions = [target.rsplit('-',1)[0]+'-true']
+                if args.reference_time and multi and family=='yield_over_time': companions=['reference-cumulative-true']
                 if args.reference_bins:
                     if 'length_histogram' in family: companions=['reference-length-q-selected']
                     elif 'q_histogram' in family: companions=['reference-q-q-selected']
@@ -454,6 +499,7 @@ def main():
     result=dict(reference_commit=REVISION,reference_source_sha256=digest(upstream/'MinIONQC.R'),
                 reference_versions=dict(r='4.4.1',ggplot2='3.5.1',mgcv='1.9-1'),
                 plotting_mode='minionqc_plot_bins' if args.reference_bins else 'native_fixed_bins',
+                temporal_mode='minionqc_time_series' if args.reference_time else 'native_15_minutes',
                 native_probe_sha256=digest(scripts/'probe.rs'),capture_script_sha256=digest(scripts/'capture.R'),
                 audit_script_sha256=digest(Path(__file__)),lockfile_sha256=digest(ROOT/'Cargo.lock'),
                 render_note='Original R smallfigures TRUE, PNG 60 DPI for audit readability; native canonical figures 300 DPI; gallery resized and palette-reduced to 256 colours only for documentation. Original files remain unchanged.',

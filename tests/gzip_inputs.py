@@ -21,7 +21,7 @@ def snapshot(root):
             for p in sorted(root.rglob('*')) if p.is_file() and p.name != 'execution.log'}
 
 
-def execute(binary, source, output, options, passes):
+def execute(binary, source, output, options, passes, report_relative='report.json'):
     output.mkdir(parents=True)
     scratch = output / 'scratch'
     scratch.mkdir()
@@ -55,8 +55,9 @@ def execute(binary, source, output, options, passes):
     assert not list(scratch.iterdir()), 'Leaked scratch files'
     scratch.rmdir()
     assert not list(output.rglob('*.tmp')), 'Leaked staged output'
-    report = json.loads((output/'report.json').read_text())
-    return dict(input_bytes=source.stat().st_size, wall_seconds=elapsed,
+    report = json.loads((output/report_relative).read_text())
+    input_size = sum(p.stat().st_size for p in source.rglob('*') if p.is_file()) if source.is_dir() else source.stat().st_size
+    return dict(input_bytes=input_size, wall_seconds=elapsed,
                 user_seconds=usage.ru_utime, system_seconds=usage.ru_stime,
                 peak_rss_bytes=usage.ru_maxrss*(1 if os.uname().sysname == 'Darwin' else 1024),
                 records=report['metrics']['total_records'], input_passes=passes,

@@ -58,7 +58,15 @@
       "proposed_correction": "Explicit optional reference hourly All/Q summary series.",
       "acceptance_criteria": "Exact hour-boundary counts, zero fill and population conservation on original R; preserve current diagnostics.",
       "related_issue": 20,
-      "state": "documented; not changed"
+      "state": "explicit reference mode verified; native diagnostics retained",
+      "reference_mode_20": {
+        "option": "--minionqc-time-series",
+        "native_source": "src/temporal.rs; src/batch.rs::analyze; src/html.rs::reference_temporal",
+        "evidence": "tests/reference/temporal-validation-summary.json",
+        "classification": "Exact hourly plot-layer parity",
+        "canonical_metrics": "Unchanged",
+        "unexplained_differences": 0
+      }
     },
     {
       "id": "A03",
@@ -79,7 +87,22 @@
       "proposed_correction": "Optional bounded read-start path with explicit representation/error contract.",
       "acceptance_criteria": "Compare raw reference coordinates and exact queried values, tied starts, gaps, population and per-source context.",
       "related_issue": 20,
-      "state": "documented; not changed"
+      "state": "explicit reference mode verified; native diagnostics retained",
+      "reference_mode_20": {
+        "option": "--minionqc-time-series",
+        "native_source": "src/temporal.rs; src/batch.rs::analyze; src/html.rs::reference_temporal",
+        "evidence": "tests/reference/temporal-validation-summary.json",
+        "classification": "Verified bounded full-data representation with separately quantified original-R tied-order differences",
+        "canonical_metrics": "Unchanged",
+        "unexplained_differences": 0,
+        "small_input_limit": 8192,
+        "dense_vertex_bound": 8194,
+        "error_bound_bp": "ceil(total_yield_bp/4096); original tied-order bound reported separately",
+        "minion_all_reference_observations": 238421,
+        "minion_all_display_points": 8020,
+        "minion_all_maximum_original_polyline_error_bp": 828561.3218617439,
+        "point_for_point_equivalence": false
+      }
     },
     {
       "id": "A04",

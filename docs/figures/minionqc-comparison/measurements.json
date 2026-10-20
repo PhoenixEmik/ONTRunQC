@@ -7,9 +7,10 @@
     "mgcv": "1.9-1"
   },
   "plotting_mode": "minionqc_plot_bins",
-  "native_probe_sha256": "724bae3ae7a0293b7afa7802281d16ac90c659079a015d5bb0e526561d567710",
+  "temporal_mode": "minionqc_time_series",
+  "native_probe_sha256": "ea03f79a6f0325e6b6f3156e30e5f9e13dd7f0f521caa983d053e0a83b18eb56",
   "capture_script_sha256": "b88b80a2235ac4380a8ee37eb07540dcc9252f98b40ccaa18f0cdd099ac22ac2",
-  "audit_script_sha256": "21a62bb5cf0315bcd643be7c6dc68c912c4b5b65040cce45c4967262cebe30c0",
+  "audit_script_sha256": "f75988073131ca2d1a92e171791cf690077b2ad7db0dd7a7ad10a24ed8f41ff4",
   "lockfile_sha256": "5efb1bf5d002b57d6ca3eda192b4f52f01d3859289d4bd95c2d847982f803424",
   "render_note": "Original R smallfigures TRUE, PNG 60 DPI for audit readability; native canonical figures 300 DPI; gallery resized and palette-reduced to 256 colours only for documentation. Original files remain unchanged.",
   "limitations": "A/B have independently defined grids/populations; no pixel-equivalence claim. C first panel/group unless stated; strict fitting comparisons remain separate.",
@@ -20,7 +21,7 @@
         "6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06"
       ],
       "qscore_cutoff": 7,
-      "capture_sha256": "98c638dd6ec7db7718271d3eed27c9c5e21d42ee950360198e3772ed107b3186",
+      "capture_sha256": "ebcb6b3675f2244bfb91ece151c2448ec08e31a86c872afa7decd88aaea4d9b5",
       "session": [
         "R version 4.4.1 (2024-06-14)",
         "Platform: aarch64-apple-darwin20.0.0",
@@ -80,7 +81,7 @@
         "dd508d9dc645519e1c677fad2e29cc08be372c809bf56d26857e15f8ca20f4ef"
       ],
       "qscore_cutoff": 7,
-      "capture_sha256": "c80e19cb0931e96e9e460a6e4f548c23ca26c3673cd0b5e523a465fc3969197a",
+      "capture_sha256": "b6250c4b71130a27b4c7d034d7a48d19fea605c4201138331e4ce50a129c04e8",
       "session": [
         "R version 4.4.1 (2024-06-14)",
         "Platform: aarch64-apple-darwin20.0.0",
@@ -140,7 +141,7 @@
         "60a070e325b0c2e3e102b9e7d27c10e1abbe6c5f4e3a18fadba304dabb1cc571"
       ],
       "qscore_cutoff": 8,
-      "capture_sha256": "8545db77eea1cd95ea7a92e1ce55b36772b0000f56e2dc14913ee0c453796cfd",
+      "capture_sha256": "96d1d4a01e90069884b03dc437b23eba9756643bd9ebf67e41cba5cb8880b8ff",
       "session": [
         "R version 4.4.1 (2024-06-14)",
         "Platform: aarch64-apple-darwin20.0.0",
@@ -200,7 +201,7 @@
         "c71245ad265ed1a1bdd51954928207bef540e376df3961f86b8053c4ce771638"
       ],
       "qscore_cutoff": 8,
-      "capture_sha256": "1c831722abf89d090734719dbb5ad21c41bb8226dbfb75076469ac786e6f3b43",
+      "capture_sha256": "2c4e0fd21556366236aeb3e3600adbc96c72e08854db4c2f94126e4677741399",
       "session": [
         "R version 4.4.1 (2024-06-14)",
         "Platform: aarch64-apple-darwin20.0.0",
@@ -260,7 +261,7 @@
         "1d1860dabc15ed6931028e03d4af3a45cb18a23677c8ee233ae6d6766ed24000"
       ],
       "qscore_cutoff": 7,
-      "capture_sha256": "b67f8b6fd293e0b5808b1d103df8f7a00831d68016416b2b9b6b14489400c771",
+      "capture_sha256": "82f3c4f0c9a0c622190255204aa283dcc4a652a73de3ebb5a16e12051d08659d",
       "session": [
         "R version 4.4.1 (2024-06-14)",
         "Platform: aarch64-apple-darwin20.0.0",
@@ -321,7 +322,7 @@
         "1c77d6b888e496414f88db321c783cf3579f84c551ed25a6e56670afdcca274f"
       ],
       "qscore_cutoff": 7,
-      "capture_sha256": "527e1f3f11a66aa4a8508572690782764184ccebaaffe0e0021f82f99a64f241",
+      "capture_sha256": "4af795f503764ba6e425765c32b7d9a650afc191b851410b6415cf64fc5a49a1",
       "session": [
         "R version 4.4.1 (2024-06-14)",
         "Platform: aarch64-apple-darwin20.0.0",
@@ -378,7 +379,7 @@
   ],
   "rna_missing_labels": {
     "input_sha256": "badf07e020cffd1a1a42d3bf76e2cc295df4a5ca40e8466833144945f25353c3",
-    "capture_sha256": "256a5520a2b9ce0b016ee7508d448955da0ce9fc665fa775e39a955d4bfd9778",
+    "capture_sha256": "5a5ef0c99bb0ca540b83418b5eb76bf59ffc20f14f80313a589cb1851e910f51",
     "reference_reads": 1,
     "reference_yield_bp": 30,
     "native_reads": 3,
@@ -654,17 +655,6 @@
     },
     {
       "case": "minion",
-      "metric": "source_001.reads_per_hour.grid_finite_conservation",
-      "reference": 82,
-      "ontrunqc_or_independent": 82,
-      "absolute_difference": 0,
-      "signed_difference": 0,
-      "tolerance": 0,
-      "status": "exact_match",
-      "explanation": ""
-    },
-    {
-      "case": "minion",
       "metric": "source_001.reads_per_hour.group_1.hourly_count_L1",
       "reference": 0,
       "ontrunqc_or_independent": 0,
@@ -805,6 +795,78 @@
       "tolerance": 0,
       "status": "exact_match",
       "explanation": ""
+    },
+    {
+      "case": "minion",
+      "metric": "source_001.yield_over_time.source_001.all",
+      "candidate": "source_001:all",
+      "reference_observations": 238421,
+      "reference_unique_times": 234338,
+      "reference_tied_observations": 6083,
+      "native_observations": 238421,
+      "native_rendered_points": 8020,
+      "maximum_envelope_error_bp": 828561.3218617439,
+      "maximum_original_polyline_error_bp": 828561.3218617439,
+      "maximum_error_hours": 8.231783144444444,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 3527993016,
+      "native_terminal_yield_bp": 3527993016,
+      "omitted_points": 230401,
+      "yield_error_bound_bp": 861327,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 828561.3218629922,
+      "original_polyline_error_bound_bp": 1689579,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "minion",
+      "metric": "source_001.yield_over_time.source_001.q_selected",
+      "candidate": "source_001:q_selected",
+      "reference_observations": 131847,
+      "reference_unique_times": 129377,
+      "reference_tied_observations": 3239,
+      "native_observations": 131847,
+      "native_rendered_points": 8010,
+      "maximum_envelope_error_bp": 783976,
+      "maximum_original_polyline_error_bp": 783976,
+      "maximum_error_hours": 2.0802537083333332,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 3451284252,
+      "native_terminal_yield_bp": 3451284252,
+      "omitted_points": 123837,
+      "yield_error_bound_bp": 842599,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 783976.0,
+      "original_polyline_error_bound_bp": 1670523,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "minion",
+      "metric": "source_001.reads_per_hour.all",
+      "reference_points": 41,
+      "native_points": 41,
+      "hour_count_L1": 0,
+      "reference_observations": 238421,
+      "native_observations": 238421,
+      "status": "exact_match"
+    },
+    {
+      "case": "minion",
+      "metric": "source_001.reads_per_hour.q_selected",
+      "reference_points": 41,
+      "native_points": 41,
+      "hour_count_L1": 0,
+      "reference_observations": 131847,
+      "native_observations": 131847,
+      "status": "exact_match"
     },
     {
       "case": "minion",
@@ -2004,17 +2066,6 @@
     },
     {
       "case": "promethion",
-      "metric": "source_001.reads_per_hour.grid_finite_conservation",
-      "reference": 128,
-      "ontrunqc_or_independent": 128,
-      "absolute_difference": 0,
-      "signed_difference": 0,
-      "tolerance": 0,
-      "status": "exact_match",
-      "explanation": ""
-    },
-    {
-      "case": "promethion",
       "metric": "source_001.reads_per_hour.group_1.hourly_count_L1",
       "reference": 0,
       "ontrunqc_or_independent": 0,
@@ -2155,6 +2206,78 @@
       "tolerance": 0,
       "status": "exact_match",
       "explanation": ""
+    },
+    {
+      "case": "promethion",
+      "metric": "source_001.yield_over_time.source_001.all",
+      "candidate": "source_001:all",
+      "reference_observations": 75160,
+      "reference_unique_times": 75092,
+      "reference_tied_observations": 136,
+      "native_observations": 75160,
+      "native_rendered_points": 7572,
+      "maximum_envelope_error_bp": 115323.453764759,
+      "maximum_original_polyline_error_bp": 115323.453764759,
+      "maximum_error_hours": 1.0160728625,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 623196506,
+      "native_terminal_yield_bp": 623196506,
+      "omitted_points": 67588,
+      "yield_error_bound_bp": 152148,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 115323.45376474888,
+      "original_polyline_error_bound_bp": 223782,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "promethion",
+      "metric": "source_001.yield_over_time.source_001.q_selected",
+      "candidate": "source_001:q_selected",
+      "reference_observations": 49666,
+      "reference_unique_times": 49630,
+      "reference_tied_observations": 72,
+      "native_observations": 49666,
+      "native_rendered_points": 7374,
+      "maximum_envelope_error_bp": 107725.00766180642,
+      "maximum_original_polyline_error_bp": 107725.00766180642,
+      "maximum_error_hours": 0.35479973694444444,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 494360448,
+      "native_terminal_yield_bp": 494360448,
+      "omitted_points": 42292,
+      "yield_error_bound_bp": 120694,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 107725.0076618086,
+      "original_polyline_error_bound_bp": 192328,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "promethion",
+      "metric": "source_001.reads_per_hour.all",
+      "reference_points": 64,
+      "native_points": 64,
+      "hour_count_L1": 0,
+      "reference_observations": 75160,
+      "native_observations": 75160,
+      "status": "exact_match"
+    },
+    {
+      "case": "promethion",
+      "metric": "source_001.reads_per_hour.q_selected",
+      "reference_points": 64,
+      "native_points": 64,
+      "hour_count_L1": 0,
+      "reference_observations": 49666,
+      "native_observations": 49666,
+      "status": "exact_match"
     },
     {
       "case": "promethion",
@@ -3422,17 +3545,6 @@
     },
     {
       "case": "short",
-      "metric": "source_001.reads_per_hour.grid_finite_conservation",
-      "reference": 2,
-      "ontrunqc_or_independent": 2,
-      "absolute_difference": 0,
-      "signed_difference": 0,
-      "tolerance": 0,
-      "status": "exact_match",
-      "explanation": ""
-    },
-    {
-      "case": "short",
       "metric": "source_001.reads_per_hour.group_1.hourly_count_L1",
       "reference": 0,
       "ontrunqc_or_independent": 0,
@@ -3573,6 +3685,78 @@
       "tolerance": 0,
       "status": "exact_match",
       "explanation": ""
+    },
+    {
+      "case": "short",
+      "metric": "source_001.yield_over_time.source_001.all",
+      "candidate": "source_001:all",
+      "reference_observations": 99,
+      "reference_unique_times": 94,
+      "reference_tied_observations": 9,
+      "native_observations": 99,
+      "native_rendered_points": 99,
+      "maximum_envelope_error_bp": 0,
+      "maximum_original_polyline_error_bp": 28536,
+      "maximum_error_hours": 0.004285541666666667,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 1089633,
+      "native_terminal_yield_bp": 1089633,
+      "omitted_points": 0,
+      "yield_error_bound_bp": 0,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 0.0,
+      "original_polyline_error_bound_bp": 39005,
+      "original_polyline_status": "bounded_display_and_tie_order_difference",
+      "status": "exact_time_envelope",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "short",
+      "metric": "source_001.yield_over_time.source_001.q_selected",
+      "candidate": "source_001:q_selected",
+      "reference_observations": 76,
+      "reference_unique_times": 73,
+      "reference_tied_observations": 5,
+      "native_observations": 76,
+      "native_rendered_points": 76,
+      "maximum_envelope_error_bp": 0,
+      "maximum_original_polyline_error_bp": 21004,
+      "maximum_error_hours": 0.004285541666666667,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 969884,
+      "native_terminal_yield_bp": 969884,
+      "omitted_points": 0,
+      "yield_error_bound_bp": 0,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 0.0,
+      "original_polyline_error_bound_bp": 22190,
+      "original_polyline_status": "bounded_display_and_tie_order_difference",
+      "status": "exact_time_envelope",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "short",
+      "metric": "source_001.reads_per_hour.all",
+      "reference_points": 1,
+      "native_points": 1,
+      "hour_count_L1": 0,
+      "reference_observations": 99,
+      "native_observations": 99,
+      "status": "exact_match"
+    },
+    {
+      "case": "short",
+      "metric": "source_001.reads_per_hour.q_selected",
+      "reference_points": 1,
+      "native_points": 1,
+      "hour_count_L1": 0,
+      "reference_observations": 76,
+      "native_observations": 76,
+      "status": "exact_match"
     },
     {
       "case": "short",
@@ -4783,17 +4967,6 @@
     },
     {
       "case": "1d2",
-      "metric": "source_001.reads_per_hour.grid_finite_conservation",
-      "reference": 76,
-      "ontrunqc_or_independent": 76,
-      "absolute_difference": 0,
-      "signed_difference": 0,
-      "tolerance": 0,
-      "status": "exact_match",
-      "explanation": ""
-    },
-    {
-      "case": "1d2",
       "metric": "source_001.reads_per_hour.group_1.hourly_count_L1",
       "reference": 0,
       "ontrunqc_or_independent": 0,
@@ -4934,6 +5107,78 @@
       "tolerance": 0,
       "status": "exact_match",
       "explanation": ""
+    },
+    {
+      "case": "1d2",
+      "metric": "source_001.yield_over_time.source_001.all",
+      "candidate": "source_001:all",
+      "reference_observations": 159799,
+      "reference_unique_times": 159708,
+      "reference_tied_observations": 174,
+      "native_observations": 159799,
+      "native_rendered_points": 8050,
+      "maximum_envelope_error_bp": 159758.3499878049,
+      "maximum_original_polyline_error_bp": 159758.3499878049,
+      "maximum_error_hours": 8.000129619444444,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 930249488,
+      "native_terminal_yield_bp": 930249488,
+      "omitted_points": 151749,
+      "yield_error_bound_bp": 227112,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 159758.34998785635,
+      "original_polyline_error_bound_bp": 266755,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "1d2",
+      "metric": "source_001.yield_over_time.source_001.q_selected",
+      "candidate": "source_001:q_selected",
+      "reference_observations": 158952,
+      "reference_unique_times": 158861,
+      "reference_tied_observations": 174,
+      "native_observations": 158952,
+      "native_rendered_points": 8052,
+      "maximum_envelope_error_bp": 159758.3499878049,
+      "maximum_original_polyline_error_bp": 159758.3499878049,
+      "maximum_error_hours": 8.000129619444444,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 930105173,
+      "native_terminal_yield_bp": 930105173,
+      "omitted_points": 150900,
+      "yield_error_bound_bp": 227077,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 159758.34998785635,
+      "original_polyline_error_bound_bp": 266720,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "1d2",
+      "metric": "source_001.reads_per_hour.all",
+      "reference_points": 38,
+      "native_points": 38,
+      "hour_count_L1": 0,
+      "reference_observations": 159799,
+      "native_observations": 159799,
+      "status": "exact_match"
+    },
+    {
+      "case": "1d2",
+      "metric": "source_001.reads_per_hour.q_selected",
+      "reference_points": 38,
+      "native_points": 38,
+      "hour_count_L1": 0,
+      "reference_observations": 158952,
+      "native_observations": 158952,
+      "status": "exact_match"
     },
     {
       "case": "1d2",
@@ -6144,17 +6389,6 @@
     },
     {
       "case": "rna",
-      "metric": "source_001.reads_per_hour.grid_finite_conservation",
-      "reference": 2,
-      "ontrunqc_or_independent": 2,
-      "absolute_difference": 0,
-      "signed_difference": 0,
-      "tolerance": 0,
-      "status": "exact_match",
-      "explanation": ""
-    },
-    {
-      "case": "rna",
       "metric": "source_001.reads_per_hour.group_1.hourly_count_L1",
       "reference": 0,
       "ontrunqc_or_independent": 0,
@@ -6295,6 +6529,78 @@
       "tolerance": 0,
       "status": "exact_match",
       "explanation": ""
+    },
+    {
+      "case": "rna",
+      "metric": "source_001.yield_over_time.source_001.all",
+      "candidate": "source_001:all",
+      "reference_observations": 963,
+      "reference_unique_times": 962,
+      "reference_tied_observations": 2,
+      "native_observations": 963,
+      "native_rendered_points": 963,
+      "maximum_envelope_error_bp": 0,
+      "maximum_original_polyline_error_bp": 76,
+      "maximum_error_hours": 0.0014312194444444444,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 197413,
+      "native_terminal_yield_bp": 197413,
+      "omitted_points": 0,
+      "yield_error_bound_bp": 0,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 0.0,
+      "original_polyline_error_bound_bp": 76,
+      "original_polyline_status": "bounded_display_and_tie_order_difference",
+      "status": "exact_time_envelope",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "rna",
+      "metric": "source_001.yield_over_time.source_001.q_selected",
+      "candidate": "source_001:q_selected",
+      "reference_observations": 220,
+      "reference_unique_times": 220,
+      "reference_tied_observations": 0,
+      "native_observations": 220,
+      "native_rendered_points": 220,
+      "maximum_envelope_error_bp": 0,
+      "maximum_original_polyline_error_bp": 0,
+      "maximum_error_hours": 0.0014990972222222222,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 110127,
+      "native_terminal_yield_bp": 110127,
+      "omitted_points": 0,
+      "yield_error_bound_bp": 0,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 0.0,
+      "original_polyline_error_bound_bp": 0,
+      "original_polyline_status": "exact_match",
+      "status": "exact_time_envelope",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "rna",
+      "metric": "source_001.reads_per_hour.all",
+      "reference_points": 1,
+      "native_points": 1,
+      "hour_count_L1": 0,
+      "reference_observations": 963,
+      "native_observations": 963,
+      "status": "exact_match"
+    },
+    {
+      "case": "rna",
+      "metric": "source_001.reads_per_hour.q_selected",
+      "reference_points": 1,
+      "native_points": 1,
+      "hour_count_L1": 0,
+      "reference_observations": 220,
+      "native_observations": 220,
+      "status": "exact_match"
     },
     {
       "case": "rna",
@@ -7505,17 +7811,6 @@
     },
     {
       "case": "combined",
-      "metric": "source_001.reads_per_hour.grid_finite_conservation",
-      "reference": 82,
-      "ontrunqc_or_independent": 82,
-      "absolute_difference": 0,
-      "signed_difference": 0,
-      "tolerance": 0,
-      "status": "exact_match",
-      "explanation": ""
-    },
-    {
-      "case": "combined",
       "metric": "source_001.reads_per_hour.group_1.hourly_count_L1",
       "reference": 0,
       "ontrunqc_or_independent": 0,
@@ -7904,17 +8199,6 @@
       "metric": "source_002.yield_by_length.grid_finite_conservation",
       "reference": 553572,
       "ontrunqc_or_independent": 553572,
-      "absolute_difference": 0,
-      "signed_difference": 0,
-      "tolerance": 0,
-      "status": "exact_match",
-      "explanation": ""
-    },
-    {
-      "case": "combined",
-      "metric": "source_002.reads_per_hour.grid_finite_conservation",
-      "reference": 90,
-      "ontrunqc_or_independent": 90,
       "absolute_difference": 0,
       "signed_difference": 0,
       "tolerance": 0,
@@ -8327,6 +8611,254 @@
       "tolerance": 0,
       "status": "exact_match",
       "explanation": ""
+    },
+    {
+      "case": "combined",
+      "metric": "source_001.yield_over_time.source_001.all",
+      "candidate": "source_001:all",
+      "reference_observations": 238421,
+      "reference_unique_times": 234338,
+      "reference_tied_observations": 6083,
+      "native_observations": 238421,
+      "native_rendered_points": 8020,
+      "maximum_envelope_error_bp": 828561.3218617439,
+      "maximum_original_polyline_error_bp": 828561.3218617439,
+      "maximum_error_hours": 8.231783144444444,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 3527993016,
+      "native_terminal_yield_bp": 3527993016,
+      "omitted_points": 230401,
+      "yield_error_bound_bp": 861327,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 828561.3218629922,
+      "original_polyline_error_bound_bp": 1689579,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "combined",
+      "metric": "source_001.yield_over_time.source_001.q_selected",
+      "candidate": "source_001:q_selected",
+      "reference_observations": 131847,
+      "reference_unique_times": 129377,
+      "reference_tied_observations": 3239,
+      "native_observations": 131847,
+      "native_rendered_points": 8010,
+      "maximum_envelope_error_bp": 783976,
+      "maximum_original_polyline_error_bp": 783976,
+      "maximum_error_hours": 2.0802537083333332,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 3451284252,
+      "native_terminal_yield_bp": 3451284252,
+      "omitted_points": 123837,
+      "yield_error_bound_bp": 842599,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 783976.0,
+      "original_polyline_error_bound_bp": 1670523,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "combined",
+      "metric": "source_001.reads_per_hour.all",
+      "reference_points": 41,
+      "native_points": 41,
+      "hour_count_L1": 0,
+      "reference_observations": 238421,
+      "native_observations": 238421,
+      "status": "exact_match"
+    },
+    {
+      "case": "combined",
+      "metric": "source_001.reads_per_hour.q_selected",
+      "reference_points": 41,
+      "native_points": 41,
+      "hour_count_L1": 0,
+      "reference_observations": 131847,
+      "native_observations": 131847,
+      "status": "exact_match"
+    },
+    {
+      "case": "combined",
+      "metric": "source_002.yield_over_time.source_002.all",
+      "candidate": "source_002:all",
+      "reference_observations": 369787,
+      "reference_unique_times": 366746,
+      "reference_tied_observations": 5077,
+      "native_observations": 369787,
+      "native_rendered_points": 8038,
+      "maximum_envelope_error_bp": 815020.1101899147,
+      "maximum_original_polyline_error_bp": 815020.1101899147,
+      "maximum_error_hours": 8.117010613888889,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 3675308305,
+      "native_terminal_yield_bp": 3675308305,
+      "omitted_points": 361749,
+      "yield_error_bound_bp": 897293,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 815020.1101939833,
+      "original_polyline_error_bound_bp": 1543220,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "combined",
+      "metric": "source_002.yield_over_time.source_002.q_selected",
+      "candidate": "source_002:q_selected",
+      "reference_observations": 184499,
+      "reference_unique_times": 183367,
+      "reference_tied_observations": 1467,
+      "native_observations": 184499,
+      "native_rendered_points": 8038,
+      "maximum_envelope_error_bp": 813374.5652961731,
+      "maximum_original_polyline_error_bp": 813374.5652961731,
+      "maximum_error_hours": 8.979868305555556,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 3547485467,
+      "native_terminal_yield_bp": 3547485467,
+      "omitted_points": 176461,
+      "yield_error_bound_bp": 866086,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 813374.5652972066,
+      "original_polyline_error_bound_bp": 1496460,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "combined",
+      "metric": "source_002.reads_per_hour.all",
+      "reference_points": 45,
+      "native_points": 45,
+      "hour_count_L1": 0,
+      "reference_observations": 369787,
+      "native_observations": 369787,
+      "status": "exact_match"
+    },
+    {
+      "case": "combined",
+      "metric": "source_002.reads_per_hour.q_selected",
+      "reference_points": 45,
+      "native_points": 45,
+      "hour_count_L1": 0,
+      "reference_observations": 184499,
+      "native_observations": 184499,
+      "status": "exact_match"
+    },
+    {
+      "case": "combined",
+      "metric": "combined.yield_over_time.source_001.all",
+      "candidate": "source_001:all",
+      "reference_observations": 238421,
+      "reference_unique_times": 234338,
+      "reference_tied_observations": 6083,
+      "native_observations": 238421,
+      "native_rendered_points": 8020,
+      "maximum_envelope_error_bp": 828561.3218617439,
+      "maximum_original_polyline_error_bp": 828561.3218617439,
+      "maximum_error_hours": 8.231783144444444,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 3527993016,
+      "native_terminal_yield_bp": 3527993016,
+      "omitted_points": 230401,
+      "yield_error_bound_bp": 861327,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 828561.3218629922,
+      "original_polyline_error_bound_bp": 1689579,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "combined",
+      "metric": "combined.yield_over_time.source_001.q_selected",
+      "candidate": "source_001:q_selected",
+      "reference_observations": 131847,
+      "reference_unique_times": 129377,
+      "reference_tied_observations": 3239,
+      "native_observations": 131847,
+      "native_rendered_points": 8010,
+      "maximum_envelope_error_bp": 783976,
+      "maximum_original_polyline_error_bp": 783976,
+      "maximum_error_hours": 2.0802537083333332,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 3451284252,
+      "native_terminal_yield_bp": 3451284252,
+      "omitted_points": 123837,
+      "yield_error_bound_bp": 842599,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 783976.0,
+      "original_polyline_error_bound_bp": 1670523,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "combined",
+      "metric": "combined.yield_over_time.source_002.all",
+      "candidate": "source_002:all",
+      "reference_observations": 369787,
+      "reference_unique_times": 366746,
+      "reference_tied_observations": 5077,
+      "native_observations": 369787,
+      "native_rendered_points": 8038,
+      "maximum_envelope_error_bp": 815020.1101899147,
+      "maximum_original_polyline_error_bp": 815020.1101899147,
+      "maximum_error_hours": 8.117010613888889,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 3675308305,
+      "native_terminal_yield_bp": 3675308305,
+      "omitted_points": 361749,
+      "yield_error_bound_bp": 897293,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 815020.1101939833,
+      "original_polyline_error_bound_bp": 1543220,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
+    },
+    {
+      "case": "combined",
+      "metric": "combined.yield_over_time.source_002.q_selected",
+      "candidate": "source_002:q_selected",
+      "reference_observations": 184499,
+      "reference_unique_times": 183367,
+      "reference_tied_observations": 1467,
+      "native_observations": 184499,
+      "native_rendered_points": 8038,
+      "maximum_envelope_error_bp": 813374.5652961731,
+      "maximum_original_polyline_error_bp": 813374.5652961731,
+      "maximum_error_hours": 8.979868305555556,
+      "maximum_endpoint_coordinate_error_hours": 0,
+      "unmatched_native_coordinates": 0,
+      "maximum_coordinate_error_hours": 0,
+      "reference_terminal_yield_bp": 3547485467,
+      "native_terminal_yield_bp": 3547485467,
+      "omitted_points": 176461,
+      "yield_error_bound_bp": 866086,
+      "rounding_tolerance_bp": 1e-05,
+      "measured_native_order_error_bp": 813374.5652972066,
+      "original_polyline_error_bound_bp": 1496460,
+      "original_polyline_status": "bounded_display_difference",
+      "status": "bounded_display_difference",
+      "explanation": "All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity."
     },
     {
       "case": "combined",
@@ -14351,13 +14883,13 @@
       "family": "yield_over_time",
       "scope": "source_001",
       "reference_plot": "yield_over_time.png",
-      "native_figure": "qcutoff-yield-time.png",
+      "native_figure": "reference-cumulative.png",
       "card": "minion-source_001-yield_over_time.png",
       "input_sha256": [
         "6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06"
       ],
       "qscore_cutoff": 7,
-      "description": "R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.",
+      "description": "EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 828561.3218617439 bp, original polyline error 828561.3218617439 bp, display bound 861327 bp. Tied internal order is a separately reported difference, not point-for-point parity.",
       "measurements": {
         "reference_layer_rows": 370268,
         "reference_finite_xy": 370268,
@@ -14378,12 +14910,30 @@
             "count": null
           }
         ],
-        "matched_curve_coordinates": 126,
-        "maximum_absolute_curve_difference": 0.0,
-        "native_display_points": 126,
-        "reference_diagnostic_points": 162,
+        "full_reference_time_comparison": {
+          "candidate": "source_001:all",
+          "reference_observations": 238421,
+          "reference_unique_times": 234338,
+          "reference_tied_observations": 6083,
+          "native_observations": 238421,
+          "native_rendered_points": 8020,
+          "maximum_envelope_error_bp": 828561.3218617439,
+          "maximum_original_polyline_error_bp": 828561.3218617439,
+          "maximum_error_hours": 8.231783144444444,
+          "maximum_endpoint_coordinate_error_hours": 0,
+          "unmatched_native_coordinates": 0,
+          "maximum_coordinate_error_hours": 0,
+          "reference_terminal_yield_bp": 3527993016,
+          "native_terminal_yield_bp": 3527993016
+        },
+        "yield_error_bound_bp": 861327,
+        "matched_curve_coordinates": 256,
+        "maximum_absolute_curve_difference": 0.0002516288274971856,
+        "native_display_points": 256,
+        "reference_diagnostic_points": 256,
         "native_total_records": 238421,
-        "native_basecalled_reads": 237702
+        "native_basecalled_reads": 237702,
+        "actual_rendered_points": 8020
       }
     },
     {
@@ -14509,13 +15059,13 @@
       "family": "reads_per_hour",
       "scope": "source_001",
       "reference_plot": "reads_per_hour.png",
-      "native_figure": "qcutoff-reads-time.png",
+      "native_figure": "reference-hourly.png",
       "card": "minion-source_001-reads_per_hour.png",
       "input_sha256": [
         "6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06"
       ],
       "qscore_cutoff": 7,
-      "description": "R counts per integer hour; ONTRunQC counts per 15 minutes. Heights are NOT rates with equal exposure.",
+      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.",
       "measurements": {
         "reference_layer_rows": 82,
         "reference_finite_xy": 82,
@@ -14536,10 +15086,13 @@
             "count": null
           }
         ],
-        "native_display_points": 126,
+        "matched_curve_coordinates": 41,
+        "maximum_absolute_curve_difference": 0,
+        "native_display_points": 41,
         "reference_diagnostic_points": 41,
         "native_total_records": 238421,
-        "native_basecalled_reads": 237702
+        "native_basecalled_reads": 237702,
+        "actual_rendered_points": 41
       }
     },
     {
@@ -15082,13 +15635,13 @@
       "family": "yield_over_time",
       "scope": "source_001",
       "reference_plot": "yield_over_time.png",
-      "native_figure": "qcutoff-yield-time.png",
-      "card": null,
+      "native_figure": "reference-cumulative.png",
+      "card": "promethion-source_001-yield_over_time.png",
       "input_sha256": [
         "dd508d9dc645519e1c677fad2e29cc08be372c809bf56d26857e15f8ca20f4ef"
       ],
       "qscore_cutoff": 7,
-      "description": "R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.",
+      "description": "EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 115323.453764759 bp, original polyline error 115323.453764759 bp, display bound 152148 bp. Tied internal order is a separately reported difference, not point-for-point parity.",
       "measurements": {
         "reference_layer_rows": 124826,
         "reference_finite_xy": 124826,
@@ -15109,12 +15662,30 @@
             "count": null
           }
         ],
+        "full_reference_time_comparison": {
+          "candidate": "source_001:all",
+          "reference_observations": 75160,
+          "reference_unique_times": 75092,
+          "reference_tied_observations": 136,
+          "native_observations": 75160,
+          "native_rendered_points": 7572,
+          "maximum_envelope_error_bp": 115323.453764759,
+          "maximum_original_polyline_error_bp": 115323.453764759,
+          "maximum_error_hours": 1.0160728625,
+          "maximum_endpoint_coordinate_error_hours": 0,
+          "unmatched_native_coordinates": 0,
+          "maximum_coordinate_error_hours": 0,
+          "reference_terminal_yield_bp": 623196506,
+          "native_terminal_yield_bp": 623196506
+        },
+        "yield_error_bound_bp": 152148,
         "matched_curve_coordinates": 256,
-        "maximum_absolute_curve_difference": 2.2278999999958415e-05,
+        "maximum_absolute_curve_difference": 8.69140963621895e-05,
         "native_display_points": 256,
-        "reference_diagnostic_points": 257,
+        "reference_diagnostic_points": 256,
         "native_total_records": 75160,
-        "native_basecalled_reads": 75160
+        "native_basecalled_reads": 75160,
+        "actual_rendered_points": 7572
       }
     },
     {
@@ -15240,13 +15811,13 @@
       "family": "reads_per_hour",
       "scope": "source_001",
       "reference_plot": "reads_per_hour.png",
-      "native_figure": "qcutoff-reads-time.png",
-      "card": null,
+      "native_figure": "reference-hourly.png",
+      "card": "promethion-source_001-reads_per_hour.png",
       "input_sha256": [
         "dd508d9dc645519e1c677fad2e29cc08be372c809bf56d26857e15f8ca20f4ef"
       ],
       "qscore_cutoff": 7,
-      "description": "R counts per integer hour; ONTRunQC counts per 15 minutes. Heights are NOT rates with equal exposure.",
+      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.",
       "measurements": {
         "reference_layer_rows": 128,
         "reference_finite_xy": 128,
@@ -15267,10 +15838,13 @@
             "count": null
           }
         ],
-        "native_display_points": 256,
+        "matched_curve_coordinates": 64,
+        "maximum_absolute_curve_difference": 0,
+        "native_display_points": 64,
         "reference_diagnostic_points": 64,
         "native_total_records": 75160,
-        "native_basecalled_reads": 75160
+        "native_basecalled_reads": 75160,
+        "actual_rendered_points": 64
       }
     },
     {
@@ -16508,13 +17082,13 @@
       "family": "yield_over_time",
       "scope": "source_001",
       "reference_plot": "yield_over_time.png",
-      "native_figure": "qcutoff-yield-time.png",
-      "card": null,
+      "native_figure": "reference-cumulative.png",
+      "card": "short-source_001-yield_over_time.png",
       "input_sha256": [
         "60a070e325b0c2e3e102b9e7d27c10e1abbe6c5f4e3a18fadba304dabb1cc571"
       ],
       "qscore_cutoff": 8,
-      "description": "R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.",
+      "description": "EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 0 bp, original polyline error 28536 bp, display bound 0 bp. Tied internal order is a separately reported difference, not point-for-point parity.",
       "measurements": {
         "reference_layer_rows": 175,
         "reference_finite_xy": 175,
@@ -16535,12 +17109,30 @@
             "count": null
           }
         ],
-        "matched_curve_coordinates": 1,
+        "full_reference_time_comparison": {
+          "candidate": "source_001:all",
+          "reference_observations": 99,
+          "reference_unique_times": 94,
+          "reference_tied_observations": 9,
+          "native_observations": 99,
+          "native_rendered_points": 99,
+          "maximum_envelope_error_bp": 0,
+          "maximum_original_polyline_error_bp": 28536,
+          "maximum_error_hours": 0.004285541666666667,
+          "maximum_endpoint_coordinate_error_hours": 0,
+          "unmatched_native_coordinates": 0,
+          "maximum_coordinate_error_hours": 0,
+          "reference_terminal_yield_bp": 1089633,
+          "native_terminal_yield_bp": 1089633
+        },
+        "yield_error_bound_bp": 0,
+        "matched_curve_coordinates": 94,
         "maximum_absolute_curve_difference": 0.0,
-        "native_display_points": 1,
-        "reference_diagnostic_points": 2,
+        "native_display_points": 94,
+        "reference_diagnostic_points": 94,
         "native_total_records": 99,
-        "native_basecalled_reads": 98
+        "native_basecalled_reads": 98,
+        "actual_rendered_points": 99
       }
     },
     {
@@ -16666,13 +17258,13 @@
       "family": "reads_per_hour",
       "scope": "source_001",
       "reference_plot": "reads_per_hour.png",
-      "native_figure": "qcutoff-reads-time.png",
+      "native_figure": "reference-hourly.png",
       "card": "short-source_001-reads_per_hour.png",
       "input_sha256": [
         "60a070e325b0c2e3e102b9e7d27c10e1abbe6c5f4e3a18fadba304dabb1cc571"
       ],
       "qscore_cutoff": 8,
-      "description": "R counts per integer hour; ONTRunQC counts per 15 minutes. Heights are NOT rates with equal exposure.",
+      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.",
       "measurements": {
         "reference_layer_rows": 2,
         "reference_finite_xy": 2,
@@ -16693,10 +17285,13 @@
             "count": null
           }
         ],
+        "matched_curve_coordinates": 1,
+        "maximum_absolute_curve_difference": 0,
         "native_display_points": 1,
         "reference_diagnostic_points": 1,
         "native_total_records": 99,
-        "native_basecalled_reads": 98
+        "native_basecalled_reads": 98,
+        "actual_rendered_points": 1
       }
     },
     {
@@ -20591,13 +21186,13 @@
       "family": "yield_over_time",
       "scope": "source_001",
       "reference_plot": "yield_over_time.png",
-      "native_figure": "qcutoff-yield-time.png",
-      "card": null,
+      "native_figure": "reference-cumulative.png",
+      "card": "1d2-source_001-yield_over_time.png",
       "input_sha256": [
         "c71245ad265ed1a1bdd51954928207bef540e376df3961f86b8053c4ce771638"
       ],
       "qscore_cutoff": 8,
-      "description": "R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.",
+      "description": "EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 159758.3499878049 bp, original polyline error 159758.3499878049 bp, display bound 227112 bp. Tied internal order is a separately reported difference, not point-for-point parity.",
       "measurements": {
         "reference_layer_rows": 318751,
         "reference_finite_xy": 318751,
@@ -20618,12 +21213,30 @@
             "count": null
           }
         ],
-        "matched_curve_coordinates": 152,
-        "maximum_absolute_curve_difference": 0.0,
-        "native_display_points": 152,
-        "reference_diagnostic_points": 153,
+        "full_reference_time_comparison": {
+          "candidate": "source_001:all",
+          "reference_observations": 159799,
+          "reference_unique_times": 159708,
+          "reference_tied_observations": 174,
+          "native_observations": 159799,
+          "native_rendered_points": 8050,
+          "maximum_envelope_error_bp": 159758.3499878049,
+          "maximum_original_polyline_error_bp": 159758.3499878049,
+          "maximum_error_hours": 8.000129619444444,
+          "maximum_endpoint_coordinate_error_hours": 0,
+          "unmatched_native_coordinates": 0,
+          "maximum_coordinate_error_hours": 0,
+          "reference_terminal_yield_bp": 930249488,
+          "native_terminal_yield_bp": 930249488
+        },
+        "yield_error_bound_bp": 227112,
+        "matched_curve_coordinates": 256,
+        "maximum_absolute_curve_difference": 5.3723490496926374e-05,
+        "native_display_points": 256,
+        "reference_diagnostic_points": 256,
         "native_total_records": 159799,
-        "native_basecalled_reads": 159067
+        "native_basecalled_reads": 159067,
+        "actual_rendered_points": 8050
       }
     },
     {
@@ -20749,13 +21362,13 @@
       "family": "reads_per_hour",
       "scope": "source_001",
       "reference_plot": "reads_per_hour.png",
-      "native_figure": "qcutoff-reads-time.png",
-      "card": null,
+      "native_figure": "reference-hourly.png",
+      "card": "1d2-source_001-reads_per_hour.png",
       "input_sha256": [
         "c71245ad265ed1a1bdd51954928207bef540e376df3961f86b8053c4ce771638"
       ],
       "qscore_cutoff": 8,
-      "description": "R counts per integer hour; ONTRunQC counts per 15 minutes. Heights are NOT rates with equal exposure.",
+      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.",
       "measurements": {
         "reference_layer_rows": 76,
         "reference_finite_xy": 76,
@@ -20776,10 +21389,13 @@
             "count": null
           }
         ],
-        "native_display_points": 152,
+        "matched_curve_coordinates": 38,
+        "maximum_absolute_curve_difference": 0,
+        "native_display_points": 38,
         "reference_diagnostic_points": 38,
         "native_total_records": 159799,
-        "native_basecalled_reads": 159067
+        "native_basecalled_reads": 159067,
+        "actual_rendered_points": 38
       }
     },
     {
@@ -23869,13 +24485,13 @@
       "family": "yield_over_time",
       "scope": "source_001",
       "reference_plot": "yield_over_time.png",
-      "native_figure": "qcutoff-yield-time.png",
-      "card": null,
+      "native_figure": "reference-cumulative.png",
+      "card": "rna-source_001-yield_over_time.png",
       "input_sha256": [
         "1d1860dabc15ed6931028e03d4af3a45cb18a23677c8ee233ae6d6766ed24000"
       ],
       "qscore_cutoff": 7,
-      "description": "R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.",
+      "description": "EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 0 bp, original polyline error 76 bp, display bound 0 bp. Tied internal order is a separately reported difference, not point-for-point parity.",
       "measurements": {
         "reference_layer_rows": 1183,
         "reference_finite_xy": 1183,
@@ -23896,12 +24512,30 @@
             "count": null
           }
         ],
-        "matched_curve_coordinates": 1,
+        "full_reference_time_comparison": {
+          "candidate": "source_001:all",
+          "reference_observations": 963,
+          "reference_unique_times": 962,
+          "reference_tied_observations": 2,
+          "native_observations": 963,
+          "native_rendered_points": 963,
+          "maximum_envelope_error_bp": 0,
+          "maximum_original_polyline_error_bp": 76,
+          "maximum_error_hours": 0.0014312194444444444,
+          "maximum_endpoint_coordinate_error_hours": 0,
+          "unmatched_native_coordinates": 0,
+          "maximum_coordinate_error_hours": 0,
+          "reference_terminal_yield_bp": 197413,
+          "native_terminal_yield_bp": 197413
+        },
+        "yield_error_bound_bp": 0,
+        "matched_curve_coordinates": 256,
         "maximum_absolute_curve_difference": 0.0,
-        "native_display_points": 1,
-        "reference_diagnostic_points": 2,
+        "native_display_points": 256,
+        "reference_diagnostic_points": 256,
         "native_total_records": 963,
-        "native_basecalled_reads": 689
+        "native_basecalled_reads": 689,
+        "actual_rendered_points": 963
       }
     },
     {
@@ -24027,13 +24661,13 @@
       "family": "reads_per_hour",
       "scope": "source_001",
       "reference_plot": "reads_per_hour.png",
-      "native_figure": "qcutoff-reads-time.png",
-      "card": null,
+      "native_figure": "reference-hourly.png",
+      "card": "rna-source_001-reads_per_hour.png",
       "input_sha256": [
         "1d1860dabc15ed6931028e03d4af3a45cb18a23677c8ee233ae6d6766ed24000"
       ],
       "qscore_cutoff": 7,
-      "description": "R counts per integer hour; ONTRunQC counts per 15 minutes. Heights are NOT rates with equal exposure.",
+      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.",
       "measurements": {
         "reference_layer_rows": 2,
         "reference_finite_xy": 2,
@@ -24054,10 +24688,13 @@
             "count": null
           }
         ],
+        "matched_curve_coordinates": 1,
+        "maximum_absolute_curve_difference": 0,
         "native_display_points": 1,
         "reference_diagnostic_points": 1,
         "native_total_records": 963,
-        "native_basecalled_reads": 689
+        "native_basecalled_reads": 689,
+        "actual_rendered_points": 1
       }
     },
     {
@@ -28053,14 +28690,14 @@
       "family": "yield_over_time",
       "scope": "source_001",
       "reference_plot": "yield_over_time.png",
-      "native_figure": "qcutoff-yield-time.png",
-      "card": null,
+      "native_figure": "reference-cumulative.png",
+      "card": "combined-source_001-yield_over_time.png",
       "input_sha256": [
         "6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06",
         "1c77d6b888e496414f88db321c783cf3579f84c551ed25a6e56670afdcca274f"
       ],
       "qscore_cutoff": 7,
-      "description": "R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.",
+      "description": "EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 828561.3218617439 bp, original polyline error 828561.3218617439 bp, display bound 861327 bp. Tied internal order is a separately reported difference, not point-for-point parity.",
       "measurements": {
         "reference_layer_rows": 370268,
         "reference_finite_xy": 370268,
@@ -28081,12 +28718,30 @@
             "count": null
           }
         ],
-        "matched_curve_coordinates": 126,
-        "maximum_absolute_curve_difference": 0.0,
-        "native_display_points": 126,
-        "reference_diagnostic_points": 162,
+        "full_reference_time_comparison": {
+          "candidate": "source_001:all",
+          "reference_observations": 238421,
+          "reference_unique_times": 234338,
+          "reference_tied_observations": 6083,
+          "native_observations": 238421,
+          "native_rendered_points": 8020,
+          "maximum_envelope_error_bp": 828561.3218617439,
+          "maximum_original_polyline_error_bp": 828561.3218617439,
+          "maximum_error_hours": 8.231783144444444,
+          "maximum_endpoint_coordinate_error_hours": 0,
+          "unmatched_native_coordinates": 0,
+          "maximum_coordinate_error_hours": 0,
+          "reference_terminal_yield_bp": 3527993016,
+          "native_terminal_yield_bp": 3527993016
+        },
+        "yield_error_bound_bp": 861327,
+        "matched_curve_coordinates": 256,
+        "maximum_absolute_curve_difference": 0.0002516288274971856,
+        "native_display_points": 256,
+        "reference_diagnostic_points": 256,
         "native_total_records": 238421,
-        "native_basecalled_reads": 237702
+        "native_basecalled_reads": 237702,
+        "actual_rendered_points": 8020
       }
     },
     {
@@ -28215,14 +28870,14 @@
       "family": "reads_per_hour",
       "scope": "source_001",
       "reference_plot": "reads_per_hour.png",
-      "native_figure": "qcutoff-reads-time.png",
-      "card": null,
+      "native_figure": "reference-hourly.png",
+      "card": "combined-source_001-reads_per_hour.png",
       "input_sha256": [
         "6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06",
         "1c77d6b888e496414f88db321c783cf3579f84c551ed25a6e56670afdcca274f"
       ],
       "qscore_cutoff": 7,
-      "description": "R counts per integer hour; ONTRunQC counts per 15 minutes. Heights are NOT rates with equal exposure.",
+      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.",
       "measurements": {
         "reference_layer_rows": 82,
         "reference_finite_xy": 82,
@@ -28243,10 +28898,13 @@
             "count": null
           }
         ],
-        "native_display_points": 126,
+        "matched_curve_coordinates": 41,
+        "maximum_absolute_curve_difference": 0,
+        "native_display_points": 41,
         "reference_diagnostic_points": 41,
         "native_total_records": 238421,
-        "native_basecalled_reads": 237702
+        "native_basecalled_reads": 237702,
+        "actual_rendered_points": 41
       }
     },
     {
@@ -31916,14 +32574,14 @@
       "family": "yield_over_time",
       "scope": "source_002",
       "reference_plot": "yield_over_time.png",
-      "native_figure": "qcutoff-yield-time.png",
-      "card": null,
+      "native_figure": "reference-cumulative.png",
+      "card": "combined-source_002-yield_over_time.png",
       "input_sha256": [
         "6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06",
         "1c77d6b888e496414f88db321c783cf3579f84c551ed25a6e56670afdcca274f"
       ],
       "qscore_cutoff": 7,
-      "description": "R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.",
+      "description": "EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 815020.1101899147 bp, original polyline error 815020.1101899147 bp, display bound 897293 bp. Tied internal order is a separately reported difference, not point-for-point parity.",
       "measurements": {
         "reference_layer_rows": 554286,
         "reference_finite_xy": 554286,
@@ -31944,12 +32602,30 @@
             "count": null
           }
         ],
-        "matched_curve_coordinates": 177,
-        "maximum_absolute_curve_difference": 0.0,
-        "native_display_points": 177,
-        "reference_diagnostic_points": 178,
+        "full_reference_time_comparison": {
+          "candidate": "source_002:all",
+          "reference_observations": 369787,
+          "reference_unique_times": 366746,
+          "reference_tied_observations": 5077,
+          "native_observations": 369787,
+          "native_rendered_points": 8038,
+          "maximum_envelope_error_bp": 815020.1101899147,
+          "maximum_original_polyline_error_bp": 815020.1101899147,
+          "maximum_error_hours": 8.117010613888889,
+          "maximum_endpoint_coordinate_error_hours": 0,
+          "unmatched_native_coordinates": 0,
+          "maximum_coordinate_error_hours": 0,
+          "reference_terminal_yield_bp": 3675308305,
+          "native_terminal_yield_bp": 3675308305
+        },
+        "yield_error_bound_bp": 897293,
+        "matched_curve_coordinates": 256,
+        "maximum_absolute_curve_difference": 0.0002997644861764126,
+        "native_display_points": 256,
+        "reference_diagnostic_points": 256,
         "native_total_records": 369787,
-        "native_basecalled_reads": 368441
+        "native_basecalled_reads": 368441,
+        "actual_rendered_points": 8038
       }
     },
     {
@@ -32078,14 +32754,14 @@
       "family": "reads_per_hour",
       "scope": "source_002",
       "reference_plot": "reads_per_hour.png",
-      "native_figure": "qcutoff-reads-time.png",
-      "card": null,
+      "native_figure": "reference-hourly.png",
+      "card": "combined-source_002-reads_per_hour.png",
       "input_sha256": [
         "6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06",
         "1c77d6b888e496414f88db321c783cf3579f84c551ed25a6e56670afdcca274f"
       ],
       "qscore_cutoff": 7,
-      "description": "R counts per integer hour; ONTRunQC counts per 15 minutes. Heights are NOT rates with equal exposure.",
+      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.",
       "measurements": {
         "reference_layer_rows": 90,
         "reference_finite_xy": 90,
@@ -32106,10 +32782,13 @@
             "count": null
           }
         ],
-        "native_display_points": 177,
+        "matched_curve_coordinates": 45,
+        "maximum_absolute_curve_difference": 0,
+        "native_display_points": 45,
         "reference_diagnostic_points": 45,
         "native_total_records": 369787,
-        "native_basecalled_reads": 368441
+        "native_basecalled_reads": 368441,
+        "actual_rendered_points": 45
       }
     },
     {
@@ -32806,14 +33485,14 @@
       "family": "yield_over_time",
       "scope": "combined",
       "reference_plot": "yield_over_time.png",
-      "native_figure": "combined-yield-time-false.png",
+      "native_figure": "reference-cumulative-false.png",
       "card": "combined-combined-yield_over_time.png",
       "input_sha256": [
         "6b9a356c4aa99b6522262360591b68aa83ef942b5cbcd8461d9b8a418e9e3d06",
         "1c77d6b888e496414f88db321c783cf3579f84c551ed25a6e56670afdcca274f"
       ],
       "qscore_cutoff": 7,
-      "description": "R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.",
+      "description": "EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 828561.3218617439 bp, original polyline error 828561.3218617439 bp, display bound 861327 bp. Tied internal order is a separately reported difference, not point-for-point parity.",
       "measurements": {
         "reference_layer_rows": 924554,
         "reference_finite_xy": 924554,
@@ -32848,12 +33527,30 @@
             "count": null
           }
         ],
-        "matched_curve_coordinates": 126,
-        "maximum_absolute_curve_difference": 0.0,
-        "native_display_points": 126,
-        "reference_diagnostic_points": 162,
+        "full_reference_time_comparison": {
+          "candidate": "source_001:all",
+          "reference_observations": 238421,
+          "reference_unique_times": 234338,
+          "reference_tied_observations": 6083,
+          "native_observations": 238421,
+          "native_rendered_points": 8020,
+          "maximum_envelope_error_bp": 828561.3218617439,
+          "maximum_original_polyline_error_bp": 828561.3218617439,
+          "maximum_error_hours": 8.231783144444444,
+          "maximum_endpoint_coordinate_error_hours": 0,
+          "unmatched_native_coordinates": 0,
+          "maximum_coordinate_error_hours": 0,
+          "reference_terminal_yield_bp": 3527993016,
+          "native_terminal_yield_bp": 3527993016
+        },
+        "yield_error_bound_bp": 861327,
+        "matched_curve_coordinates": 256,
+        "maximum_absolute_curve_difference": 0.0002516288274971856,
+        "native_display_points": 256,
+        "reference_diagnostic_points": 256,
         "native_total_records": 608208,
-        "native_basecalled_reads": 606143
+        "native_basecalled_reads": 606143,
+        "actual_rendered_points": 8020
       }
     },
     {

@@ -96,8 +96,8 @@ case-sensitive for discovery. Source ordering ignores the final `.gz` suffix,
 with full canonical paths breaking ties; uncompressed ordering is unchanged.
 Compressed and plain chunks can share a run ID.
 
-`Source::open_summary` supplies one reader for discovery, aggregation, raw-fit
-and dense MinION passes, and strong publication verification. It uses a 64-KiB
+`Source::open_summary` supplies one reader for discovery, aggregation, raw-fit,
+reference histogram/temporal and dense MinION passes, and strong publication verification. It uses a 64-KiB
 source buffer and `flate2`'s multi-member gzip decoder, with the existing pure
 Rust backend. All members (including empty ones), CRC32 and size trailers must
 validate. Invalid headers, truncated streams and any invalid trailing bytes
@@ -226,8 +226,8 @@ contents added after discovery are not automatically included.
 
 Every source open compares path/canonical identity and the open descriptor.
 Streaming reads recheck metadata each 8 MiB of source bytes; EOF/finalization checks metadata,
-complete EOF and consumed byte count. Discovery, aggregation, GAM input and dense
-MinION passes all use this guard. Each completed parsed pass also compares its
+complete EOF and consumed byte count. Discovery, aggregation, GAM input,
+reference histogram/temporal and dense MinION passes all use this guard. Each completed parsed pass also compares its
 run-ID/count map, including missing-ID and control rows; no per-record strings
 are retained. Checks between phases and after rendering/before the first staged
 rename reject detected drift with source/stage and stable-copy guidance. Actual
@@ -263,3 +263,13 @@ Filesystem background: [Rust metadata](https://doc.rust-lang.org/std/fs/struct.M
 and [Linux NFS cache/coherence semantics](https://man7.org/linux/man-pages/man5/nfs.5.html).
 The checks above report observed consistency; they do not provide cache bypass,
 remote-writer coordination or atomic source snapshots.
+
+
+### Optional reference temporal pass
+
+`--minionqc-time-series` performs one additional guarded read per run/file
+membership. Mixed-run files may therefore be decoded once per affected run.
+Only bounded numeric sort records are written to private `TMPDIR` scratch; no
+TSV extraction occurs. Sorting and rendering remain sequential after bounded
+aggregation workers. [Temporal definitions and scratch/error limits](metrics.md#optional-minionqc-temporal-plots-20)
+apply independently of native diagnostics and the other compatibility flags.

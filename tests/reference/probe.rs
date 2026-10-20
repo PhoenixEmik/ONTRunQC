@@ -112,6 +112,9 @@ fn export_report() {
                 source.plot_bins = Some(plot_bins(std::slice::from_ref(path), cutoff));
             }
             let mut source = source.finish(None).unwrap();
+            if std::env::var_os("PG_PROBE_TIME_SERIES").is_some() {
+                source.minionqc_time_series = Some(temporal(path, cutoff));
+            }
             source.diagnostics.minion_read_visualization =
                 visualization.map(|v| v.finish().unwrap());
             source.fitted_trends = Some(plan.finish());
@@ -171,4 +174,14 @@ fn plot_bins(paths: &[std::path::PathBuf], cutoff: f64) -> crate::plot_bins::Plo
         }
     }
     bins.finish()
+}
+
+fn temporal(path: &std::path::Path, cutoff: f64) -> crate::temporal::Temporal {
+    let mut builder = crate::temporal::Builder::new().unwrap();
+    let mut reader = crate::input::SummaryReader::new(std::fs::File::open(path).unwrap()).unwrap();
+    reader.allow_multiple_runs();
+    while let Some(record) = reader.next_record().unwrap() {
+        builder.add(&record, cutoff).unwrap();
+    }
+    builder.finish().unwrap()
 }

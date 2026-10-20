@@ -222,3 +222,68 @@ def compatible_bin_checks(capture, reports, paths=None, cutoff=None):
                     explanation='True per-channel counts replace upstream triangular n(n+1)/2; both values AND resulting limits may differ.' if intentional else 'Original built rows compared with corresponding Rust bins/cells; no coarse-histogram reconstruction.',
                     first_reference=reference[:1],first_actual=native[:1],last_reference=reference[-1:],last_actual=native[-1:]))
     return out
+
+
+def compatible_time_checks(capture,reports):
+    """Exact hours/terminals; separately measured full-reference envelope error.
+
+    A bounded display is never classified as point-for-point agreement. R's
+    arbitrary tied-read ordering is reported separately from same-time maxima.
+    """
+    out=[]
+    def population(plot,panel,colour):
+        info=next(p for p in plot['panels'] if str(p['PANEL'])==str(panel))
+        q=info.get('Q_cutoff')
+        if q is None: q=plot['colour_labels'][plot['colours'].index(colour)]
+        return 'all' if q=='All reads' else 'q_selected'
+    for plot in capture['plots']:
+        family=plot['file'].rsplit('.',1)[0]
+        if family not in ('reads_per_hour','yield_over_time'):continue
+        scope='combined' if plot['directory']=='combinedQC' else plot['directory']
+        report=reports[scope]
+        for layer in plot['layers']:
+            audit=layer.get('audit',{})
+            if audit.get('geom')!='GeomLine':continue
+            if family=='reads_per_hour':
+                data=audit.get('data')
+                if data is None:raise RuntimeError('Hourly capture was not complete; refusing sample-only verification')
+                for group in sorted(set(d['group'] for d in data)):
+                    rows=[d for d in data if d['group']==group]
+                    key=population(plot,rows[0]['PANEL'],rows[0]['colour'])
+                    # Original script only has per-source hourly figures.
+                    model=report['minionqc_time_series'][key]
+                    actual=[(h['hour'],h['read_count']) for h in model['hourly']]
+                    expected=[(d['x'],d['y']) for d in rows]
+                    error=sum(abs(a[0]-b[0])+abs(a[1]-b[1]) for a,b in zip(actual,expected))
+                    out.append(dict(metric=f'{scope}.{family}.{key}',reference_points=len(expected),native_points=len(actual),hour_count_L1=error,
+                        reference_observations=sum(d['y'] for d in rows),native_observations=model['observations'],
+                        status='exact_match' if len(expected)==len(actual) and error==0 and sum(d['y'] for d in rows)==model['observations'] else 'unexplained_difference'))
+            else:
+                groups=audit.get('temporal_comparisons') or []
+                if isinstance(groups,dict):groups=list(groups.values())
+                if not groups:raise RuntimeError('Missing actual R temporal comparisons')
+                for group in groups:
+                    key=population(plot,group['panel'],group['colour'])
+                    source=scope
+                    if scope=='combined':
+                        source=plot['colour_labels'][plot['colours'].index(group['colour'])]
+                        model=next(r for r in report['collection']['runs'] if r['source']['source_id']==source)['minionqc_time_series'][key]
+                    else:model=report['minionqc_time_series'][key]
+                    candidate=source+':'+key
+                    c=next(c for c in group['comparisons'] if c['candidate']==candidate)
+                    curve=model['cumulative'];error=c['maximum_envelope_error_bp']
+                    original_error=c['maximum_original_polyline_error_bp']
+                    tie_bound=curve.get('maximum_tied_yield_bp',0)
+                    # Only GB-to-bp serialization/arithmetic roundoff; count and
+                    # terminal integer tolerances are zero. No GAM tolerance used.
+                    rounding=1e-5
+                    passed=(c['reference_observations']==model['observations'] and c['maximum_endpoint_coordinate_error_hours']==0 and c['unmatched_native_coordinates']==0 and c['maximum_coordinate_error_hours']==0 and
+                        c['reference_terminal_yield_bp']==model['total_yield_bp']==c['native_terminal_yield_bp'] and error<=curve['yield_error_bound_bp']+rounding and original_error<=curve['yield_error_bound_bp']+tie_bound+rounding)
+                    out.append(dict(metric=f'{scope}.{family}.{source}.{key}',**{k:v for k,v in c.items() if k!='samples'},
+                        omitted_points=curve['omitted_points'],yield_error_bound_bp=curve['yield_error_bound_bp'],rounding_tolerance_bp=rounding,
+                        measured_native_order_error_bp=curve['maximum_linear_interpolation_error_bp'],
+                        original_polyline_error_bound_bp=curve['yield_error_bound_bp']+tie_bound,
+                        original_polyline_status=('exact_match' if original_error==0 else 'rounding_match' if original_error<=rounding else 'bounded_display_difference' if original_error<=curve['yield_error_bound_bp']+rounding else 'bounded_display_and_tie_order_difference'),
+                        status=('exact_time_envelope' if error==0 else 'rounding_time_envelope' if error<=rounding else 'bounded_display_difference') if passed else 'unexplained_difference',
+                        explanation='All original R timestamp maxima AND actual GeomLine left/right limits evaluated. Exact endpoints/counts; explicit simplification bound plus separately disclosed tied-order bound. Not point-for-point parity.'))
+    return out

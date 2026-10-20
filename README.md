@@ -108,6 +108,21 @@ and a 25 bp median length. It demonstrates report behavior, not run performance.
 
 ## Common workflows
 
+### Reference-compatible MinIONQC time plots
+
+```sh
+ontrunqc analyze sequencing_summary.txt.gz \
+  --minionqc-time-series --output qc_results/reference-time/
+```
+
+Adds exact All/Q summary counts per integer hour and read-start cumulative yield
+curves. Native 15-minute diagnostics stay available. Large curves use a bounded,
+measured simplification; tied-time ordering differences from R are disclosed.
+Independent run timelines stay separate. This option uses an additional guarded
+read and temporary **numeric** sorting files; see [definitions and resource
+limits](docs/metrics.md#optional-minionqc-temporal-plots-20). Compatibility flags
+are independent and must be enabled explicitly.
+
 ### Physical channel maps
 
 The device is never inferred from channel IDs. Choose a compatible layout:
@@ -189,7 +204,8 @@ identical populations, bins, curves, rendering or CLI defaults.
 | LOESS and optional R-grid KDE | Actual pinned-R validation within declared tolerances. |
 | Original-R GAM | **Partial:** 1,542 fit/uncertainty discrepancies remain in the 18-case strict suite. |
 | Histogram/Bin2D layers | Exact pinned-R comparisons with `--minionqc-plot-bins`; native fixed bins remain default. |
-| Time/yield display layers | Native resolutions and representations still differ; tracked in #20–#21. |
+| Temporal layers | `--minionqc-time-series`: exact summary-hour counts, exact terminal yields and bounded read-start curves; simplification/tied-order differences explicitly quantified. |
+| Yield by minimum length display | Exact stored queries; remaining display differences tracked in #21. |
 
 Start with the [source-backed comparison](docs/minionqc-comparison.md),
 [actual A/B/C figure gallery](docs/figures/minionqc-comparison/README.md) and

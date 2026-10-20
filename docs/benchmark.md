@@ -22,6 +22,7 @@ Measurements are observations of named inputs/environments, not general throughp
   - [Input-integrity and final parity revalidation](#input-integrity-and-final-parity-revalidation)
   - [Streaming gzip input](#streaming-gzip-input)
   - [Reference histogram and Bin2D mode (#19)](#reference-histogram-and-bin2d-mode-19)
+  - [Reference temporal mode (#20)](#reference-temporal-mode-20)
 
 ## Choose a measurement
 
@@ -34,6 +35,7 @@ Measurements are observations of named inputs/environments, not general throughp
 | Native figure formats | `tests/static_exports.py` | [Export observations](#native-static-figure-exports-15). |
 | Independent workers | `tests/parallel_runs.py` | [Worker](#bounded-independent-run-processing-16) and [guarded-path](#input-integrity-and-final-parity-revalidation) observations. |
 | Plain versus gzip | `tests/gzip_inputs.py` | [Gzip observations](#streaming-gzip-input). |
+| Reference temporal sorting/curves | `tests/reference/temporal_benchmark.py` | [Temporal costs](#reference-temporal-mode-20). |
 
 Read each section's input/options/environment before comparing numbers. Retain
 exit status, wall/user/system time, peak RSS, input/output sizes, pass count and
@@ -54,6 +56,7 @@ bars are inferred from single executions.
 | Static exports | [Runtime, RSS and figure size by format](figures/benchmark/static-exports.svg) | [Dense public MinION exports](#native-static-figure-exports-15) |
 | Workers and integrity | [1 / 2 / 4 workers with metadata or SHA-256](figures/benchmark/workers-and-integrity.svg) | [Final guarded-path observations](#input-integrity-and-final-parity-revalidation) |
 | gzip input | [Source size, runtime, CPU and RSS](figures/benchmark/gzip-input.svg) | [Equivalent plain / gzip summaries](#streaming-gzip-input) |
+| Reference temporal plots | [Runtime, RSS, scratch and output size](figures/benchmark/temporal-reference.svg) | [One/two-source native / reference costs](#reference-temporal-mode-20) |
 
 Regenerate from the existing Markdown tables, from the repository root:
 
@@ -749,3 +752,75 @@ python3 tests/reference/bin_benchmark.py /path/to/synthetic.tsv \
 The helper reuses the existing child-specific `wait4`/temporary-storage monitor;
 it never regenerates R targets or copies private inputs into Git. Numerical
 reference validation is documented separately in the [#19 comparison](minionqc-comparison.md#reference-histogram-and-bin2d-validation-19).
+
+
+### Reference temporal mode (#20)
+
+Measured 2026-10-20, macOS 27.0.1 arm64, Rust 1.98.1 locked release, after the
+R audit/builds stopped. Each independent source has **1,000,000 fictional
+records**: source A is 65,048,971 plain bytes; source B is 14,190,814 gzip bytes.
+Their numeric observation patterns match but their synthetic run IDs differ.
+The mixed collection has 2,000,000 records / 79,239,785 input bytes. Generation
+precedes timing. Each row is one execution, with uncontrolled cache/system load;
+no private run, 11-GB benchmark or HPC/NFS performance measurement was performed.
+
+![Measured native and optional temporal costs for one-million-record single sources and a two-million-record mixed collection.](figures/benchmark/temporal-reference.svg)
+
+| Temporal case | Wall s | User CPU s | System CPU s | Peak RSS MiB | Sampled temp MiB | Input passes per source | Output bytes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| single-native | 0.6195 | 0.5849 | 0.0141 | 53.17 | 1.68 | 1 | 4,511,780 |
+| single-reference | 1.0292 | 0.9422 | 0.0702 | 53.69 | 47.12 | 2 | 7,262,499 |
+| gzip-native | 0.7381 | 0.7105 | 0.0107 | 53.33 | 1.68 | 1 | 4,511,780 |
+| gzip-reference | 1.2667 | 1.1839 | 0.0632 | 54.30 | 46.28 | 2 | 7,262,499 |
+| multi-native | 1.5051 | 1.4639 | 0.0230 | 98.95 | 2.82 | 1 | 2,956,995 |
+| multi-reference-1 | 2.5066 | 2.3278 | 0.1441 | 105.22 | 47.20 | 2 | 9,438,607 |
+| multi-reference-2 | 2.7873 | 3.1239 | 0.1594 | 123.80 | 45.99 | 3 | 9,438,607 |
+| multi-reference-sha | 3.3316 | 3.1593 | 0.1432 | 102.39 | 46.24 | 3 | 9,438,607 |
+| multi-reference-svg | 2.6672 | 2.3682 | 0.1398 | 102.47 | 45.80 | 2 | 11,653,553 |
+
+Native rows omit the new option; reference rows enable `--minionqc-time-series`.
+Mixed rows use `--combined-only`; default worker count is one. The two-worker
+case adds a component-discovery pass and is slower here (2.7873 vs 2.5066 s),
+with higher RSS; accepting more workers is not itself evidence of a speedup.
+SHA adds a complete publication reread/validation/hash pass. Each gzip pass
+(including strong publication verification) decompresses again while hashing
+compressed source bytes. Numeric-sort file scans are additional scratch I/O,
+not counted as TSV passes. Pass counts are per-source code paths, not syscall
+traces; the machine-readable evidence also records total/per-source counts.
+
+Two-source, one-worker phase logs measured:
+
+| Work | Source A / B seconds | Scope |
+| --- | ---: | --- |
+| Guarded reread + chunk work | 0.332 / 0.457 | Parsing/decompression, bounded chunk comparisons and spill writes. |
+| Chunk comparisons | 0.032136 / 0.032532 | Included in the reread phase, not additive to it. |
+| Merge I/O | 0.056941 / 0.057982 | Private sorted numeric files. |
+| Curve + error scans | 0.026814 / 0.025839 | Two scans of every sorted numeric observation. |
+| HTML generation | 0.009361 | Combined renderer; source reports skipped. |
+| SVG extraction/staging | 0.143646 | Separate SVG-export configuration; HTML generation 0.009412 s. |
+
+Other wall/CPU cost includes canonical aggregation/statistics, JSON/staging and
+publication; these were not isolated further. Phase timers overlap as noted and
+must not be summed as independent measurements. SVG timing is not a measurement
+of PNG/PDF/PS conversion. Figures retain the canonical export pipeline.
+
+All canonical JSON values match after removing only the new field; one/two-worker
+combined JSON is byte-identical. Sorting processes one source at a time: sampled
+numeric/staging peaks remain around 46–47 MiB for both single and two-source
+reference modes, rather than retaining two complete sorted runs in memory.
+10-ms temporary samples are **lower bounds** and include staged outputs. No TSV
+is extracted and no scratch/staged files remain after success. See the
+[bounded-memory and disk definitions](metrics.md#optional-minionqc-temporal-plots-20):
+existing exact-statistic buffers still grow with read count. No 30-million-record
+RSS/runtime guarantee is inferred from these observations.
+
+```sh
+cargo build --release --locked
+python3 tests/reference/temporal_benchmark.py --records 1000000 \
+  --output benchmark-results/time-performance
+```
+
+The committed [temporal evidence](../tests/reference/temporal-validation-summary.json)
+contains full-precision measurements, binary hash and phase logs. Large generated
+inputs/reports stay ignored. The benchmark figure is regenerated by the existing
+`tests/plot_benchmarks.R` from this measured table, without rerunning the tool.

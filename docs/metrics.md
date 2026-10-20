@@ -13,6 +13,7 @@ Scientific definitions and exact JSON fields for ONTRunQC. Counts, filtering pop
 - [Quality](#quality)
 - [Histograms and joint distributions](#histograms-and-joint-distributions)
 - [Optional MinIONQC histogram layers (#19)](#optional-minionqc-histogram-layers-19)
+- [Optional MinIONQC temporal plots (#20)](#optional-minionqc-temporal-plots-20)
 - [Yield over time](#yield-over-time)
 - [Channels, muxes and termination](#channels-muxes-and-termination)
 - [Sequencing speed proxy](#sequencing-speed-proxy)
@@ -249,6 +250,97 @@ R annotation layers can expand X limits, so that separate rendering setting is
 not claimed numerically equivalent.
 Schema version remains 1: this opt-in field is additive and omitted by default.
 See [verified comparisons](minionqc-comparison.md#reference-histogram-and-bin2d-validation-19).
+
+## Optional MinIONQC temporal plots (#20)
+
+`--minionqc-time-series` adds `minionqc_time_series` to individual reports and
+`collection.runs[]`. It is independent of `--minionqc-compat`,
+`--minionqc-plot-bins`, `--minionqc-trends` and `--minionqc-density`; none enables
+another. Defaults and existing 900-second fields/plots are unchanged. Schema 1
+is extended additively; strict consumers must allow unknown fields.
+
+### Populations and integer hours
+
+`all` includes every retained summary record, including zero lengths and signed
+legacy Q-scores. `q_selected` includes records with Q >= the configured cutoff,
+**also including zero lengths**. RNA controls use the existing exclusion policy.
+These plot populations are deliberately distinct from canonical basecalled
+statistics and native passing. Each population has `observations`, exact
+`total_yield_bp`, `hourly` and `cumulative`.
+
+`hourly` stores exact `{hour, read_count}` pairs at
+`floor(start_time / 3600)`. Both populations are zero-filled from hour 0 through
+the All population's last observed hour; an empty source has no hours. There is
+no division by exposure, interpolation or conversion of 15-minute counts to
+hourly rates. To bound explicit zero-fill/output, this option rejects a last
+hour above 100,000 (over eleven years), with an actionable error; native plots
+remain available without it. An empty Q population has no cumulative curve; known hourly counts remain
+explicit zeros. A chart with no retained observations shows an explanatory
+unavailable state. Upstream MinIONQC instead exits when no selected records exist.
+
+### Read-start cumulative curves and ties
+
+Numeric observations are sorted by finite start seconds, then deterministic
+source-file/record order. `points` contain original `start_seconds`, exact
+`cumulative_yield_bp` and a one-based population `observation_index`. Zero-length
+observations remain observations even when cumulative yield does not increase.
+No artificial time-zero point is added. JSON stores integer bases; SVG axes
+use hours and decimal Gb. All/Q comparison panels share the All time range,
+with independent Y ranges for separate per-source population figures. Independent runs have independent curves; the pooled
+report does **not** invent a combined instrument timeline.
+
+R merges MinION channels before sorting time and later reorders rows by length
+and hour. For tied times its individual cumulative values and GeomLine ordering
+can therefore differ from input order, including backwards vertical traversals.
+ONTRunQC does not emulate that implementation-dependent ordering. It reports
+`tied_timestamp_groups`, `tied_observations`, and `maximum_tied_yield_bp` for each
+population. Post-tie cumulative maxima and final yields are invariant; exact
+point-for-point or intervening line-segment equivalence is **not** claimed at
+ties. Validation measures both post-tie envelopes and actual R one-sided
+polyline limits separately. The conservative additional tie-order error bound
+is `maximum_tied_yield_bp`.
+
+### Bounded display and measured error
+
+Up to 8,192 observations are displayed as exact numeric points. Larger
+populations use `representation=bounded_monotone_polyline`, with
+`epsilon = ceil(total_yield_bp / 4096)`. Starting at the first observation, retain
+the previous and current point whenever the current cumulative value exceeds
+the retained anchor by epsilon; always retain the last point. Consecutive large
+jumps thus retain both endpoints. Every read contributes; this is not sampling.
+There are at most 8,194 display points per population, including first/last.
+Zero-yield dense populations need only first/last coordinates.
+
+Between nonconsecutive retained vertices the vertical span is at most epsilon;
+consecutive vertices reproduce the original segment. Hence the linear-display
+error is at most epsilon bp against the native stable-order curve.
+`yield_error_bound_bp` records this guarantee and
+`maximum_linear_interpolation_error_bp` measures the actual maximum over **all**
+sorted original vertices in a second numeric-file scan. Shared-time vertical
+segments cover intermediate native values. `omitted_points` reports the number
+of original vertices not displayed. The measured value is not silently reused
+as an original-R error: the optional R suite independently checks every original
+R breakpoint/one-sided limit, retaining explicit tied-order differences.
+
+### Passes, scratch and integrity
+
+One guarded TSV reread per run/file membership supplies the sorter; interleaved
+runs sharing a file require one such reread for each affected run. All gzip
+members/CRC/trailing bytes, membership, source identity and optional raw-byte
+SHA guards are validated using the existing API. One run is sorted at a time,
+including in parallel/combined-only analyses. No full TSV extraction occurs.
+
+Private `TMPDIR/ontrunqc-time-*` files contain only 25-byte numeric observations
+(time, length, stable ordinal, selection bit). Unix scratch directories use mode
+0700. Sorting buffers at most 65,536 observations (about 2 MiB), merges at most
+32 files at once, and carries a bounded number of files per merge level.
+Peak numeric scratch is at most approximately twice 25 bytes per observation
+(1.5 GB for 30 million observations), excluding staging of reports. Merge depth
+increases numeric I/O; curves require two scans of the final sorted file, not
+extra TSV/decompression passes. Files are removed on success/error; OS/process
+termination can leave scratch, as with any nonpersistent temporary workspace.
+Disk-full/I/O/source-change errors prevent that report's publication. Existing
+per-file publication guarantees apply; there is no collection-wide transaction.
 
 ## Yield over time
 

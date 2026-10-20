@@ -18,6 +18,8 @@ Each card uses identical source bytes and Q cutoff. File-scoped validation match
 
 **Plot mode:** `--minionqc-plot-bins`. Histogram/Bin2D geometry and counts use the original statistical layers; true channel counts intentionally correct the upstream count defect.
 
+**Temporal mode:** `--minionqc-time-series`. Integer-hour counts include zero lengths and zero-filled gaps. Large cumulative curves are bounded full-data polylines; original-R tied-row ordering and simplification errors are reported separately. C temporal residuals are bounded samples; maxima evaluate every original timestamp/one-sided limit.
+
 ## Browse by analysis
 
 - [Single MinION flowcell](#single-minion-flowcell)
@@ -63,7 +65,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populatio
 
 ### yield_over_time · minion · source_001
 
-R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.
+EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 828561.3218617439 bp, original polyline error 828561.3218617439 bp, display bound 861327 bp. Tied internal order is a separately reported difference, not point-for-point parity.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populations follow the A/B labels and C caption.
 
@@ -103,7 +105,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populatio
 
 ### reads_per_hour · minion · source_001
 
-R counts per integer hour; ONTRunQC counts per 15 minutes. Heights are NOT rates with equal exposure.
+Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populations follow the A/B labels and C caption.
 
@@ -163,6 +165,26 @@ Q cutoff: 7; input SHA-256 prefixes: dd508d9dc645519e. Axes, units and populatio
 
 ![promethion q_histogram: original, native and numerical diagnostic](promethion-source_001-q_histogram.png)
 
+<a id="promethion--yield_over_time--source_001"></a>
+
+### yield_over_time · promethion · source_001
+
+EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 115323.453764759 bp, original polyline error 115323.453764759 bp, display bound 152148 bp. Tied internal order is a separately reported difference, not point-for-point parity.
+
+Q cutoff: 7; input SHA-256 prefixes: dd508d9dc645519e. Axes, units and populations follow the A/B labels and C caption.
+
+![promethion yield_over_time: original, native and numerical diagnostic](promethion-source_001-yield_over_time.png)
+
+<a id="promethion--reads_per_hour--source_001"></a>
+
+### reads_per_hour · promethion · source_001
+
+Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.
+
+Q cutoff: 7; input SHA-256 prefixes: dd508d9dc645519e. Axes, units and populations follow the A/B labels and C caption.
+
+![promethion reads_per_hour: original, native and numerical diagnostic](promethion-source_001-reads_per_hour.png)
+
 <a id="promethion--length_vs_q--source_001"></a>
 
 ### length_vs_q · promethion · source_001
@@ -183,15 +205,45 @@ Q cutoff: 7; input SHA-256 prefixes: dd508d9dc645519e. Axes, units and populatio
 
 ![promethion channel_summary: original, native and numerical diagnostic](promethion-source_001-channel_summary.png)
 
+<a id="short--yield_over_time--source_001"></a>
+
+### yield_over_time · short · source_001
+
+EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 0 bp, original polyline error 28536 bp, display bound 0 bp. Tied internal order is a separately reported difference, not point-for-point parity.
+
+Q cutoff: 8; input SHA-256 prefixes: 60a070e325b0c2e3. Axes, units and populations follow the A/B labels and C caption.
+
+![short yield_over_time: original, native and numerical diagnostic](short-source_001-yield_over_time.png)
+
 <a id="short--reads_per_hour--source_001"></a>
 
 ### reads_per_hour · short · source_001
 
-R counts per integer hour; ONTRunQC counts per 15 minutes. Heights are NOT rates with equal exposure.
+Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.
 
 Q cutoff: 8; input SHA-256 prefixes: 60a070e325b0c2e3. Axes, units and populations follow the A/B labels and C caption.
 
 ![short reads_per_hour: original, native and numerical diagnostic](short-source_001-reads_per_hour.png)
+
+<a id="1d2--yield_over_time--source_001"></a>
+
+### yield_over_time · 1d2 · source_001
+
+EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 159758.3499878049 bp, original polyline error 159758.3499878049 bp, display bound 227112 bp. Tied internal order is a separately reported difference, not point-for-point parity.
+
+Q cutoff: 8; input SHA-256 prefixes: c71245ad265ed1a1. Axes, units and populations follow the A/B labels and C caption.
+
+![1d2 yield_over_time: original, native and numerical diagnostic](1d2-source_001-yield_over_time.png)
+
+<a id="1d2--reads_per_hour--source_001"></a>
+
+### reads_per_hour · 1d2 · source_001
+
+Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.
+
+Q cutoff: 8; input SHA-256 prefixes: c71245ad265ed1a1. Axes, units and populations follow the A/B labels and C caption.
+
+![1d2 reads_per_hour: original, native and numerical diagnostic](1d2-source_001-reads_per_hour.png)
 
 <a id="1d2--length_vs_q--source_001"></a>
 
@@ -213,9 +265,69 @@ Q cutoff: 7; input SHA-256 prefixes: 1d1860dabc15ed69. Axes, units and populatio
 
 ![rna q_histogram: original, native and numerical diagnostic](rna-source_001-q_histogram.png)
 
+<a id="rna--yield_over_time--source_001"></a>
+
+### yield_over_time · rna · source_001
+
+EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 0 bp, original polyline error 76 bp, display bound 0 bp. Tied internal order is a separately reported difference, not point-for-point parity.
+
+Q cutoff: 7; input SHA-256 prefixes: 1d1860dabc15ed69. Axes, units and populations follow the A/B labels and C caption.
+
+![rna yield_over_time: original, native and numerical diagnostic](rna-source_001-yield_over_time.png)
+
+<a id="rna--reads_per_hour--source_001"></a>
+
+### reads_per_hour · rna · source_001
+
+Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.
+
+Q cutoff: 7; input SHA-256 prefixes: 1d1860dabc15ed69. Axes, units and populations follow the A/B labels and C caption.
+
+![rna reads_per_hour: original, native and numerical diagnostic](rna-source_001-reads_per_hour.png)
+
 ## Pooled and per-source comparisons
 
 Pooled distributions and per-source comparisons are labeled separately; pooled medians/N50 are not averages.
+
+<a id="combined--yield_over_time--source_001"></a>
+
+### yield_over_time · combined · source_001
+
+EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 828561.3218617439 bp, original polyline error 828561.3218617439 bp, display bound 861327 bp. Tied internal order is a separately reported difference, not point-for-point parity.
+
+Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
+
+![combined yield_over_time: original, native and numerical diagnostic](combined-source_001-yield_over_time.png)
+
+<a id="combined--reads_per_hour--source_001"></a>
+
+### reads_per_hour · combined · source_001
+
+Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.
+
+Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
+
+![combined reads_per_hour: original, native and numerical diagnostic](combined-source_001-reads_per_hour.png)
+
+<a id="combined--yield_over_time--source_002"></a>
+
+### yield_over_time · combined · source_002
+
+EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 815020.1101899147 bp, original polyline error 815020.1101899147 bp, display bound 897293 bp. Tied internal order is a separately reported difference, not point-for-point parity.
+
+Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
+
+![combined yield_over_time: original, native and numerical diagnostic](combined-source_002-yield_over_time.png)
+
+<a id="combined--reads_per_hour--source_002"></a>
+
+### reads_per_hour · combined · source_002
+
+Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.
+
+Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
+
+![combined reads_per_hour: original, native and numerical diagnostic](combined-source_002-reads_per_hour.png)
 
 <a id="combined--combined_length_histogram--combined"></a>
 
@@ -271,7 +383,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, u
 
 ### yield_over_time · combined · combined
 
-R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.
+EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error 828561.3218617439 bp, original polyline error 828561.3218617439 bp, display bound 861327 bp. Tied internal order is a separately reported difference, not point-for-point parity.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
 

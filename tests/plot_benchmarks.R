@@ -199,4 +199,21 @@ plots <- list(
   paired_bars(labels, matrix(number(gzip[[6]]), ncol = 2, byrow = TRUE), "Peak child RSS", "MiB", 2, c("Plain", "gzip")))
 save_panels("gzip-input", "Plain TSV and streaming gzip", "2026-10-19 · macOS arm64 · identical synthetic 1,000,000-record summaries", plots, 2, 14, 8.5,
             "Scientific JSON/HTML match within each pair; no temporary TSV is extracted. Every gzip pass decompresses again.\nOne execution/configuration; background compilation overlapped part of capture. This does not establish a universal gzip speedup.")
+
+
+# The #20 table deliberately retains different workload sizes in every label;
+# these bars are observations, never normalized speedup estimates.
+temporal <- read_table("| Temporal case | Wall s | User CPU s | System CPU s | Peak RSS MiB | Sampled temp MiB | Input passes per source | Output bytes |")
+stopifnot(nrow(temporal)==9L)
+colours <- c(colours, Native="#94a3b8", Reference="#4f46e5")
+labels <- c("1M plain · native","1M plain · reference","1M gzip · native","1M gzip · reference",
+            "2M mixed · native","2M mixed · 1 worker","2M mixed · 2 workers","2M mixed · SHA","2M mixed · SVG")
+groups <- ifelse(grepl("native$",temporal[[1]]),"Native","Reference")
+plots <- list(bars(labels,number(temporal[[2]]),groups,"End-to-end CLI wall time","Seconds",3),
+              bars(labels,number(temporal[[5]]),groups,"Peak child RSS","MiB"),
+              bars(labels,number(temporal[[6]]),groups,"Sampled temporary storage","MiB · lower bound"),
+              bars(labels,number(temporal[[8]])/2^20,groups,"JSON/HTML + requested SVG bytes","MiB"))
+save_panels("temporal-reference","Cost of reference-compatible temporal plots",
+            "2026-10-20 · macOS arm64 · synthetic data · 1M records per independent source",plots,2,14,10.5,
+            "One execution/configuration; uncontrolled caches/load. 2M cases combine one plain and one gzip source.\nAll canonical statistics match; scratch is numeric, not extracted TSV. Temp peaks sampled at 10 ms include staged outputs.")
 message("Rendered recorded observations only. R ", getRversion(), "; ggplot2 ", packageVersion("ggplot2"))

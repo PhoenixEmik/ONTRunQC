@@ -379,3 +379,45 @@ See [executed validation](bin-validation-summary.json) and
 Original smoothing/KDE goldens and the 1,542 primary / 1,912 intermediate GAM
 failure classifications remain independent. `--reuse` may reuse hash-identical
 R captures but always recomputes conclusions; omit it for a fresh R execution.
+
+## Reference temporal suite (#20)
+
+Use the existing pinned environment; normal analysis still needs no R:
+
+```sh
+Rscript tests/reference/temporal_layers.R /path/to/pinned/minion_qc/MinIONQC.R \
+  tests/reference/temporal-layers-golden.json
+cargo test --locked temporal::tests
+python3 tests/reference/plot_audit.py /path/to/pinned/minion_qc \
+  --rscript /path/to/Rscript --reference-bins --reference-time \
+  --output benchmark-results/time-audit --gallery benchmark-results/time-gallery
+python3 tests/reference/temporal_benchmark.py --records 1000000
+```
+
+The synthetic generator evaluates the **original parsed** `add_cols()` and
+single-flowcell hourly/line expressions, with the actual R9.5 map. Its eight
+cases cover second/hour boundaries, missing hours, MinION/PromethION tied times,
+zero lengths, signed Q, sparse long runs and singleton groups. Rust consumes
+these committed fictional goldens without requiring R. A separate regression
+ensures the audit never replaces a vertical tied jump with a diagonal.
+
+`--reference-time` executes native file-scoped probes first, then provides their
+bounded curves as **queries** to the unchanged R plotting layers. The R capture
+evaluates every original timestamp, plus actual GeomLine left/right limits and
+vertical ranges. Hour pairs, populations, endpoint coordinates and integer
+terminal yields have zero tolerance. Only GB-to-bp floating arithmetic permits
+`1e-5 bp` roundoff; no counting/time or GAM tolerance is widened. Per-group
+maximum errors, number of input/rendered/omitted points and explicit yield/tie
+bounds are separate from bounded 256-point residual samples used in the gallery.
+
+A simplified curve is never classified as original point-for-point parity.
+Shared-time cumulative maxima are invariant; R's row-order-sensitive internal
+paths are reported as a separate tied-order difference. Empty sources/empty Q
+populations render safely in ONTRunQC; original R exits on an empty population.
+Reference-mode data remain additive, independent of histogram/fitting/density
+options and canonical 15-minute diagnostics.
+
+The optional resource tool generates independent fictional sources (one plain,
+one gzip), reuses child-specific CPU/RSS and sampled scratch accounting, checks
+canonical JSON and worker determinism, and records numeric-sort and rendering
+phase logs. Generation precedes measurement; run after other builds/audits stop.

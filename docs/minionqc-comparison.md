@@ -16,8 +16,8 @@ and CLI defaults are separate claims. Full strict numerical parity is not claime
 
 [Documentation index](README.md) · [Metric reference](metrics.md) · [Engineering ledger](minionqc-parity.md) · [Reference commands](../tests/reference/README.md)
 
-This restructuring preserves the recorded audit; it does not claim another R
-execution or change any scientific reference value.
+The historical audit is preserved. The #19/#20 sections record additional actual
+R executions without changing original scientific targets or strict GAM evidence.
 
 ## Contents
 
@@ -28,6 +28,7 @@ execution or change any scientific reference value.
 - [Plot-family inventory](#plot-family-inventory)
 - [CLI defaults and output behavior](#cli-defaults-and-output-behavior)
 - [Reference histogram and Bin2D validation (#19)](#reference-histogram-and-bin2d-validation-19)
+- [Reference temporal validation (#20)](#reference-temporal-validation-20)
 - [Strict numerical GAM limitation](#strict-numerical-gam-limitation)
 - [Executed validation and limits](#executed-validation-and-limits)
 - [Reproduce the evidence](#reproduce-the-evidence)
@@ -73,8 +74,8 @@ GAM/LOESS, KDE or reference target was changed to make plots agree.
 | Negative-Q underflow labels | Confirmed native presentation defect, fixed | Sentinel `-1.798e308` and shifted8/18/28 ticks replaced by explicit `<0` category and10/20/30 ticks; JSON unchanged | Regression plus actual public before/after figure |
 | Automatic length/Q and channel histogram edges | Verified optional reference mode; native defaults retain different bins | 75 comparable panel/layer groups match original R exactly; true channel count correction remains separate | [#19 validation](#reference-histogram-and-bin2d-validation-19); native definitions preserved |
 | PromethION bin2d | Verified optional reference mode | All 516 cells / 75,160 reads match actual R coordinates and counts exactly | Explicit `--minionqc-plot-bins`; fixed native heatmap retained |
-| Hourly reads | Numerically different exposure/population | R 3600 s vs native 900 s; actual R hourly rows checked independently | [#20](https://github.com/PhoenixEmik/ONTRunQC/issues/20): explicit reference hourly series/zero fill |
-| Read-start cumulative path | Numerically different temporal support | Public MinION largest 15-minute bin 83,967,188 bp; overview can defer that yield within a bin | #20: bounded reference-compatible curve and disclosed simplification |
+| Hourly reads | Verified optional reference mode | Exact integer-hour All/Q summary counts and zero-filled gaps; native 900-second diagnostics unchanged | [#20 validation](#reference-temporal-validation-20) |
+| Read-start cumulative path | Verified bounded representation; explicit tied-order differences | Original coordinates, exact terminals, full-reference error measurements; not point-for-point parity | [#20 validation](#reference-temporal-validation-20); native bin-end path retained |
 | Minimum-length retained-yield curve | Numerically different display, exact stored queries | Max linear interpolation error at observed lengths: MinION 1,555,278.312bp; PromethION 5,464,673.009bp; pooled 4,431,919.159bp | [#21](https://github.com/PhoenixEmik/ONTRunQC/issues/21): preserve exact queries; quantify/improve display contract |
 | R length-yield X crop | Presentation/population visibility difference | R MinION X ≤ 93,318bp, PromethION ≤ 81,890bp; 677/116 built XY rows nonfinite or censored across All/Q | #21: optional explicit crop only; retain long-tail statistics |
 | Channel count | Intentional scientific correction of proven R defect | n=2 gives R3 vs true2; original n(n+1)/2 expression | Preserve true counts; do not emulate bug |
@@ -86,7 +87,8 @@ GAM/LOESS, KDE or reference target was changed to make plots agree.
 
 **Completion boundary:** this audit delivers evidence and runnable comparisons;
 reference-compatible histogram/Bin2D layers in #19 are now implemented and
-verified below; #20/#21 remain follow-up work. #8 and #12 remain open. No release is published.
+verified below; #20 now supplies exact hours and bounded read-start curves, while
+#21 remains follow-up work. #8 and #12 remain open. No release is published.
 
 <a id="2-input-compatibility-and-population-definitions"></a>
 
@@ -315,8 +317,83 @@ B shows actual canonical Rust exports in explicit reference-bin mode; C shows
 matched-bin/cell count residuals and boundary-error annotations. The corrected
 channel-count panel instead shows separate distributions with the proven formula
 difference. Bin agreement is **not** pixel-identical rendering. Native hourly,
-cumulative and retained-yield presentation differences remain tracked in #20/#21;
+cumulative presentation differences now have the explicit #20 contract below;
+retained-yield display work remains #21;
 #8, #12 and the parent audit remain separate acceptance concerns.
+
+## Reference temporal validation (#20)
+
+Explicit `--minionqc-time-series` adds hourly summary counts and read-start
+cumulative curves without replacing native 15-minute diagnostics. It does not
+silently enable, or get enabled by, any other compatibility flag. Canonical
+basecalled/native-pass statistics retain their original populations.
+
+| Property | Contract and evidence |
+| --- | --- |
+| Hours | `floor(start_time/3600)`; zero fill 0..last All hour for both populations; exact integer counts including zero-length summary rows. |
+| Selection | All retained summary records and inclusive Q >= cutoff; signed legacy Q retained; same existing RNA-control policy. |
+| Cumulative | Exact integer cumulative bases at original read-start coordinates; stable file/record ordering; exact first/last time and final yield. |
+| Multi-run | Independent run/source curves, All/Q panels with shared X range, consistent source colors and independent Y ranges; no fabricated pooled instrument timeline. |
+| Small populations | Exact observations at <=8,192 points; original-R tied row ordering can still differ. |
+| Dense populations | Every read contributes; <=8,194 vertices; error bound `ceil(total bases/4096)`; large jumps retain both consecutive endpoints. |
+| Verification | Actual pinned R executes the unchanged script, evaluates every original timestamp and GeomLine one-sided limit, and compares exact hours/counts/terminals plus explicit display errors. |
+
+The six public cases (MinION, PromethION, short, 1D2, RNA and two-MinION
+collection) provide **14 exact hourly All/Q series and 18 cumulative context
+comparisons**, with no unexplained temporal discrepancy. Some source curves
+appear in both individual and combined contexts; these are not 18 independent
+runs. Counts, terminal integer yields and endpoint coordinates have zero error.
+GB-to-bp arithmetic alone permits 1e-5 bp roundoff; no counting/time or strict
+GAM tolerance changes.
+
+Representative All-summary results; Q-selected results and repeated combined
+contexts are recorded individually in the machine-readable evidence:
+
+| Public source | Observations | Display vertices | Native display bound (bp) | Maximum error vs original R polyline (bp) |
+| --- | ---: | ---: | ---: | ---: |
+| MinION RB7_A2 | 238,421 | 8,020 | 861,327 | 828,561.322 |
+| PromethION | 75,160 | 7,572 | 152,148 | 115,323.454 |
+| 1D2 | 159,799 | 8,050 | 227,112 | 159,758.350 |
+| Short MinION | 99 | 99 | 0 | 28,536, tied-order difference |
+| RNA | 963 | 963 | 0 | 76, tied-order difference |
+| Second pooled MinION source | 369,787 | 8,038 | 897,293 | 815,020.110 |
+
+**Ties are not hidden by a tolerance:** MinIONQC merges channels before time
+sorting, then later reorders rows by length/hour. Built lines can traverse tied
+cumulative values in a different, even backwards, vertical order. Native curves
+use deterministic source/record order. Short/RNA post-tie cumulative envelopes
+match exactly despite the original-path differences above. The maximum tied
+source yield is recorded as a separate conservative order bound (short All:
+39,005 bp; RNA All: 76 bp). Numerical evidence reports original polyline error,
+post-tie error, simplification bound and tied-order bound separately; a simplified
+curve is never reclassified as exact original-R point parity.
+
+The comparison itself has a regression against collapsing vertical ties before
+interpolation: that would incorrectly substitute a diagonal and can spuriously
+exceed the simplification bound. Original plot data are never modified.
+
+[Temporal validation summary](../tests/reference/temporal-validation-summary.json)
+records input/source/capture hashes, versions and per-population results.
+[Eight fictional R golden cases](../tests/reference/temporal-layers-golden.json)
+cover boundaries 0/3599/3600/7199/7200 seconds, gaps, ties, signed Q, zero lengths,
+singletons and a 2,000-hour run. Empty source/Q populations have explicit native
+unavailable states; original R exits on an empty selected population.
+[A/B/C figures](figures/minionqc-comparison/README.md) use original R figures,
+actual canonical native exports and sampled numeric residuals; reported maxima
+always evaluate the complete original layer, not those bounded display samples.
+
+A guarded reread and private bounded-memory numeric external sort are required.
+See [metric/pass/scratch definitions](metrics.md#optional-minionqc-temporal-plots-20)
+and [resource measurements](benchmark.md). JSON schema 1 is extended additively;
+13 previously generated individual/pooled reports retain all existing scientific
+fields after removing only the new temporal field. Pooled public MinION remains
+608,208 records, 7,203,301,321 bp, N50 33,161 bp, median 2,616 bp.
+
+Reproduction commands and benchmark generation are in the
+[reference guide](../tests/reference/README.md#reference-temporal-suite-20).
+Histogram/Bin2D checks remain separately verified, and original GAM evidence
+still records 1,542 primary / 1,912 intermediate discrepancies. The full 18-case
+strict suite is not rerun or replaced by this temporal validation.
 
 ## Strict numerical GAM limitation
 
@@ -446,11 +523,11 @@ ImageMagick, Python plotting libraries, browser or network access.
 | Track | Required next step |
 | --- | --- |
 | [#19 automatic histogram/bin2d layers](https://github.com/PhoenixEmik/ONTRunQC/issues/19) | Verified opt-in layers under documented R settings: 75 exact groups, 14 proven count-formula exceptions; native defaults retained. |
-| [#20 hourly and cumulative paths](https://github.com/PhoenixEmik/ONTRunQC/issues/20) | Add explicitly labelled compatible series with population, zero-fill and bounded-display guarantees. |
+| [#20 hourly and cumulative paths](https://github.com/PhoenixEmik/ONTRunQC/issues/20) | Implemented and numerically verified under the explicit zero-fill/bounded-display/tie contract above; original point-for-point rendering remains different. |
 | [#21 length-yield display](https://github.com/PhoenixEmik/ONTRunQC/issues/21) | Preserve exact threshold answers while quantifying/improving interpolation and optional crop behavior. |
 | [#12 original GAM](https://github.com/PhoenixEmik/ONTRunQC/issues/12) | Keep original failing targets/tolerances; no closure while the strict contract remains unmet. |
 | [#8 combined acceptance](https://github.com/PhoenixEmik/ONTRunQC/issues/8) | Preserve its fitted-curve requirement or obtain explicit approval for an acceptance separation. |
-| [#18 audit review](https://github.com/PhoenixEmik/ONTRunQC/issues/18) | Review the published source mapping, gallery and discrepancy evidence; #19 is verified, while #20/#21 remain unimplemented. |
+| [#18 audit review](https://github.com/PhoenixEmik/ONTRunQC/issues/18) | Review the published source mapping, gallery and discrepancy evidence; #19 and #20 are verified within their stated contracts; #21 remains outstanding. |
 
 Streaming gzip (#17) is implemented independently of these scientific parity
 gates. The engineering ledger preserves historical decisions; this comparison

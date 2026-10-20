@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from plot_audit import FIGURES, MULTI, first_group, histogram_points, write_gallery_index
-from plot_checks import checks, result, compatible_bin_checks
+from plot_checks import checks, result, compatible_bin_checks, compatible_time_checks
 
 
 class PlotAuditTests(unittest.TestCase):
@@ -83,6 +83,30 @@ class PlotAuditTests(unittest.TestCase):
             self.assertEqual(set(row['upstream_defect_proof'].values()),{0})
             native[0]['count']=3
             self.assertEqual(compatible_bin_checks(capture,reports,[path],7)[0]['status'],'unexplained_difference')
+
+    def test_temporal_hours_reject_count_swaps_and_missing_zero_hours(self):
+        rows=[dict(x=0,y=2,group=1,PANEL='1',colour='blue'),dict(x=1,y=0,group=1,PANEL='1',colour='blue')]
+        capture=dict(plots=[dict(file='reads_per_hour.png',directory='source_001',panels=[dict(PANEL='1')],colour_labels=['All reads'],colours=['blue'],layers=[dict(audit=dict(geom='GeomLine',data=rows))])])
+        model=dict(observations=2,hourly=[dict(hour=0,read_count=2),dict(hour=1,read_count=0)])
+        reports={'source_001':dict(minionqc_time_series=dict(all=model))}
+        self.assertEqual(compatible_time_checks(capture,reports)[0]['status'],'exact_match')
+        model['hourly'][0]['read_count']=1;model['hourly'][1]['read_count']=1
+        self.assertEqual(compatible_time_checks(capture,reports)[0]['status'],'unexplained_difference')
+        model['hourly']=[dict(hour=0,read_count=2)]
+        self.assertEqual(compatible_time_checks(capture,reports)[0]['status'],'unexplained_difference')
+
+    def test_temporal_bound_never_waives_terminal_or_coordinate_failure(self):
+        c=dict(candidate='source_001:all',reference_observations=10,native_observations=10,
+            maximum_coordinate_error_hours=0,unmatched_native_coordinates=0,maximum_endpoint_coordinate_error_hours=0,reference_terminal_yield_bp=100,native_terminal_yield_bp=100,maximum_envelope_error_bp=5,maximum_original_polyline_error_bp=5)
+        capture=dict(plots=[dict(file='yield_over_time.png',directory='source_001',panels=[dict(PANEL='1')],colour_labels=['All reads'],colours=['blue'],layers=[dict(audit=dict(geom='GeomLine',temporal_comparisons=[dict(panel='1',colour='blue',comparisons=[c])]))])])
+        reports={'source_001':dict(minionqc_time_series=dict(all=dict(observations=10,total_yield_bp=100,cumulative=dict(yield_error_bound_bp=5,omitted_points=2,maximum_linear_interpolation_error_bp=5))))}
+        self.assertEqual(compatible_time_checks(capture,reports)[0]['status'],'bounded_display_difference')
+        c['native_terminal_yield_bp']=99
+        self.assertEqual(compatible_time_checks(capture,reports)[0]['status'],'unexplained_difference')
+        c['native_terminal_yield_bp']=100;c['maximum_endpoint_coordinate_error_hours']=.0001
+        self.assertEqual(compatible_time_checks(capture,reports)[0]['status'],'unexplained_difference')
+        c['maximum_endpoint_coordinate_error_hours']=0;c['maximum_envelope_error_bp']=6
+        self.assertEqual(compatible_time_checks(capture,reports)[0]['status'],'unexplained_difference')
 
     def test_committed_gallery_has_resolvable_cards_and_original_hashes(self):
         directory=Path(__file__).resolve().parents[2]/'docs/figures/minionqc-comparison'
