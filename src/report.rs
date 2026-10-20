@@ -16,6 +16,8 @@ use crate::metrics::{
 #[derive(Debug, Serialize)]
 pub struct Report {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub minionqc_time_series: Option<crate::temporal::Temporal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub minionqc_plot_bins: Option<crate::plot_bins::PlotBins>,
     pub schema_version: u32,
     pub tool: Tool,
@@ -72,6 +74,8 @@ pub struct Collection {
 
 #[derive(Debug, Serialize)]
 pub struct RunComparison {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minionqc_time_series: Option<crate::temporal::Temporal>,
     pub fitted_trends: Option<crate::trends::Trends>,
     pub input: crate::metrics::InputSummary,
     pub source: SourceMetadata,
@@ -93,6 +97,7 @@ pub struct RunComparison {
 impl RunComparison {
     pub fn from_report(report: &Report) -> Self {
         Self {
+            minionqc_time_series: report.minionqc_time_series.clone(),
             fitted_trends: report.fitted_trends.clone(),
             input: report.input.clone(),
             source: report.source.clone().expect("collection source metadata"),
@@ -164,7 +169,9 @@ pub fn write(
             .context("cannot write report newline")?;
         Ok(())
     })?;
+    let html_started = std::time::Instant::now();
     let rendered = crate::html::render(report);
+    let html_time = html_started.elapsed();
     let html = StagedReport::prepare(directory, "report.html", |writer| {
         writer
             .write_all(rendered.as_bytes())
@@ -184,6 +191,7 @@ pub fn write(
             },
         )?);
     }
+    let figures_started = std::time::Instant::now();
     if report.presentation.export_svg || report.presentation.export_format.is_some() {
         let format = report
             .presentation
@@ -229,6 +237,18 @@ pub fn write(
                 serde_json::to_writer_pretty(writer, &names).context("cannot write figure manifest")
             },
         )?);
+    }
+    if report.minionqc_time_series.is_some()
+        || report
+            .collection
+            .as_ref()
+            .is_some_and(|c| c.runs.iter().any(|r| r.minionqc_time_series.is_some()))
+    {
+        eprintln!(
+            "Reference time-series rendering: HTML generation {:.6}s, figure extraction/conversion/staging {:.6}s",
+            html_time.as_secs_f64(),
+            figures_started.elapsed().as_secs_f64()
+        );
     }
     // Every requested output is staged before replacing any previous report.
     // Publication remains per-file; no atomic transaction across the collection.

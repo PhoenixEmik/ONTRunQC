@@ -22,6 +22,7 @@ pub struct AnalysisOptions {
     pub minionqc_trends: bool,
     pub minionqc_density: bool,
     pub minionqc_plot_bins: bool,
+    pub minionqc_time_series: bool,
     pub combined_only: bool,
     pub group_inputs: bool,
     pub split_runs: bool,
@@ -226,6 +227,67 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
         .filter_map(|g| g.latest_start)
         .reduce(f64::max);
     for (index, mut group) in groups.into_iter().enumerate() {
+        let temporal = if options.minionqc_time_series {
+            let started = std::time::Instant::now();
+            let mut builder = crate::temporal::Builder::new()?;
+            for &file_index in &group.files {
+                let path = &files[file_index];
+                let mut pass = sources[file_index].open_summary("reference time-series pass")?;
+                let mut membership = Membership::default();
+                let mut reader = SummaryReader::with_options(
+                    &mut pass,
+                    options.input_schema,
+                    options.read_representation,
+                )?;
+                reader.allow_multiple_runs();
+                while let Some(record) = reader
+                    .next_record()
+                    .with_context(|| format!("reference time-series input {}", path.display()))?
+                {
+                    membership.observe(record.run_id);
+                    let belongs = if options.group_inputs {
+                        true
+                    } else if let Some(id) = record.run_id {
+                        ensure!(
+                            known.contains_key(id),
+                            "input {} changed run identity in reference time-series pass",
+                            path.display()
+                        );
+                        known.get(id).copied() == Some(index)
+                    } else {
+                        group.run_id.is_none()
+                    };
+                    if belongs {
+                        builder.add(&record, options.cutoff).with_context(|| {
+                            format!(
+                                "reference time-series input {} line {}",
+                                path.display(),
+                                record.line
+                            )
+                        })?;
+                    }
+                }
+                drop(reader);
+                pass.finish()?;
+                sources[file_index]
+                    .validate_membership(membership, "reference time-series pass")?;
+            }
+            check_sources(&sources, "after reference time-series pass")?;
+            let reading = started.elapsed();
+            let data = builder
+                .finish()
+                .context("cannot finish reference time-series numeric sort")?;
+            eprintln!(
+                "Reference time-series source {}: {} observations; guarded reading/chunk sorting {:.3}s, merge/curves {:.3}s",
+                index + 1,
+                data.all.observations,
+                reading.as_secs_f64(),
+                started.elapsed().as_secs_f64() - reading.as_secs_f64()
+            );
+            Some(data)
+        } else {
+            None
+        };
         let mut visualization = group.aggregator.take_minion_visualization();
         if let Some(renderer) = visualization.as_mut().filter(|v| v.needs_pass()) {
             // Only dense explicit MinION reports need this bounds-dependent pass.
@@ -267,6 +329,7 @@ pub fn analyze(inputs: &[PathBuf], output: &Path, options: &AnalysisOptions) -> 
             .map(crate::minion::Renderer::finish)
             .transpose()?;
         let (mut report, observations) = group.aggregator.finish_retaining(group.run_id)?;
+        report.minionqc_time_series = temporal;
         report.diagnostics.minion_read_visualization = visualization;
         report.fitted_trends = fits.next().map(crate::trends::Plan::finish);
         if !collection {

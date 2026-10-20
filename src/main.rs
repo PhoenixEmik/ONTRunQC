@@ -13,6 +13,7 @@ mod minion;
 mod plot_bins;
 mod record;
 mod report;
+mod temporal;
 mod trend_knots;
 mod trends;
 
@@ -53,6 +54,7 @@ fn run(cli: Cli) -> Result<()> {
             minionqc_trends,
             minionqc_density,
             minionqc_plot_bins,
+            minionqc_time_series,
             verify_input_content,
         } => {
             format.check_supported()?;
@@ -74,6 +76,7 @@ fn run(cli: Cli) -> Result<()> {
                     minionqc_trends,
                     minionqc_density,
                     minionqc_plot_bins,
+                    minionqc_time_series,
                     combined_only,
                     group_inputs,
                     split_runs,

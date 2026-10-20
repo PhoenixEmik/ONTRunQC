@@ -88,6 +88,9 @@ pub enum Command {
         /// Reference ggplot2 histogram/Bin2D layers (one extra guarded input pass).
         #[arg(long)]
         minionqc_plot_bins: bool,
+        /// Reference hourly summary counts and read-start cumulative curves (guarded reread and bounded numeric disk sort).
+        #[arg(long)]
+        minionqc_time_series: bool,
         /// Add provisional raw-read fits (extra streaming pass; R parity unverified).
         #[arg(long)]
         minionqc_trends: bool,

@@ -32,6 +32,14 @@ pub fn render(report: &Report) -> String {
     if report.minionqc_plot_bins.is_some() {
         out.push_str("<p class=\"annotation\"><a href=\"#reference-bins\">View explicit MinIONQC-compatible histogram layers</a></p>");
     }
+    if report.minionqc_time_series.is_some()
+        || report
+            .collection
+            .as_ref()
+            .is_some_and(|c| c.runs.iter().any(|r| r.minionqc_time_series.is_some()))
+    {
+        out.push_str("<p class=\"annotation\"><a href=\"#reference-time\">View MinIONQC-compatible hourly counts and read-start cumulative yield</a></p>");
+    }
     if let Some(hours) = report.presentation.mux_interval_hours {
         write!(out, "<p class=\"annotation\">Dashed mux-reference markers every {} hours are user configuration, not measured MinKNOW events.</p>", decimal(hours)).unwrap();
     }
@@ -50,6 +58,7 @@ pub fn render(report: &Report) -> String {
     }
     qscore_comparison(&mut out, report);
     reference_plots(&mut out, report);
+    reference_temporal(&mut out, report);
     write!(out, "<footer>ONTRunQC {} · JSON schema {} · Post-sequencing QC from sequencing summaries. No automatic QC judgment.</footer></main></div><script>",
         escape(report.tool.version), report.schema_version).unwrap();
     out.push_str(SCRIPT);
@@ -2984,6 +2993,244 @@ fn reference_bin2d(out: &mut String, data: &crate::plot_bins::Bin2d) {
         );
     }
     write!(out,"<text class=\"axis-label\" x=\"397\" y=\"285\" text-anchor=\"middle\">log10(read length / bp)</text><defs><linearGradient id=\"reference-count-scale\"><stop offset=\"0%\" stop-color=\"{low_color}\"/><stop offset=\"100%\" stop-color=\"{high_color}\"/></linearGradient></defs><rect x=\"80\" y=\"299\" width=\"180\" height=\"10\" fill=\"url(#reference-count-scale)\"/><text class=\"tick\" x=\"80\" y=\"326\">{min}</text><text class=\"tick\" x=\"260\" y=\"326\" text-anchor=\"end\">{max}</text><text class=\"tick\" x=\"285\" y=\"309\">Reads/cell (linear); empty cells unfilled</text></svg></div></figure>").unwrap();
+}
+
+fn reference_temporal(out: &mut String, report: &Report) {
+    let sources: Vec<_> = if let Some(collection) = &report.collection {
+        collection
+            .runs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, r)| {
+                r.minionqc_time_series
+                    .as_ref()
+                    .map(|t| (r.source.source_id.as_str(), run_color(i), t))
+            })
+            .collect()
+    } else {
+        report
+            .minionqc_time_series
+            .as_ref()
+            .map(|t| vec![("Run", "primary", t)])
+            .unwrap_or_default()
+    };
+    if sources.is_empty() {
+        return;
+    }
+    section(
+        out,
+        "reference-time",
+        "11",
+        "MinIONQC-compatible temporal plots",
+        "Summary-record populations, including zero lengths. Native filtering is separate. Existing 15-minute diagnostics remain unchanged; these are read-start-attributed statistics, not instrument throughput.",
+    );
+    out.push_str("<p class=\"annotation\">Hourly counts use floor(start seconds / 3600), with missing hours explicitly zero-filled from hour 0 to each source's last hour. Cumulative curves use original read-start coordinates, joining observations with straight lines. Equal timestamps use deterministic file/record ordering; R's channel merge can order tied reads differently. Tied-time terminal yields are invariant, but internal vertical paths need not be identical. Independent sources retain separate run-relative timelines.</p>");
+    let qlabel = format!(
+        "Q ≥ {} summary records",
+        cutoff_value(report.comparison.qscore_cutoff)
+    );
+    if report.collection.is_some() {
+        for selected in [false, true] {
+            let series: Vec<_> = sources
+                .iter()
+                .map(|(label, color, t)| {
+                    (
+                        *label,
+                        *color,
+                        if selected { &t.q_selected } else { &t.all },
+                    )
+                })
+                .collect();
+            for hourly in [true, false] {
+                reference_time_chart(
+                    out,
+                    report,
+                    &format!(
+                        "reference-{}-{}",
+                        if hourly { "hourly" } else { "cumulative" },
+                        selected
+                    ),
+                    &format!(
+                        "{} by source · {}",
+                        if hourly {
+                            "Reads per hour"
+                        } else {
+                            "Read-start cumulative yield"
+                        },
+                        if selected {
+                            &qlabel
+                        } else {
+                            "All summary records"
+                        }
+                    ),
+                    &series,
+                    hourly,
+                );
+            }
+        }
+    } else {
+        let t = sources[0].2;
+        let series = [
+            ("All summary records", "primary", &t.all),
+            (qlabel.as_str(), "qselected", &t.q_selected),
+        ];
+        for hourly in [true, false] {
+            reference_time_chart(
+                out,
+                report,
+                if hourly {
+                    "reference-hourly"
+                } else {
+                    "reference-cumulative"
+                },
+                if hourly {
+                    "Reads per hour · All / Q-selected"
+                } else {
+                    "Read-start cumulative yield · All / Q-selected"
+                },
+                &series,
+                hourly,
+            );
+        }
+    }
+    out.push_str("<div class=\"table-scroll\"><table><caption>Cumulative representation and measured simplification error</caption><thead><tr><th class=\"label\">Source / population</th><th>Observations</th><th>Display points</th><th>Omitted points</th><th>Error bound (bp)</th><th>Measured error (bp)</th><th>Tied observations</th><th>Max tied yield (bp)</th></tr></thead><tbody>");
+    for (label, _, t) in sources {
+        for (name, p) in [("All", &t.all), (qlabel.as_str(), &t.q_selected)] {
+            let c = &p.cumulative;
+            write!(out,"<tr><th class=\"label\">{} · {}</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",escape(label),escape(name),count(p.observations),count(c.points.len() as u64),count(c.omitted_points),count(c.yield_error_bound_bp),decimal(c.maximum_linear_interpolation_error_bp),count(c.tied_observations),count(c.maximum_tied_yield_bp)).unwrap();
+        }
+    }
+    out.push_str("</tbody></table></div><p class=\"annotation\">At most 8,192 observations: exact numeric points. Larger populations: bounded monotone polyline; every observation contributes. Large consecutive yield jumps and first/last points are retained. Maximum interpolation error is measured against every sorted observation, with a guaranteed bound ceil(total yield / 4096) bp. Vertical segments cover tied values; this error excludes R-specific tie ordering. Original per-read steps omitted from the display are counted above. Numeric sorting uses private temporary files, removed after each source.</p></section>");
+}
+
+fn reference_time_chart(
+    out: &mut String,
+    report: &Report,
+    id: &str,
+    title: &str,
+    series: &[(&str, &str, &crate::temporal::Population)],
+    hourly: bool,
+) {
+    figure(out, id, title);
+    if series.iter().all(|(_, _, p)| p.observations == 0) {
+        empty_chart(out, "No retained observations in this population.");
+        return;
+    }
+    // R's free_y facets still share the All-population X domain. Keep the
+    // separate All/Q comparison figures aligned even when Q reads end earlier.
+    let timelines = report
+        .minionqc_time_series
+        .iter()
+        .chain(report.collection.iter().flat_map(|c| {
+            c.runs
+                .iter()
+                .filter_map(|r| r.minionqc_time_series.as_ref())
+        }));
+    let end = timelines
+        .map(|t| {
+            if hourly {
+                t.all.hourly.last().map_or(0.0, |h| h.hour as f64)
+            } else {
+                t.all
+                    .cumulative
+                    .points
+                    .last()
+                    .map_or(0.0, |p| p.start_seconds / 3600.0)
+            }
+        })
+        .fold(0.0, f64::max)
+        .max(1.0);
+    let max = series
+        .iter()
+        .map(|(_, _, p)| {
+            if hourly {
+                p.hourly.iter().map(|h| h.read_count).max().unwrap_or(0) as f64
+            } else {
+                p.total_yield_bp as f64 / 1e9
+            }
+        })
+        .fold(0.0, f64::max);
+    let (ymax, ticks) = plot_scale(max, hourly);
+    svg_start(
+        out,
+        id,
+        "Exact integer-hour summary counts or explicitly bounded read-start cumulative yield. Original coordinates and exact integer totals are in JSON.",
+        294,
+    );
+    axes(
+        out,
+        ymax,
+        ticks,
+        if hourly {
+            "Summary records per hour (reads)"
+        } else {
+            "Cumulative yield (Gb)"
+        },
+    );
+    for marker in &report.presentation.mux_markers_seconds {
+        let h = marker / 3600.0;
+        if h <= end {
+            let x = LEFT + h / end * (RIGHT - LEFT);
+            write!(out,"<line class=\"mux-marker\" x1=\"{x:.2}\" x2=\"{x:.2}\" y1=\"{TOP}\" y2=\"{BOTTOM}\"/>").unwrap();
+        }
+    }
+    for i in 0..=4 {
+        x_tick(
+            out,
+            LEFT + (RIGHT - LEFT) * i as f64 / 4.0,
+            &decimal(end * i as f64 / 4.0),
+        );
+    }
+    for (label, color, p) in series {
+        let points: Vec<_> = if hourly {
+            p.hourly
+                .iter()
+                .map(|h| (h.hour as f64, h.read_count as f64))
+                .collect()
+        } else {
+            p.cumulative
+                .points
+                .iter()
+                .map(|p| (p.start_seconds / 3600.0, p.cumulative_yield_bp as f64 / 1e9))
+                .collect()
+        };
+        let mut path = String::new();
+        for (i, (time, value)) in points.iter().enumerate() {
+            let x = LEFT + time / end * (RIGHT - LEFT);
+            let y = BOTTOM - value / ymax * (BOTTOM - TOP);
+            write!(path, "{} {x:.2} {y:.2} ", if i == 0 { 'M' } else { 'L' }).unwrap();
+            if points.len() <= 512 {
+                write!(out,"<circle class=\"{color}\" cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"2\"><title>{}: {} h · {} {}</title></circle>",escape(label),time,value,if hourly {"reads"} else {"Gb"}).unwrap();
+            }
+        }
+        write!(
+            out,
+            "<path class=\"{} {}\" d=\"{path}\"><title>{}</title></path>",
+            if *color == "qselected" {
+                "qselected-line"
+            } else {
+                "cumulative-line"
+            },
+            color,
+            escape(label)
+        )
+        .unwrap();
+    }
+    out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Hours from run start (h)</text></svg></div><p class=\"annotation\">");
+    for (label, color, _) in series {
+        write!(
+            out,
+            "<span class=\"legend {}\">{}</span>",
+            match *color {
+                "primary" => "all",
+                "qselected" => "qselected-key",
+                s => s,
+            },
+            escape(label)
+        )
+        .unwrap();
+    }
+    out.push_str("</p></figure>");
 }
 
 #[cfg(test)]

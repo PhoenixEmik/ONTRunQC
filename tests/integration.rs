@@ -4460,3 +4460,294 @@ fn reference_bins_keep_legacy_2d_controls_explicit_grouping_and_split_population
         );
     }
 }
+
+#[test]
+fn reference_temporal_preserves_canonical_statistics_and_r_populations() {
+    let d = TestDirectory::new();
+    let data = format!(
+        "{HEADER}r\t1\t1\t7200\t1\tTRUE\t30\t7\tx\nr\t2\t1\t3599\t1\tFALSE\t0\t0\tx\nr\t1\t1\t0\t1\tTRUE\t10\t7\tx\nr\t2\t1\t7199\t1\tFALSE\t40\t6\tx\nr\t2\t1\t3600\t1\tTRUE\t20\t8\tx\n"
+    );
+    let baseline = d.analyze_with_args(&data, &["--qscore-cutoff", "7"]);
+    let mut actual = d.analyze_with_args(
+        &data,
+        &[
+            "--minionqc-time-series",
+            "--qscore-cutoff",
+            "7",
+            "--yaml",
+            "--format",
+            "svg",
+        ],
+    );
+    let model = actual["minionqc_time_series"].clone();
+    actual
+        .as_object_mut()
+        .unwrap()
+        .remove("minionqc_time_series");
+    actual["presentation"] = baseline["presentation"].clone();
+    assert_eq!(actual, baseline);
+    assert_eq!(
+        model["all"]["hourly"],
+        json!([{"hour":0,"read_count":2},{"hour":1,"read_count":2},{"hour":2,"read_count":1}])
+    );
+    assert_eq!(
+        model["q_selected"]["hourly"],
+        json!([{"hour":0,"read_count":1},{"hour":1,"read_count":1},{"hour":2,"read_count":1}])
+    );
+    assert_eq!(model["all"]["observations"], 5);
+    assert_eq!(model["all"]["total_yield_bp"], 100);
+    let points = model["all"]["cumulative"]["points"].as_array().unwrap();
+    assert_eq!(
+        points
+            .iter()
+            .map(|p| p["start_seconds"].as_f64().unwrap())
+            .collect::<Vec<_>>(),
+        [0., 3599., 3600., 7199., 7200.]
+    );
+    assert_eq!(
+        points
+            .iter()
+            .map(|p| p["cumulative_yield_bp"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [10, 10, 30, 70, 100]
+    );
+    let first = fs::read(d.0.join("output/report.json")).unwrap();
+    let html = d.html();
+    assert!(html.contains("Reads per hour · All / Q-selected"));
+    assert!(html.contains("read-start-attributed"));
+    assert!(!html.contains("<script src="));
+    assert!(d.0.join("output/figures/reference-hourly.svg").exists());
+    let input = d.0.join("input.tsv");
+    assert!(
+        d.run_with_args(
+            &input,
+            &[
+                "--minionqc-time-series",
+                "--qscore-cutoff",
+                "7",
+                "--yaml",
+                "--format",
+                "svg"
+            ]
+        )
+        .status
+        .success()
+    );
+    assert_eq!(first, fs::read(d.0.join("output/report.json")).unwrap());
+    assert_eq!(html, d.html());
+}
+
+#[test]
+fn reference_temporal_zero_empty_signed_legacy_controls_and_ties() {
+    let d = TestDirectory::new();
+    let empty = d.analyze_with_args(HEADER, &["--minionqc-time-series"]);
+    assert_eq!(empty["minionqc_time_series"]["all"]["observations"], 0);
+    assert!(d.html().contains("No retained observations"));
+    let legacy = "channel\tstart_time\tsequence_length_template\tmean_qscore_template\tsequence_length_2d\tmean_qscore_2d\tcalibration_strand_genome_template\n2\t100\t999\t20\t10\t-2\tnone\n1\t100\t999\t20\t30\t-1\tnone\n2\t100\t999\t20\t20\t-2\tnone\n1\t0\t999\t20\t0\t-3\tnone\n1\t3600\t999\t20\t10000\t20\tYHR174W\n";
+    let r = d.analyze_with_args(legacy, &["--minionqc-time-series", "--qscore-cutoff=-2"]);
+    let t = &r["minionqc_time_series"];
+    assert_eq!(r["input"]["excluded_control_records"], 1);
+    assert_eq!(t["all"]["observations"], 4);
+    assert_eq!(t["q_selected"]["observations"], 3);
+    assert_eq!(t["all"]["cumulative"]["tied_observations"], 3);
+    assert_eq!(t["all"]["cumulative"]["maximum_tied_yield_bp"], 60);
+    assert_eq!(
+        t["all"]["cumulative"]["points"][1]["cumulative_yield_bp"],
+        10
+    );
+    assert_eq!(
+        t["all"]["cumulative"]["points"][2]["cumulative_yield_bp"],
+        40
+    );
+    let zero = d.analyze_with_args(
+        &format!("{HEADER}{}", ROW.replace("\t10\t12.5", "\t0\t0")),
+        &["--minionqc-time-series"],
+    );
+    assert_eq!(zero["minionqc_time_series"]["all"]["observations"], 1);
+    assert_eq!(
+        zero["minionqc_time_series"]["q_selected"]["observations"],
+        0
+    );
+}
+
+#[test]
+fn reference_temporal_mixed_gzip_shared_runs_workers_and_combined_only() {
+    use std::io::Write;
+    let d = TestDirectory::new();
+    let inputs = d.0.join("inputs");
+    fs::create_dir(&inputs).unwrap();
+    let a = format!(
+        "{HEADER}{}{}",
+        ROW.replace("synthetic-run", "alpha"),
+        ROW.replace("synthetic-run", "beta")
+            .replace("\t0\t1\tTRUE", "\t7200\t1\tTRUE")
+    );
+    let b = format!(
+        "{HEADER}{}{}",
+        ROW.replace("synthetic-run", "alpha")
+            .replace("\t0\t1\tTRUE", "\t3600\t1\tTRUE"),
+        ROW.replace("synthetic-run", "gamma")
+    );
+    fs::write(inputs.join("sequencing_summary_a.tsv"), a).unwrap();
+    let mut gz = flate2::write::GzEncoder::new(
+        fs::File::create(inputs.join("sequencing_summary_b.tsv.gz")).unwrap(),
+        flate2::Compression::default(),
+    );
+    gz.write_all(b.as_bytes()).unwrap();
+    gz.finish().unwrap();
+    let args = [
+        "--minionqc-time-series",
+        "--verify-input-content",
+        "--qscore-cutoff",
+        "7",
+        "--yaml",
+        "--format",
+        "svg",
+    ];
+    let mut reference = None;
+    for workers in ["1", "2", "4"] {
+        let output = d.run_with_args(
+            &inputs,
+            &[args.as_slice(), &["--processors", workers]].concat(),
+        );
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let bytes = fs::read(d.0.join("output/combined/report.json")).unwrap();
+        if let Some(expected) = &reference {
+            assert_eq!(&bytes, expected);
+        } else {
+            reference = Some(bytes.clone());
+        }
+        let r: Value = serde_json::from_slice(&bytes).unwrap();
+        let runs = r["collection"]["runs"].as_array().unwrap();
+        assert_eq!(runs.len(), 3);
+        assert!(r.get("minionqc_time_series").is_none());
+        assert_eq!(runs[0]["minionqc_time_series"]["all"]["total_yield_bp"], 20);
+        assert_eq!(
+            runs[0]["minionqc_time_series"]["all"]["hourly"],
+            json!([{"hour":0,"read_count":1},{"hour":1,"read_count":1}])
+        );
+        assert!(
+            d.0.join("output/combined/figures/reference-cumulative-false.svg")
+                .exists()
+        );
+    }
+    fs::remove_dir_all(d.0.join("output")).unwrap();
+    assert!(
+        d.run_with_args(
+            &inputs,
+            &[args.as_slice(), &["--processors", "2", "--combined-only"]].concat()
+        )
+        .status
+        .success()
+    );
+    assert_eq!(
+        fs::read(d.0.join("output/combined/report.json")).unwrap(),
+        reference.unwrap()
+    );
+    assert!(!d.0.join("output/runs").exists());
+}
+
+#[test]
+fn reference_temporal_explicit_grouping_and_split_sources_stay_separate() {
+    let d = TestDirectory::new();
+    let legacy =
+        "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n1\t3600\t10\t8\n";
+    let input = d.0.join("inputs");
+    fs::create_dir(&input).unwrap();
+    for name in ["a", "b"] {
+        fs::write(input.join(format!("sequencing_summary_{name}.tsv")), legacy).unwrap();
+    }
+    assert!(
+        d.run_with_args(
+            &input,
+            &[
+                "--minionqc-time-series",
+                "--group-inputs",
+                "--processors",
+                "4"
+            ]
+        )
+        .status
+        .success()
+    );
+    let r: Value =
+        serde_json::from_slice(&fs::read(d.0.join("output/combined/report.json")).unwrap())
+            .unwrap();
+    assert_eq!(r["collection"]["runs"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        r["collection"]["runs"][0]["minionqc_time_series"]["all"]["observations"],
+        2
+    );
+    let mixed = format!(
+        "{HEADER}{}{}",
+        ROW.replace("synthetic-run", "alpha"),
+        ROW.replace("synthetic-run", "beta")
+    );
+    let mixed_path = d.0.join("mixed.tsv");
+    fs::write(&mixed_path, mixed).unwrap();
+    assert!(
+        d.run_with_args(&mixed_path, &["--minionqc-time-series", "--split-runs"])
+            .status
+            .success()
+    );
+    let r: Value =
+        serde_json::from_slice(&fs::read(d.0.join("output/combined/report.json")).unwrap())
+            .unwrap();
+    assert_eq!(r["collection"]["runs"].as_array().unwrap().len(), 2);
+    for run in r["collection"]["runs"].as_array().unwrap() {
+        assert_eq!(run["minionqc_time_series"]["all"]["total_yield_bp"], 10);
+    }
+}
+
+#[test]
+fn reference_temporal_composes_with_density_trends_bins_and_dense_minion() {
+    use std::fmt::Write;
+    let d = TestDirectory::new();
+    let mut data = HEADER.to_string();
+    for i in (0..10_000).rev() {
+        writeln!(
+            data,
+            "r\t{}\t1\t{}\t1\tTRUE\t{}\t{}\tx",
+            i % 2 + 1,
+            i as f64 * 3.71,
+            i % 20000 + 1,
+            i % 8 + 7
+        )
+        .unwrap();
+    }
+    let r = d.analyze_with_args(
+        &data,
+        &[
+            "--minionqc-time-series",
+            "--minionqc-trends",
+            "--minionqc-density",
+            "--minionqc-plot-bins",
+            "--flowcell-layout",
+            "minion-r9.5",
+            "--format",
+            "svg",
+        ],
+    );
+    let t = &r["minionqc_time_series"]["all"];
+    assert_eq!(t["observations"], 10000);
+    assert_eq!(t["total_yield_bp"], r["metrics"]["total_yield_bp"]);
+    assert!(t["cumulative"]["omitted_points"].as_u64().unwrap() > 0);
+    assert!(
+        t["cumulative"]["maximum_linear_interpolation_error_bp"]
+            .as_f64()
+            .unwrap()
+            <= t["cumulative"]["yield_error_bound_bp"].as_f64().unwrap()
+    );
+    assert!(r["fitted_trends"].is_object());
+    assert!(r["minionqc_density"].is_object());
+    assert!(r["minionqc_plot_bins"].is_object());
+    assert_eq!(
+        r["diagnostics"]["minion_read_visualization"]["eligible_reads"],
+        10000
+    );
+    assert!(d.html().contains("Full-count"));
+}

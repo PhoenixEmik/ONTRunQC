@@ -1400,6 +1400,7 @@ impl Aggregator {
         };
         Ok((
             Report {
+                minionqc_time_series: None,
                 minionqc_plot_bins: self.plot_bins,
                 schema_version: 1,
                 tool: Tool::current(),
