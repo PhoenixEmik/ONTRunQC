@@ -315,8 +315,61 @@ pub struct ChannelDistributionBin {
 pub struct YieldByLength {
     pub thresholds: Vec<LengthThreshold>,
     pub curve: Vec<LengthThreshold>,
+    pub display: YieldLengthDisplay,
     pub ultralong_all: Ultralong,
     pub ultralong_qscore_selected: Ultralong,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct YieldLengthDisplay {
+    pub method: &'static str,
+    pub all: RetainedYieldDisplay,
+    pub qscore_selected: RetainedYieldDisplay,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RetainedYieldDisplay {
+    pub observations: u64,
+    pub unique_lengths: u64,
+    pub retained_lengths: usize,
+    pub error_bound_bp: u64,
+    pub maximum_inclusive_error_bp: f64,
+    pub maximum_one_sided_error_bp: f64,
+    pub exact_step_function: bool,
+    pub points: Vec<RetainedYieldPoint>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RetainedYieldPoint {
+    pub minimum_length_bp: u64,
+    pub retained_yield_bp: u64,
+}
+
+impl RetainedYieldDisplay {
+    /// At a duplicate X the first ordinate is the inclusive value; the last is
+    /// the limit immediately above that length. Between vertices interpolate.
+    pub fn at(&self, x: u64) -> (f64, f64) {
+        let end = self.points.partition_point(|p| p.minimum_length_bp <= x);
+        if end == 0 {
+            return (0.0, 0.0);
+        }
+        let left = &self.points[end - 1];
+        if left.minimum_length_bp == x {
+            let first = self.points.partition_point(|p| p.minimum_length_bp < x);
+            return (
+                self.points[first].retained_yield_bp as f64,
+                left.retained_yield_bp as f64,
+            );
+        }
+        let Some(right) = self.points.get(end) else {
+            return (left.retained_yield_bp as f64, left.retained_yield_bp as f64);
+        };
+        let fraction = (x - left.minimum_length_bp) as f64
+            / (right.minimum_length_bp - left.minimum_length_bp) as f64;
+        let y = left.retained_yield_bp as f64
+            + fraction * (right.retained_yield_bp as f64 - left.retained_yield_bp as f64);
+        (y, y)
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1606,9 +1659,96 @@ fn yield_by_length(all: [&[u64]; 4], selected: [&[u64]; 4]) -> YieldByLength {
     YieldByLength {
         thresholds,
         curve,
+        display: YieldLengthDisplay {
+            method: "yield_level_adaptive_inclusive_step_envelope",
+            all: retained_yield_display(all),
+            qscore_selected: retained_yield_display(selected),
+        },
         ultralong_all: ultralong(all),
         ultralong_qscore_selected: ultralong(selected),
     }
+}
+
+/// Select whole tied-length groups at cumulative-yield level crossings. Between
+/// two retained groups the omitted yield is < ceil(total/4096). Keep BOTH limits
+/// of every retained jump: connecting inclusive values alone would invent ramps
+/// across even an otherwise exact step function. No read-level allocation/pass.
+fn retained_yield_display(parts: [&[u64]; 4]) -> RetainedYieldDisplay {
+    let total: u64 = parts.iter().flat_map(|p| p.iter()).sum();
+    let observations = parts.iter().map(|p| p.len() as u64).sum();
+    let bound = total.div_ceil(4096).max(1);
+    let mut result = RetainedYieldDisplay {
+        observations,
+        unique_lengths: 0,
+        retained_lengths: 0,
+        error_bound_bp: if total == 0 { 0 } else { bound },
+        maximum_inclusive_error_bp: 0.0,
+        maximum_one_sided_error_bp: 0.0,
+        exact_step_function: true,
+        points: Vec::new(),
+    };
+    if total == 0 {
+        return result;
+    }
+    let mut values = descending_lengths(parts).peekable();
+    let maximum = *values.peek().unwrap();
+    // At u64::MAX there is no representable max+1 query. Its right limit is
+    // still represented by the first of the duplicate maximum vertices.
+    if maximum < u64::MAX {
+        result.points.push(RetainedYieldPoint {
+            minimum_length_bp: maximum + 1,
+            retained_yield_bp: 0,
+        });
+    }
+    let mut cumulative = 0;
+    while let Some(length) = values.next() {
+        let before = cumulative;
+        cumulative += length;
+        while values.peek() == Some(&length) {
+            cumulative += values.next().unwrap();
+        }
+        result.unique_lengths += 1;
+        if observations <= 4096
+            || before == 0
+            || values.peek().is_none()
+            || before / bound != cumulative / bound
+        {
+            result.retained_lengths += 1;
+            for retained in [before, cumulative] {
+                result.points.push(RetainedYieldPoint {
+                    minimum_length_bp: length,
+                    retained_yield_bp: retained,
+                });
+            }
+        }
+    }
+    result.points.push(RetainedYieldPoint {
+        minimum_length_bp: 0,
+        retained_yield_bp: total,
+    });
+    result.points.reverse();
+    result.exact_step_function = result.retained_lengths as u64 == result.unique_lengths;
+    // Evaluate every exact jump and both one-sided limits, NOT a sampled grid.
+    // Between jumps the truth is constant and the display is linear, so extrema
+    // of the error occur at these limits. Integer endpoint data remain exact.
+    let mut values = descending_lengths(parts).peekable();
+    cumulative = 0;
+    while let Some(length) = values.next() {
+        let before = cumulative;
+        cumulative += length;
+        while values.peek() == Some(&length) {
+            cumulative += values.next().unwrap();
+        }
+        let (inclusive, right) = result.at(length);
+        result.maximum_inclusive_error_bp = result
+            .maximum_inclusive_error_bp
+            .max((inclusive - cumulative as f64).abs());
+        result.maximum_one_sided_error_bp = result
+            .maximum_one_sided_error_bp
+            .max((inclusive - cumulative as f64).abs())
+            .max((right - before as f64).abs());
+    }
+    result
 }
 
 fn ultralong(parts: [&[u64]; 4]) -> Ultralong {
@@ -1956,6 +2096,63 @@ pub fn yaml_summary(report: &Report) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retained_yield_steps_are_inclusive_not_per_read_cumulative_lines() {
+        let values = [10, 20, 20, 100_000_000];
+        let display = retained_yield_display([&values, &[], &[], &[]]);
+        assert!(display.exact_step_function);
+        assert_eq!(display.at(20), (100_000_040.0, 100_000_000.0));
+        assert_eq!(display.at(21), (100_000_000.0, 100_000_000.0));
+        assert_eq!(display.at(0).0, 100_000_050.0);
+        assert_eq!(display.at(100_000_001).0, 0.0);
+        // R gives the two 20bp reads cumulative ordinates 100000020/100000040.
+        // Neither its within-tie path nor its diagonal to 100Mb is this step.
+        assert_eq!(display.maximum_one_sided_error_bp, 0.0);
+        let maximum = retained_yield_display([&[u64::MAX], &[], &[], &[]]);
+        assert_eq!(maximum.at(u64::MAX).1, 0.0);
+        assert_eq!(maximum.maximum_one_sided_error_bp, 0.0);
+    }
+
+    #[test]
+    fn adaptive_display_conserves_extrema_and_measures_every_jump_with_bounded_storage() {
+        let values: Vec<_> = (1..=100_000).chain([100_000_000]).collect();
+        let display = retained_yield_display([&values, &[], &[], &[]]);
+        assert!(display.points.len() <= 8198);
+        assert!(!display.exact_step_function);
+        assert_eq!(display.observations, values.len() as u64);
+        assert_eq!(display.at(100_000_000), (100_000_000.0, 0.0));
+        let total = values.iter().sum::<u64>();
+        let mut remaining = total;
+        let (mut inclusive_error, mut one_sided_error) = (0.0_f64, 0.0_f64);
+        for length in values {
+            let (inclusive, right) = display.at(length);
+            inclusive_error = inclusive_error.max((inclusive - remaining as f64).abs());
+            remaining -= length;
+            one_sided_error = one_sided_error
+                .max((inclusive - (remaining + length) as f64).abs())
+                .max((right - remaining as f64).abs());
+        }
+        assert_eq!(display.maximum_inclusive_error_bp, inclusive_error);
+        assert_eq!(display.maximum_one_sided_error_bp, one_sided_error);
+        assert!(one_sided_error <= display.error_bound_bp as f64);
+    }
+
+    #[test]
+    fn adaptive_display_is_partition_order_independent_and_handles_empty_populations() {
+        let a = [1, 20, 20, 999_999];
+        let b = [5, 20, 100, 200];
+        let first = retained_yield_display([&a, &b, &[], &[]]);
+        let second = retained_yield_display([&b, &[], &a, &[]]);
+        assert_eq!(
+            serde_json::to_value(first).unwrap(),
+            serde_json::to_value(second).unwrap()
+        );
+        let empty = retained_yield_display([&[]; 4]);
+        assert_eq!(empty.observations, 0);
+        assert!(empty.points.is_empty());
+        assert_eq!(empty.error_bound_bp, 0);
+    }
 
     #[test]
     fn native_filter_pass_rate_uses_basecalled_reads() {

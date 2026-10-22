@@ -1,0 +1,241 @@
+{
+  "reference": {
+    "commit": "54485d586038d8ee36f168dd94f31c423f52f581",
+    "r": "4.4.1",
+    "ggplot2": "3.5.1",
+    "mgcv": "1.9.1"
+  },
+  "cases": {
+    "singleton": {
+      "length": 10,
+      "q": 7,
+      "cutoff": 7,
+      "axis_maximum_bp": 10,
+      "layer": [
+        {
+          "x": 10,
+          "y": 1e-08,
+          "group": 1
+        },
+        {
+          "x": 10,
+          "y": 1e-08,
+          "group": 2
+        }
+      ],
+      "population_labels": ["All reads", "Q>=7"]
+    },
+    "identical": {
+      "length": [20, 20, 20, 20],
+      "q": [6, 7, 9, 12],
+      "cutoff": 7,
+      "axis_maximum_bp": 20,
+      "layer": [
+        {
+          "x": 20,
+          "y": 2e-08,
+          "group": 1
+        },
+        {
+          "x": 20,
+          "y": 4e-08,
+          "group": 1
+        },
+        {
+          "x": 20,
+          "y": 6e-08,
+          "group": 1
+        },
+        {
+          "x": 20,
+          "y": 8e-08,
+          "group": 1
+        },
+        {
+          "x": 20,
+          "y": 2e-08,
+          "group": 2
+        },
+        {
+          "x": 20,
+          "y": 4e-08,
+          "group": 2
+        },
+        {
+          "x": 20,
+          "y": 6e-08,
+          "group": 2
+        }
+      ],
+      "population_labels": ["All reads", "Q>=7"]
+    },
+    "irregular_ties": {
+      "length": [0, 10, 20, 20, 21, 100],
+      "q": [7, 6, 7, 8, 7, 9],
+      "cutoff": 7,
+      "axis_maximum_bp": 100,
+      "layer": [
+        {
+          "x": 0,
+          "y": 1.71e-07,
+          "group": 1
+        },
+        {
+          "x": 10,
+          "y": 1.71e-07,
+          "group": 1
+        },
+        {
+          "x": 20,
+          "y": 1.41e-07,
+          "group": 1
+        },
+        {
+          "x": 20,
+          "y": 1.61e-07,
+          "group": 1
+        },
+        {
+          "x": 21,
+          "y": 1.21e-07,
+          "group": 1
+        },
+        {
+          "x": 100,
+          "y": 1e-07,
+          "group": 1
+        },
+        {
+          "x": 0,
+          "y": 1.61e-07,
+          "group": 2
+        },
+        {
+          "x": 20,
+          "y": 1.41e-07,
+          "group": 2
+        },
+        {
+          "x": 20,
+          "y": 1.61e-07,
+          "group": 2
+        },
+        {
+          "x": 21,
+          "y": 1.21e-07,
+          "group": 2
+        },
+        {
+          "x": 100,
+          "y": 1e-07,
+          "group": 2
+        }
+      ],
+      "population_labels": ["All reads", "Q>=7"]
+    },
+    "long_tail": {
+      "length": [1, 2, 3, 10000, 1000000],
+      "q": [7, 7, 6, 8, 9],
+      "cutoff": 7,
+      "axis_maximum_bp": 1000000,
+      "layer": [
+        {
+          "x": 1,
+          "y": 0.001010006,
+          "group": 1
+        },
+        {
+          "x": 2,
+          "y": 0.001010005,
+          "group": 1
+        },
+        {
+          "x": 3,
+          "y": 0.001010003,
+          "group": 1
+        },
+        {
+          "x": 10000,
+          "y": 0.00101,
+          "group": 1
+        },
+        {
+          "x": 1000000,
+          "y": 0.001,
+          "group": 1
+        },
+        {
+          "x": 1,
+          "y": 0.001010003,
+          "group": 2
+        },
+        {
+          "x": 2,
+          "y": 0.001010002,
+          "group": 2
+        },
+        {
+          "x": 10000,
+          "y": 0.00101,
+          "group": 2
+        },
+        {
+          "x": 1000000,
+          "y": 0.001,
+          "group": 2
+        }
+      ],
+      "population_labels": ["All reads", "Q>=7"]
+    },
+    "signed": {
+      "length": [0, 10, 20, 20],
+      "q": [-3, -2, 0, 2],
+      "cutoff": -2,
+      "axis_maximum_bp": 20,
+      "layer": [
+        {
+          "x": 0,
+          "y": 5e-08,
+          "group": 1
+        },
+        {
+          "x": 10,
+          "y": 5e-08,
+          "group": 1
+        },
+        {
+          "x": 20,
+          "y": 2e-08,
+          "group": 1
+        },
+        {
+          "x": 20,
+          "y": 4e-08,
+          "group": 1
+        },
+        {
+          "x": 10,
+          "y": 5e-08,
+          "group": 2
+        },
+        {
+          "x": 20,
+          "y": 2e-08,
+          "group": 2
+        },
+        {
+          "x": 20,
+          "y": 4e-08,
+          "group": 2
+        }
+      ],
+      "population_labels": ["All reads", "Q>=-2"]
+    },
+    "zero": {
+      "length": [0, 0],
+      "q": [0, 7],
+      "cutoff": 7,
+      "unavailable": "Original strict 1%-yield crop has no finite maximum for zero yield."
+    }
+  }
+}

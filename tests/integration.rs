@@ -1991,6 +1991,130 @@ fn every_display_query_uses_exact_lengths_including_ties() {
 }
 
 #[test]
+fn yield_display_preserves_tied_steps_outliers_and_empty_q_populations() {
+    let directory = TestDirectory::new();
+    let mut input = HEADER.to_owned();
+    for (length, q) in [(0, 0), (10, 6), (20, 7), (20, 9), (100_000_000, 1)] {
+        input += &format!("fictional\t1\t1\t0\t1\tFALSE\t{length}\t{q}\t<script>\n");
+    }
+    let report = directory.analyze_with_args(&input, &["--format", "svg"]);
+    let display = &report["comparison"]["yield_by_minimum_length"]["display"];
+    assert_eq!(display["all"]["observations"], 4);
+    assert_eq!(display["qscore_selected"]["observations"], 2);
+    assert_eq!(display["all"]["maximum_one_sided_error_bp"], 0.0);
+    let points = display["all"]["points"].as_array().unwrap();
+    let tied: Vec<_> = points
+        .iter()
+        .filter(|p| p["minimum_length_bp"] == 20)
+        .collect();
+    assert_eq!(tied[0]["retained_yield_bp"], 100_000_040);
+    assert_eq!(tied[1]["retained_yield_bp"], 100_000_000);
+    assert_eq!(points.last().unwrap()["minimum_length_bp"], 100_000_001);
+    let html = directory.html();
+    assert!(html.contains("Display fidelity"));
+    assert!(html.contains("not MinIONQC’s cropped"));
+    assert!(!html.contains("520 deterministic display queries"));
+    assert!(!html.contains("<script></th>"));
+    assert!(!html.contains("https://"));
+    let report = directory.analyze_with_args(&input, &["-q", "99"]);
+    assert_eq!(
+        report["comparison"]["yield_by_minimum_length"]["display"]["qscore_selected"]["points"],
+        json!([])
+    );
+    for input in [
+        HEADER.to_owned(),
+        format!("{HEADER}fictional\t1\t1\t0\t1\tFALSE\t0\t0\tnormal\n"),
+    ] {
+        let report = directory.analyze(&input);
+        assert_eq!(
+            report["comparison"]["yield_by_minimum_length"]["display"]["all"]["points"],
+            json!([])
+        );
+        assert!(!directory.html().contains("NaN"));
+    }
+}
+
+#[test]
+fn pinned_r_yield_layers_distinguish_inclusive_values_ties_and_crop() {
+    let golden: Value =
+        serde_json::from_str(include_str!("reference/yield-layers-golden.json")).unwrap();
+    assert_eq!(
+        golden["reference"]["commit"],
+        "54485d586038d8ee36f168dd94f31c423f52f581"
+    );
+    for (name, case) in golden["cases"].as_object().unwrap() {
+        let lengths: Vec<u64> = case["length"].as_array().map_or_else(
+            || vec![case["length"].as_u64().unwrap()],
+            |v| v.iter().map(|n| n.as_u64().unwrap()).collect(),
+        );
+        let qualities: Vec<f64> = case["q"].as_array().map_or_else(
+            || vec![case["q"].as_f64().unwrap()],
+            |v| v.iter().map(|n| n.as_f64().unwrap()).collect(),
+        );
+        let cutoff = case["cutoff"].as_f64().unwrap();
+        let mut input =
+            "channel\tstart_time\tsequence_length_template\tmean_qscore_template\n".to_owned();
+        for (i, (length, q)) in lengths.iter().zip(&qualities).enumerate() {
+            input += &format!("1\t{}\t{length}\t{q}\n", ((i + 1) % 3) * 3600);
+        }
+        let directory = TestDirectory::new();
+        let report = directory.analyze_with_args(&input, &["-q", &cutoff.to_string()]);
+        let display = &report["comparison"]["yield_by_minimum_length"]["display"];
+        for key in ["all", "qscore_selected"] {
+            assert_eq!(
+                display[key]["maximum_one_sided_error_bp"], 0.0,
+                "{name}/{key}"
+            );
+        }
+        let Some(layer) = case["layer"].as_array() else {
+            assert_eq!(lengths.iter().sum::<u64>(), 0);
+            continue; // Original zero-yield crop is nonfinite, not native failure.
+        };
+        for group in [1, 2] {
+            let rows: Vec<_> = layer
+                .iter()
+                .filter(|r| r["group"] == group && r["x"].is_number())
+                .collect();
+            let selected = group == 2;
+            let mut unique = lengths.clone();
+            unique.sort_unstable();
+            unique.dedup();
+            for length in unique {
+                let ordinates: Vec<_> = rows
+                    .iter()
+                    .filter(|r| r["x"].as_u64() == Some(length))
+                    .map(|r| (r["y"].as_f64().unwrap() * 1e9).round() as u64)
+                    .collect();
+                if ordinates.is_empty() {
+                    continue;
+                } // Explicit original X crop.
+                let total: u64 = lengths
+                    .iter()
+                    .zip(&qualities)
+                    .filter(|(l, q)| **l >= length && (!selected || **q >= cutoff))
+                    .map(|(l, _)| *l)
+                    .sum();
+                let ties = lengths
+                    .iter()
+                    .zip(&qualities)
+                    .filter(|(l, q)| **l == length && (!selected || **q >= cutoff))
+                    .count() as u64;
+                assert_eq!(
+                    *ordinates.iter().max().unwrap(),
+                    total,
+                    "{name}/{group}/{length}"
+                );
+                assert_eq!(
+                    *ordinates.iter().min().unwrap(),
+                    total - (ties - 1) * length,
+                    "{name}/{group}/{length}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn decimal_cutoff_labels_preserve_selection_precision() {
     let directory = TestDirectory::new();
     let input = format!(

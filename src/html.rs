@@ -338,7 +338,7 @@ fn comparison_yield_length(out: &mut String, report: &Report, selected: bool, po
     }
     let xmax = runs
         .iter()
-        .filter_map(|r| r.yield_by_minimum_length.curve.last())
+        .filter_map(|r| r.yield_by_minimum_length.display.all.points.last())
         .map(|p| p.minimum_length_bp)
         .max()
         .unwrap_or(1) as f64;
@@ -347,7 +347,7 @@ fn comparison_yield_length(out: &mut String, report: &Report, selected: bool, po
     svg_start(
         out,
         &id,
-        "Exact retained yield at bounded queries for each source; absolute yield, not normalized density.",
+        "Yield-adaptive inclusive step envelopes; bounded measured error, absolute yield, not normalized density.",
         294,
     );
     axes(out, ymax, ticks, &format!("Retained yield ({unit})"));
@@ -359,28 +359,24 @@ fn comparison_yield_length(out: &mut String, report: &Report, selected: bool, po
         );
     }
     for (i, run) in runs.iter().enumerate() {
-        let mut path = String::new();
-        for (j, point) in run.yield_by_minimum_length.curve.iter().enumerate() {
-            let yield_bp = if selected {
-                point.qscore_selected_yield_bp
-            } else {
-                point.all_yield_bp
-            };
-            let x = LEFT + point.minimum_length_bp as f64 / xmax * (RIGHT - LEFT);
-            let y = BOTTOM - yield_bp as f64 / scale / ymax * (BOTTOM - TOP);
-            write!(path, " {} {x:.2} {y:.2}", if j == 0 { 'M' } else { 'L' }).unwrap();
-        }
-        write!(
+        let display = if selected {
+            &run.yield_by_minimum_length.display.qscore_selected
+        } else {
+            &run.yield_by_minimum_length.display.all
+        };
+        retained_yield_path(
             out,
-            "<path class=\"cumulative-line {}\" d=\"{path}\"><title>{}</title></path>",
-            run_color(i),
-            escape(&run.source.source_id)
-        )
-        .unwrap();
+            display,
+            xmax,
+            scale,
+            ymax,
+            &format!("cumulative-line {}", run_color(i)),
+            &run.source.source_id,
+        );
     }
     out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Minimum read length (kb; inclusive)</text></svg></div>");
     run_legend(out, runs);
-    out.push_str("</figure>");
+    out.push_str("<p class=\"annotation\">Full-range inclusive step envelopes; each source uses every eligible length. Vertical jumps and bounded interpolated spans are distinct from R’s cropped per-read path. Per-source vertex counts and measured one-sided errors are in each curve title and JSON; pooled statistics are calculated independently from pooled observations.</p></figure>");
 }
 
 fn section(out: &mut String, id: &str, number: &str, title: &str, note: &str) {
@@ -962,6 +958,26 @@ fn qscore_comparison(out: &mut String, report: &Report) {
     out.push_str("</section>");
 }
 
+fn retained_yield_path(
+    out: &mut String,
+    display: &crate::metrics::RetainedYieldDisplay,
+    xmax: f64,
+    scale: f64,
+    ymax: f64,
+    class: &str,
+    label: &str,
+) {
+    let mut path = String::new();
+    for (i, point) in display.points.iter().enumerate() {
+        let x = LEFT + point.minimum_length_bp as f64 / xmax * (RIGHT - LEFT);
+        let y = BOTTOM - point.retained_yield_bp as f64 / scale / ymax * (BOTTOM - TOP);
+        write!(path, " {} {x:.6} {y:.6}", if i == 0 { 'M' } else { 'L' }).unwrap();
+    }
+    write!(out, "<path class=\"{class}\" d=\"{path}\"><title>{}: {} observations; {} vertices; maximum one-sided model error {:.3} bp; bound {} bp</title></path>",
+        escape(label), count(display.observations), count(display.points.len() as u64),
+        display.maximum_one_sided_error_bp, count(display.error_bound_bp)).unwrap();
+}
+
 fn yield_length_plot(out: &mut String, report: &Report, label: &str) {
     let analysis = &report.comparison.yield_by_minimum_length;
     figure(out, "yield-minimum-length", "Yield by minimum read length");
@@ -971,11 +987,16 @@ fn yield_length_plot(out: &mut String, report: &Report, label: &str) {
     } else {
         let (scale, unit) = bp_scale(maximum);
         let (ymax, ticks) = plot_scale(maximum as f64 / scale, scale == 1.0);
-        let xmax = analysis.curve.last().map_or(1, |p| p.minimum_length_bp) as f64;
+        let xmax = analysis
+            .display
+            .all
+            .points
+            .last()
+            .map_or(1, |p| p.minimum_length_bp) as f64;
         svg_start(
             out,
             "yield-minimum-length",
-            "Exact retained bases at sampled inclusive minimum lengths; no histogram reconstruction.",
+            "Adaptive inclusive retained-yield step envelope. Vertical segments preserve selected jumps; omitted steps have measured error.",
             294,
         );
         axes(out, ymax, ticks, &format!("Retained yield ({unit})"));
@@ -988,32 +1009,41 @@ fn yield_length_plot(out: &mut String, report: &Report, label: &str) {
         }
         out.push_str("<text class=\"axis-label\" x=\"397\" y=\"286\" text-anchor=\"middle\">Minimum read length (kb; inclusive)</text>");
         for selected in [false, true] {
-            let mut path = String::new();
-            for (i, point) in analysis.curve.iter().enumerate() {
-                let bases = if selected {
-                    point.qscore_selected_yield_bp
-                } else {
-                    point.all_yield_bp
-                };
-                let x = LEFT + point.minimum_length_bp as f64 / xmax * (RIGHT - LEFT);
-                let y = BOTTOM - bases as f64 / scale / ymax * (BOTTOM - TOP);
-                write!(path, " {} {x:.2} {y:.2}", if i == 0 { 'M' } else { 'L' }).unwrap();
-                write!(out, "<circle class=\"{}\" cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"2\"><title>{}: minimum {} bp, {} bp retained</title></circle>", if selected { "qselected" } else { "primary" }, if selected { escape(label) } else { "All basecalled reads".into() }, count(point.minimum_length_bp), count(bases)).unwrap();
-            }
-            write!(
+            let display = if selected {
+                &analysis.display.qscore_selected
+            } else {
+                &analysis.display.all
+            };
+            retained_yield_path(
                 out,
-                "<path class=\"{}\" d=\"{path}\"/>",
+                display,
+                xmax,
+                scale,
+                ymax,
                 if selected {
                     "qselected-line"
                 } else {
                     "cumulative-line"
-                }
-            )
-            .unwrap();
+                },
+                if selected {
+                    label
+                } else {
+                    "All basecalled reads"
+                },
+            );
         }
         write!(out, "</svg></div><p class=\"annotation\"><span class=\"legend all\">All basecalled reads</span><span class=\"legend qselected-key\">{}</span></p></figure>", escape(label)).unwrap();
     }
-    write!(out, "<p class=\"annotation\">Every point is calculated from exact lengths. At most 520 deterministic display queries span the full range; connecting segments summarize between queries, not every observed length. All seven requested thresholds remain exact below and in JSON, including those beyond the observed maximum. Upstream labels these thresholds “&gt;”; its code uses ≥.</p><div class=\"table-scroll\"><table><caption>Inclusive length thresholds and specialized ultralong subset</caption><thead><tr><th class=\"label\" scope=\"col\">Selection</th><th scope=\"col\">All reads</th><th scope=\"col\">All yield (bp)</th><th scope=\"col\">{} reads</th><th scope=\"col\">{} yield (bp)</th></tr></thead><tbody>", escape(label), escape(label)).unwrap();
+    out.push_str("<div class=\"table-scroll\"><table><caption>Display fidelity · full range, before SVG pixel rounding</caption><thead><tr><th class=\"label\">Population</th><th>Observations</th><th>Vertices</th><th>Max inclusive error (bp)</th><th>Max one-sided error (bp)</th><th>Error bound (bp)</th></tr></thead><tbody>");
+    for (name, display) in [
+        ("All basecalled reads", &analysis.display.all),
+        (label, &analysis.display.qscore_selected),
+    ] {
+        write!(out, "<tr><th class=\"label\" scope=\"row\">{}</th><td>{}</td><td>{}</td><td>{:.3}</td><td>{:.3}</td><td>{}</td></tr>",
+            escape(name), count(display.observations), count(display.points.len() as u64), display.maximum_inclusive_error_bp, display.maximum_one_sided_error_bp, count(display.error_bound_bp)).unwrap();
+    }
+    out.push_str("</tbody></table></div>");
+    write!(out, "<p class=\"annotation\">Yield-adaptive step envelope from every basecalled length, at most 8,198 vertices per population. At retained lengths the upper ordinate is inclusive; the lower is its right-hand limit. Large tied-length jumps remain vertical. Connections across omitted small steps are approximate; fidelity below is measured at every exact jump and both one-sided limits before SVG coordinate rounding. Full long tail shown. This is not MinIONQC’s cropped, descending per-read cumulative polyline: its tied-read ordinates and ordering differ. The legacy bounded query array and all seven thresholds remain exact and unchanged in JSON. Upstream labels thresholds “&gt;”; its code uses ≥.</p><div class=\"table-scroll\"><table><caption>Inclusive length thresholds and specialized ultralong subset</caption><thead><tr><th class=\"label\" scope=\"col\">Selection</th><th scope=\"col\">All reads</th><th scope=\"col\">All yield (bp)</th><th scope=\"col\">{} reads</th><th scope=\"col\">{} yield (bp)</th></tr></thead><tbody>", escape(label), escape(label)).unwrap();
     for t in &analysis.thresholds {
         write!(out, "<tr><th class=\"label\" scope=\"row\">≥ {} bp</th><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>", count(t.minimum_length_bp), count(t.all_read_count), count(t.all_yield_bp), count(t.qscore_selected_read_count), count(t.qscore_selected_yield_bp)).unwrap();
     }
