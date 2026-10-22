@@ -33,6 +33,10 @@ Development package: **0.4.1** · Executable: `ontrunqc` · Rust **1.85+**
 | Multiple inputs | Streaming plain/gzip TSV, run-aware chunk grouping, exact pooled statistics and bounded independent-run workers. |
 | Reports | Offline HTML/JSON, optional YAML and independent SVG/PNG/PDF/PS/JPEG/TIFF/BMP figures. |
 
+Yield-by-length figures use a full-range adaptive step envelope with measured
+display errors; exact threshold/query values remain unchanged. See the
+[representation and error contract](docs/metrics.md#error-aware-retained-yield-display-21).
+
 Normal analysis and export require neither R nor a browser. ONTRunQC is a
 post-sequencing summary tool; it is not a basecaller, live MinKNOW monitor or
 FASTQ/BAM/POD5 reader.

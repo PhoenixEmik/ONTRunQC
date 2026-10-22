@@ -216,4 +216,14 @@ plots <- list(bars(labels,number(temporal[[2]]),groups,"End-to-end CLI wall time
 save_panels("temporal-reference","Cost of reference-compatible temporal plots",
             "2026-10-20 · macOS arm64 · synthetic data · 1M records per independent source",plots,2,14,10.5,
             "One execution/configuration; uncontrolled caches/load. 2M cases combine one plain and one gzip source.\nAll canonical statistics match; scratch is numeric, not extracted TSV. Temp peaks sampled at 10 ms include staged outputs.")
+yield <- read_table("| Yield case | Version | Wall s | User CPU s | System CPU s | Peak RSS MiB | Sampled temp MiB | HTML bytes | JSON bytes | SVG bytes |")
+stopifnot(nrow(yield)==8L,identical(yield[[2]],rep(c("before","after"),4)))
+labels <- c("1M plain + SVG","1M gzip","2M mixed · 1 worker","2M mixed · 2 workers")
+plots <- list(
+  paired_bars(labels,matrix(number(yield[[3]]),ncol=2,byrow=TRUE),"End-to-end CLI wall time","Seconds",3),
+  paired_bars(labels,matrix(number(yield[[6]]),ncol=2,byrow=TRUE),"Peak child RSS","MiB",2),
+  paired_bars(labels,matrix((number(yield[[8]])+number(yield[[9]])+number(yield[[10]]))/2^20,ncol=2,byrow=TRUE),"HTML + JSON + requested SVG bytes","MiB",2))
+save_panels("yield-length","Cost of error-aware retained-yield displays",
+            "2026-10-22 · macOS arm64 · identical fictional inputs · before 876bf65 / after #21",plots,3,14,7,
+            "One execution/configuration; uncontrolled caches/load. Exact non-display JSON values match. No additional input pass or disk scratch.\nHigher-fidelity bounded vertices increase serialized data; this is an accuracy/output-size trade-off, not a performance optimization.")
 message("Rendered recorded observations only. R ", getRversion(), "; ggplot2 ", packageVersion("ggplot2"))

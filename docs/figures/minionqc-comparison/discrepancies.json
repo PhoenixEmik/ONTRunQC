@@ -161,7 +161,7 @@
       "feature": "Yield by minimum length display",
       "existing_claim": "Complete analysis family",
       "reference_source": "https://github.com/roblanf/minion_qc/blob/54485d586038d8ee36f168dd94f31c423f52f581/MinIONQC.R#L575-L584",
-      "native_source": "src/metrics.rs:1527-1580; src/html.rs:952-1010",
+      "native_source": "src/metrics.rs::yield_by_length/retained_yield_display; src/html.rs::yield_length_plot/comparison_yield_length",
       "test_input_or_validation": "Public raw exact lengths; curve_measurements; every_display_query_uses_exact_lengths_including_ties",
       "classification": "Numerically different",
       "priority": "P2",
@@ -180,7 +180,17 @@
       "proposed_correction": "Quantified display contract and/or optional compatible display; preserve exact integer queries and full statistics.",
       "acceptance_criteria": "Independent exact query error remains zero; measure interpolation and crop separately for ties, tails and All/Q.",
       "related_issue": 21,
-      "state": "documented; not changed"
+      "state": "Implemented measured adaptive inclusive envelope; original R per-read/crop definitions remain different",
+      "resolution_21": {
+        "representation": "All/Q full-range yield-adaptive step envelopes, including both retained jump limits",
+        "maximum_vertices_per_population": 8198,
+        "bound_bp": "ceil(population total yield/4096)",
+        "measurements": "tests/reference/yield-validation-summary.json",
+        "exact_legacy_queries": "unchanged",
+        "R_validation": "Every finite built-layer length min/max compared against independent complete-population sums; distinct per-read/tie path errors and clipping retained",
+        "historical_numeric_difference": "Original A06 numeric_difference values above are preserved, not replaced by new results",
+        "limitation": "Not point-for-point R polyline/cropped-axis rendering; no exact rendering claim"
+      }
     },
     {
       "id": "A07",

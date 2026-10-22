@@ -539,13 +539,55 @@ not a direct motor-speed or raw-signal measurement; no speed threshold is applie
 1,000,000 bp**. Selection is inclusive, matching upstream code despite its “>”
 labels. Length ties are included together. Results come from exact sorted lengths.
 
-`curve` has the same fields at at most 520 deterministic queries: deduplicated
-integer positions `1 + floor((end-1)*i/512)`, i=0..512, plus requested thresholds
-inside the displayed domain. `end=max_length+1`, saturating at u64::MAX; an empty
-population uses 1. Every returned point is exact; connecting segments are a
-bounded display summary, not values at every unique length. All thresholds remain
-available even outside the observed domain. Unlike upstream's 99%-yield crop,
-the graph displays the full range; no longest reads are silently dropped.
+`curve` retains its existing exact values at at most 520 deterministic queries:
+deduplicated integer positions `1 + floor((end-1)*i/512)`, i=0..512, plus the
+seven thresholds within the domain. `end=max_length+1`, saturating at u64::MAX;
+an empty population uses 1. All requested thresholds remain available outside
+the observed domain. This legacy query array is no longer joined for rendering.
+
+### Error-aware retained-yield display (#21)
+
+Additive `yield_by_minimum_length.display` supplies the HTML/SVG curves, also in
+each collection run. Schema version 1 remains additive; strict consumers that
+reject unknown properties must allow this field. No existing value is replaced.
+`all` and `qscore_selected` describe positive-length populations; zero lengths
+add no bases and remain represented in summary totals, not these observations.
+
+The exact function is **F(x)=Σ length × I(length≥x)**. At a tied length L, the
+inclusive value F(L) and right-hand limit F(L)−L×count(L) differ. Equal-X vertices
+encode both limits, with the inclusive value first. A vertical SVG segment shows
+the jump; its interior is not an additional minimum-length query result.
+
+The deterministic algorithm streams the existing sorted numeric partitions,
+grouping ties. It retains first/last groups and groups crossing a cumulative
+yield level spaced by **ε=ceil(total yield/4096) bp**. Both limits of retained
+jumps are kept. For ≤4,096 observations every group is retained. Between retained
+jumps, omitted yield is <ε: interpolation lies within that monotone envelope.
+There are at most **8,198 vertices/population**, including exact endpoints at
+0 bp/total yield and max_length+1/0 yield (the latter is unrepresentable at
+u64::MAX; its right-hand limit is still stored). Empty populations have no points
+and bound 0. Large tied jumps cannot disappear inside an interpolated segment.
+
+Fields: `observations`, `unique_lengths`, `retained_lengths`, `error_bound_bp`,
+`maximum_inclusive_error_bp`, `maximum_one_sided_error_bp`,
+`exact_step_function`, and `points` (`minimum_length_bp`, `retained_yield_bp`).
+The two maxima inspect **every exact jump**, inclusive and right-hand limits;
+between jumps the exact function is constant and the display linear, so these
+limits bound the whole domain. Maxima use floating-point display arithmetic;
+integer vertices and thresholds stay exact. The bound describes the model before
+SVG coordinate/pixel rounding, not screen-pixel fidelity. No configurable error
+target or point-for-point R identity is promised.
+
+No source reread, scratch file, new read vector or dependency is needed. Two
+numeric merge traversals plus a total reduction reuse existing disjoint length
+partitions; display storage is bounded independently of read count. It increases
+JSON/path bytes relative to the old query line but removes its per-query circles.
+The graph keeps the full long tail. MinIONQC instead crops X at the largest length
+whose per-read cumulative yield exceeds 1% of the global plot maximum. Its tied
+read ordinates range from F(L)−(count(L)−1)L through F(L), with subsequent row
+ordering affecting the vertical path. That path and its diagonal connections
+are **not** F(x), even when total yield agrees. Actual-R comparisons, crop counts
+and separate errors are in [the scientific comparison](minionqc-comparison.md#yield-by-length-display-21).
 
 `ultralong_all` and `ultralong_qscore_selected` contain `target_n50_bp=100000`,
 `read_count`, `total_yield_bp`, `minimum_read_length_bp`. Sort lengths descending;

@@ -5,10 +5,24 @@ import tempfile
 import unittest
 
 from plot_audit import FIGURES, MULTI, first_group, histogram_points, write_gallery_index
-from plot_checks import checks, result, compatible_bin_checks, compatible_time_checks
+from plot_checks import checks, result, compatible_bin_checks, compatible_time_checks, display_at, yield_display_measurements
 
 
 class PlotAuditTests(unittest.TestCase):
+    def test_retained_yield_duplicate_coordinates_are_one_sided_steps(self):
+        points=[dict(minimum_length_bp=x,retained_yield_bp=y) for x,y in [(0,50),(10,50),(10,40),(20,40),(20,0),(21,0)]]
+        self.assertEqual(display_at(points,10),(50,40))
+        self.assertEqual(display_at(points,15),(40,40))
+        self.assertEqual(display_at(points,20),(40,0))
+        self.assertEqual(display_at(points,21),(0,0))
+
+    def test_false_display_bound_is_not_accepted(self):
+        display=dict(points=[dict(minimum_length_bp=0,retained_yield_bp=20),dict(minimum_length_bp=21,retained_yield_bp=0)],
+            observations=1,error_bound_bp=0,maximum_inclusive_error_bp=0,maximum_one_sided_error_bp=0)
+        report=dict(comparison=dict(yield_by_minimum_length=dict(display=dict(all=display,qscore_selected=display))))
+        checks=yield_display_measurements(report,[(20,7,1)],7)
+        self.assertEqual(checks['all']['status'],'unexplained_difference')
+
     def test_only_matching_panel_and_group_are_compared(self):
         rows=[dict(PANEL='1',group=1),dict(PANEL='1',group=2),dict(PANEL='2',group=1)]
         self.assertEqual(first_group(rows),rows[:1])

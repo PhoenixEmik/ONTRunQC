@@ -53,6 +53,12 @@ are `null`. `tool.name` is `ONTRunQC`; `tool.version` is the Cargo package versi
 | `minionqc_plot_bins` | Opt-in reference histogram/Bin2D layers with explicit summary-read populations; omitted by default. |
 | `minionqc_time_series` | Optional exact summary-hour counts and exact/bounded read-start curves; individual reports and `collection.runs[]` only. [Definitions](metrics.md#optional-minionqc-temporal-plots-20). |
 
+Additive `comparison.yield_by_minimum_length.display` (also under each collection
+run's `yield_by_minimum_length`) supplies bounded HTML/SVG vertices and measured
+errors. The legacy `curve`, thresholds and all core values remain unchanged.
+See the [step-envelope definition](metrics.md#error-aware-retained-yield-display-21);
+this is distinct from MinIONQC's cropped per-read cumulative line.
+
 Channel/mux arrays sort numerically, time bins by start, histogram bins by lower
 bound, and `end_reasons` by Rust string order. The separate diagnostic termination
 array sorts by descending record count, then name. Fields follow the declared

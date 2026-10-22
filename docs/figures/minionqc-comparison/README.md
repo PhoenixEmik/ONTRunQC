@@ -20,6 +20,8 @@ Each card uses identical source bytes and Q cutoff. File-scoped validation match
 
 **Temporal mode:** `--minionqc-time-series`. Integer-hour counts include zero lengths and zero-filled gaps. Large cumulative curves are bounded full-data polylines; original-R tied-row ordering and simplification errors are reported separately. C temporal residuals are bounded samples; maxima evaluate every original timestamp/one-sided limit.
 
+**Yield-by-length display (#21):** full-range adaptive inclusive step envelopes. Actual R per-read tied ordinates and crop remain distinct. `cases[].display_differences` preserves the old query-line baseline; `adaptive_yield_display` records the new model errors. C panels distinguish tied ranges, inclusive truth and bounded residual samples; maxima check every length, not only samples.
+
 ## Browse by analysis
 
 - [Single MinION flowcell](#single-minion-flowcell)
@@ -75,7 +77,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populatio
 
 ### yield_by_length · minion · source_001
 
-R cropped per-read cumulative path; ONTRunQC exact inclusive minimum-length queries. Ties, crop and bounded display are distinct.
+Native adaptive inclusive step envelope vs actual cropped R per-read line. C upper panel distinguishes R tied ordinates from exact inclusive yield/native approximation; lower shows inclusive residuals. Maxima evaluate EVERY finite R length, not the bounded diagnostic samples. Full native tail retained; axis crop and per-read/tie differences are intentional.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65. Axes, units and populations follow the A/B labels and C caption.
 
@@ -175,6 +177,16 @@ Q cutoff: 7; input SHA-256 prefixes: dd508d9dc645519e. Axes, units and populatio
 
 ![promethion yield_over_time: original, native and numerical diagnostic](promethion-source_001-yield_over_time.png)
 
+<a id="promethion--yield_by_length--source_001"></a>
+
+### yield_by_length · promethion · source_001
+
+Native adaptive inclusive step envelope vs actual cropped R per-read line. C upper panel distinguishes R tied ordinates from exact inclusive yield/native approximation; lower shows inclusive residuals. Maxima evaluate EVERY finite R length, not the bounded diagnostic samples. Full native tail retained; axis crop and per-read/tie differences are intentional.
+
+Q cutoff: 7; input SHA-256 prefixes: dd508d9dc645519e. Axes, units and populations follow the A/B labels and C caption.
+
+![promethion yield_by_length: original, native and numerical diagnostic](promethion-source_001-yield_by_length.png)
+
 <a id="promethion--reads_per_hour--source_001"></a>
 
 ### reads_per_hour · promethion · source_001
@@ -215,6 +227,16 @@ Q cutoff: 8; input SHA-256 prefixes: 60a070e325b0c2e3. Axes, units and populatio
 
 ![short yield_over_time: original, native and numerical diagnostic](short-source_001-yield_over_time.png)
 
+<a id="short--yield_by_length--source_001"></a>
+
+### yield_by_length · short · source_001
+
+Native adaptive inclusive step envelope vs actual cropped R per-read line. C upper panel distinguishes R tied ordinates from exact inclusive yield/native approximation; lower shows inclusive residuals. Maxima evaluate EVERY finite R length, not the bounded diagnostic samples. Full native tail retained; axis crop and per-read/tie differences are intentional.
+
+Q cutoff: 8; input SHA-256 prefixes: 60a070e325b0c2e3. Axes, units and populations follow the A/B labels and C caption.
+
+![short yield_by_length: original, native and numerical diagnostic](short-source_001-yield_by_length.png)
+
 <a id="short--reads_per_hour--source_001"></a>
 
 ### reads_per_hour · short · source_001
@@ -234,6 +256,16 @@ EVERY original R timestamp and actual polyline one-sided limit evaluated. C show
 Q cutoff: 8; input SHA-256 prefixes: c71245ad265ed1a1. Axes, units and populations follow the A/B labels and C caption.
 
 ![1d2 yield_over_time: original, native and numerical diagnostic](1d2-source_001-yield_over_time.png)
+
+<a id="1d2--yield_by_length--source_001"></a>
+
+### yield_by_length · 1d2 · source_001
+
+Native adaptive inclusive step envelope vs actual cropped R per-read line. C upper panel distinguishes R tied ordinates from exact inclusive yield/native approximation; lower shows inclusive residuals. Maxima evaluate EVERY finite R length, not the bounded diagnostic samples. Full native tail retained; axis crop and per-read/tie differences are intentional.
+
+Q cutoff: 8; input SHA-256 prefixes: c71245ad265ed1a1. Axes, units and populations follow the A/B labels and C caption.
+
+![1d2 yield_by_length: original, native and numerical diagnostic](1d2-source_001-yield_by_length.png)
 
 <a id="1d2--reads_per_hour--source_001"></a>
 
@@ -275,6 +307,16 @@ Q cutoff: 7; input SHA-256 prefixes: 1d1860dabc15ed69. Axes, units and populatio
 
 ![rna yield_over_time: original, native and numerical diagnostic](rna-source_001-yield_over_time.png)
 
+<a id="rna--yield_by_length--source_001"></a>
+
+### yield_by_length · rna · source_001
+
+Native adaptive inclusive step envelope vs actual cropped R per-read line. C upper panel distinguishes R tied ordinates from exact inclusive yield/native approximation; lower shows inclusive residuals. Maxima evaluate EVERY finite R length, not the bounded diagnostic samples. Full native tail retained; axis crop and per-read/tie differences are intentional.
+
+Q cutoff: 7; input SHA-256 prefixes: 1d1860dabc15ed69. Axes, units and populations follow the A/B labels and C caption.
+
+![rna yield_by_length: original, native and numerical diagnostic](rna-source_001-yield_by_length.png)
+
 <a id="rna--reads_per_hour--source_001"></a>
 
 ### reads_per_hour · rna · source_001
@@ -299,6 +341,16 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, u
 
 ![combined yield_over_time: original, native and numerical diagnostic](combined-source_001-yield_over_time.png)
 
+<a id="combined--yield_by_length--source_001"></a>
+
+### yield_by_length · combined · source_001
+
+Native adaptive inclusive step envelope vs actual cropped R per-read line. C upper panel distinguishes R tied ordinates from exact inclusive yield/native approximation; lower shows inclusive residuals. Maxima evaluate EVERY finite R length, not the bounded diagnostic samples. Full native tail retained; axis crop and per-read/tie differences are intentional.
+
+Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
+
+![combined yield_by_length: original, native and numerical diagnostic](combined-source_001-yield_by_length.png)
+
 <a id="combined--reads_per_hour--source_001"></a>
 
 ### reads_per_hour · combined · source_001
@@ -318,6 +370,16 @@ EVERY original R timestamp and actual polyline one-sided limit evaluated. C show
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
 
 ![combined yield_over_time: original, native and numerical diagnostic](combined-source_002-yield_over_time.png)
+
+<a id="combined--yield_by_length--source_002"></a>
+
+### yield_by_length · combined · source_002
+
+Native adaptive inclusive step envelope vs actual cropped R per-read line. C upper panel distinguishes R tied ordinates from exact inclusive yield/native approximation; lower shows inclusive residuals. Maxima evaluate EVERY finite R length, not the bounded diagnostic samples. Full native tail retained; axis crop and per-read/tie differences are intentional.
+
+Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
+
+![combined yield_by_length: original, native and numerical diagnostic](combined-source_002-yield_by_length.png)
 
 <a id="combined--reads_per_hour--source_002"></a>
 
@@ -353,7 +415,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, u
 
 ### combined_yield_by_length · combined · combined
 
-R cropped per-read cumulative path; ONTRunQC exact inclusive minimum-length queries. Ties, crop and bounded display are distinct.
+Native adaptive inclusive step envelope vs actual cropped R per-read line. C upper panel distinguishes R tied ordinates from exact inclusive yield/native approximation; lower shows inclusive residuals. Maxima evaluate EVERY finite R length, not the bounded diagnostic samples. Full native tail retained; axis crop and per-read/tie differences are intentional.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
 
@@ -393,7 +455,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, u
 
 ### yield_by_length · combined · combined
 
-R cropped per-read cumulative path; ONTRunQC exact inclusive minimum-length queries. Ties, crop and bounded display are distinct.
+Native adaptive inclusive step envelope vs actual cropped R per-read line. C upper panel distinguishes R tied ordinates from exact inclusive yield/native approximation; lower shows inclusive residuals. Maxima evaluate EVERY finite R length, not the bounded diagnostic samples. Full native tail retained; axis crop and per-read/tie differences are intentional.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
 

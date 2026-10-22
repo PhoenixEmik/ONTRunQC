@@ -4,6 +4,20 @@ d <- jsonlite::read_json(args[1],simplifyVector=TRUE)
 png(args[2],width=720,height=500,type="cairo")
 r <- d$reference;p <- d$native;res <- d$residual
 has <- function(x) is.matrix(x)&&nrow(x)>0
+if(isTRUE(d$yield_length) && length(d$measurements$yield_samples)) {
+  s <- d$measurements$yield_samples
+  par(mar=c(4,5,3,1),mfrow=c(2,1))
+  plot(s$length_bp,s$reference_upper_bp/1e9,type="l",col="#94a3b8",xlab="Minimum length (bp)",ylab="Retained yield (Gb)",main="Actual R ordinates / inclusive truth / native display")
+  segments(s$length_bp,s$reference_lower_bp/1e9,s$length_bp,s$reference_upper_bp/1e9,col="#475569")
+  lines(s$length_bp,s$reference_first_bp/1e9,col="#475569")
+  lines(s$length_bp,s$native_bp/1e9,col="#4f46e5",lty=2)
+  abline(v=d$measurements$reference_axis_xmax_bp,col="#c2410c",lty=3)
+  legend("topright",c("R tied ordinate range / first ordinate","Exact inclusive upper envelope","Native adaptive envelope","R X crop"),col=c("#475569","#94a3b8","#4f46e5","#c2410c"),lty=c(1,1,2,3),bty="n",cex=.7)
+  plot(s$length_bp,s$residual_bp,type="l",col="#4f46e5",xlab="Minimum length (bp)",ylab="Native - inclusive truth (bp)",main=paste("Bounded samples; full maximum =",round(d$measurements$inclusive_display_error_bp,3),"bp"))
+  abline(h=0,col="#94a3b8",lty=2)
+  dev.off()
+  quit(save="no")
+}
 separate <- isTRUE(d$histogram)&&has(r)&&has(p)
 par(mar=c(4,5,2,1),mfrow=c(if(separate)3 else 2,1))
 if(separate) {

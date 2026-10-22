@@ -16,7 +16,7 @@ and CLI defaults are separate claims. Full strict numerical parity is not claime
 
 [Documentation index](README.md) · [Metric reference](metrics.md) · [Engineering ledger](minionqc-parity.md) · [Reference commands](../tests/reference/README.md)
 
-The historical audit is preserved. The #19/#20 sections record additional actual
+The historical audit is preserved. The #19–#21 sections record additional actual
 R executions without changing original scientific targets or strict GAM evidence.
 
 ## Contents
@@ -29,6 +29,7 @@ R executions without changing original scientific targets or strict GAM evidence
 - [CLI defaults and output behavior](#cli-defaults-and-output-behavior)
 - [Reference histogram and Bin2D validation (#19)](#reference-histogram-and-bin2d-validation-19)
 - [Reference temporal validation (#20)](#reference-temporal-validation-20)
+- [Yield-by-length display (#21)](#yield-by-length-display-21)
 - [Strict numerical GAM limitation](#strict-numerical-gam-limitation)
 - [Executed validation and limits](#executed-validation-and-limits)
 - [Reproduce the evidence](#reproduce-the-evidence)
@@ -76,8 +77,8 @@ GAM/LOESS, KDE or reference target was changed to make plots agree.
 | PromethION bin2d | Verified optional reference mode | All 516 cells / 75,160 reads match actual R coordinates and counts exactly | Explicit `--minionqc-plot-bins`; fixed native heatmap retained |
 | Hourly reads | Verified optional reference mode | Exact integer-hour All/Q summary counts and zero-filled gaps; native 900-second diagnostics unchanged | [#20 validation](#reference-temporal-validation-20) |
 | Read-start cumulative path | Verified bounded representation; explicit tied-order differences | Original coordinates, exact terminals, full-reference error measurements; not point-for-point parity | [#20 validation](#reference-temporal-validation-20); native bin-end path retained |
-| Minimum-length retained-yield curve | Numerically different display, exact stored queries | Max linear interpolation error at observed lengths: MinION 1,555,278.312bp; PromethION 5,464,673.009bp; pooled 4,431,919.159bp | [#21](https://github.com/PhoenixEmik/ONTRunQC/issues/21): preserve exact queries; quantify/improve display contract |
-| R length-yield X crop | Presentation/population visibility difference | R MinION X ≤ 93,318bp, PromethION ≤ 81,890bp; 677/116 built XY rows nonfinite or censored across All/Q | #21: optional explicit crop only; retain long-tail statistics |
+| Minimum-length retained-yield curve | Verified bounded inclusive display; distinct R per-read semantics | Historical query-line errors 1,555,278 /5,464,673 /4,431,919 bp fall to 392,578 /128,977 /750,632 bp at observed inclusive lengths | [#21 measured contract](#yield-by-length-display-21); exact queries unchanged |
+| R length-yield X crop | Presentation/population visibility difference | R MinION X ≤ 93,318bp, PromethION ≤ 81,890bp; 677/116 built XY rows nonfinite or censored across All/Q | Full native tail retained; R crop/clipped counts independently verified under [#21](#yield-by-length-display-21), not emulated |
 | Channel count | Intentional scientific correction of proven R defect | n=2 gives R3 vs true2; original n(n+1)/2 expression | Preserve true counts; do not emulate bug |
 | RNA missing calibration annotation | Intentional population difference, newly verified | Missing/NA/ordinary/control lengths 10/20/30/40: R 1 read/30 bp vs native 3 reads/60 bp | Existing exact-name policy retained; new regression and runnable counterexample |
 | MinION points/raster and spatial palettes | Presentation differences with full-data conservation | Exact small points / bounded all-count pixels; actual R finite counts, marginal counts and coordinate/yield checks | Keep resolution/color-reduction labels; no independent-point/pixel identity claim |
@@ -88,7 +89,7 @@ GAM/LOESS, KDE or reference target was changed to make plots agree.
 **Completion boundary:** this audit delivers evidence and runnable comparisons;
 reference-compatible histogram/Bin2D layers in #19 are now implemented and
 verified below; #20 now supplies exact hours and bounded read-start curves, while
-#21 remains follow-up work. #8 and #12 remain open. No release is published.
+#21 now supplies measured adaptive step envelopes with explicitly different R per-read/crop semantics. #8 and #12 remain open. No release is published.
 
 <a id="2-input-compatibility-and-population-definitions"></a>
 
@@ -142,7 +143,7 @@ summary-derived observation as instrument telemetry.
 | Channel bases = Σl; mean/median per channel; **R count = Σwhich(l≥0) = n(n+1)/2** | `channel.summary`, 406–420 | `finish_retaining`, `channel_distributions` | `exact_channel_medians_include_explicit_summary_and_basecalled_denominators`. Correct true count, All-summary means/medians available separately from B. |
 | Hour = floor(t/3600); counts by hour; explicitly zero-fill 0…max(hour) | 189–203; 609–638 | `Aggregator::add` 900s bins; `html.rs::time_plot/qscore_comparison` | `html_time_bins_preserve_gaps_and_relative_units`; audit captures exact R hourly rows. Fifteen-minute counts are **not** the reference hourly plot. |
 | Chronological cumulative yield = cumsum(l sorted by t), including each read's start | 184–188; 563–572 | `Aggregator::add/finish_retaining`; `time_plot`, `time_series_plot` | Exact totals, different paths. Single overview steps at bin ends; All/Q and combined paths join bin-end points. Missing-bin handling differs from a read-level path. |
-| Length yield curve = descending cumulative bases at **each read**, then ggplot sorts X; ties yield vertical segments | 190–192; 575–584 | `yield_by_length`, `html.rs::yield_length_plot/comparison_yield_length` | `every_display_query_uses_exact_lengths_including_ties`: exact inclusive answers at ≤520 display/threshold queries. R crops X using cumulative >1% of global max yield; Rust keeps full range. |
+| Length yield curve = descending cumulative bases at **each read**, then ggplot sorts X; ties yield vertical segments | 190–192; 575–584 | `yield_by_length`, `html.rs::yield_length_plot/comparison_yield_length` | `every_display_query_uses_exact_lengths_including_ties`: legacy exact queries unchanged. New adaptive step envelope has a measured one-sided error contract; actual R tied min/max checked independently. R crop/per-read ordering remain distinct; see [#21 evidence](#yield-by-length-display-21). |
 | Length histogram: log10(l) **before** StatBin, bins=300; Q histogram: raw q, bins=300 | 472–545; 753–781 | `html.rs::lengths/quality/qscore_comparison`, fixed metric bins | `length_quality_bins_include_boundaries_and_unbounded_tails_without_thresholds`, new actual-R bin conservation/membership checks. Equal total counts ≠ equal bin counts or visual density. |
 | Channel histograms: StatBin(bins=30), automatic centred breaks per variable shared across All/Q | 670–686 | `channel_distributions`, 30 intervals from zero to maximum | Both use 30 bins, but edges/closure differ. Read-count bug is a separate formula difference; other channel metrics can match exactly. |
 | Smooth raw reads, not bin means; ggplot chooses LOESS below 1,000 in largest group, otherwise GAM `cs`, REML | 587–606; 874–890 | `trends.rs::Tracker/Plan`; `html.rs::fitted_trend_plot` | Actual 18-case differential, LOESS/golden tests. Single Q limits remove negative Q before fitting; combined Q does not. Default fit opt-in; #12 remains Partial. |
@@ -318,7 +319,7 @@ matched-bin/cell count residuals and boundary-error annotations. The corrected
 channel-count panel instead shows separate distributions with the proven formula
 difference. Bin agreement is **not** pixel-identical rendering. Native hourly,
 cumulative presentation differences now have the explicit #20 contract below;
-retained-yield display work remains #21;
+retained-yield display now has the measured #21 contract;
 #8, #12 and the parent audit remain separate acceptance concerns.
 
 ## Reference temporal validation (#20)
@@ -394,6 +395,110 @@ Reproduction commands and benchmark generation are in the
 Histogram/Bin2D checks remain separately verified, and original GAM evidence
 still records 1,542 primary / 1,912 intermediate discrepancies. The full 18-case
 strict suite is not rerun or replaced by this temporal validation.
+
+
+## Yield-by-length display (#21)
+
+The 2026-10-22 execution used the unchanged pinned source and installed R 4.4.1,
+ggplot2 3.5.1, mgcv 1.9-1. All six public cases produced 85 actual original
+figure families: MinION, PromethION, short run, 1D2, RNA and two-MinION combined.
+The extended capture evaluates every finite R length, not only diagnostic samples.
+[Machine evidence](../tests/reference/yield-validation-summary.json) records source/input
+hashes, actual R axis limits, clipping, population sizes and 20 All/Q source/context
+comparisons. Six fictional [R goldens](../tests/reference/yield-layers-golden.json)
+cover singleton, identical lengths, irregular ties, long tails, signed cutoffs
+and the original zero-yield crop limitation.
+
+### Three distinct mathematical representations
+
+| Representation | Definition / ordering | Verification |
+| --- | --- | --- |
+| Original MinIONQC | Descending per-read cumulative sums, then GeomLine sorts X. For tied length L, ordinates run from F(L)−(n−1)L to F(L); hour merge may reorder internal ties. | Every visible R tied min/max equals independent full-population sums exactly, including longer reads censored from X. Original tied first/last errors are recorded separately. |
+| Exact retained-yield function | F(x)=Σ l I(l≥x), an inclusive discontinuous step function. Zero lengths add no bases. | Legacy queries and all seven threshold count/bp fields unchanged; exact query errors remain 0. |
+| New adaptive display | Retained whole-length jumps at yield-level crossings, both one-sided limits, interpolated omitted spans. Small inputs retain every step. Full range, no R crop. | At most 8,198 vertices/population; guaranteed bound ceil(population yield/4096) bp and measured inclusive/one-sided maxima. See [definitions](metrics.md#error-aware-retained-yield-display-21). |
+
+The selected plotting population remains positive-length Q≥cutoff, independent of
+native pass. R may also plot zero-length summary observations; their zero yield
+does not change the envelope, but the full original observation count is recorded.
+Empty/zero-yield native groups render safely. Original R has no finite strict
+1%-yield crop when all yield is zero; the golden records that upstream limitation.
+
+### Reproduced baseline and measured improvement
+
+The old query-line interpolation errors below were reproduced **before editing**,
+on identical SHA-256 input bytes. The legacy query array still reproduces these
+historical numbers; it is retained for consumers but no longer used for drawing.
+Comparison is at every observed inclusive length (same definition before/after).
+
+| Public All population | Historical line error (bp) | Adaptive inclusive error (bp) | Adaptive one-sided error (bp) | Declared bound (bp) | Vertices |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| minion | 1,555,278.312 | 392,578.280 | 392,578.280 | 861,327 | 8,196 |
+| promethion | 5,464,673.009 | 128,976.723 | 128,976.723 | 152,148 | 8,192 |
+| combined | 4,431,919.159 | 750,631.703 | 959,038.703 | 1,758,619 | 8,196 |
+
+All 26 native All/Q populations in the 13 individual/pooled reports were checked
+independently against complete length-frequency tables; measured maxima agree
+with JSON. Removing only the additive display objects leaves all 13 complete
+canonical JSON reports exactly equal to the #20 baseline. Pooled MinION remains
+608,208 summary records, 7,203,301,321 bp, N50 33,161 bp, median 2,616 bp.
+
+### R path, crop and intentional differences
+
+The **20 actual-R envelope comparisons** have zero integer envelope/lower-limit
+error, zero missing reference coordinates, exact terminal yield, and native
+inclusive deviations within the declared bounds. The independent original crop
+formula and clipped population counts also match exactly. Overall there are
+441 numerical layer checks with 0 unexplained differences; this is not a claim
+that 441 strict GAM comparisons passed. The earlier 421 bin/temporal/spatial
+checks remain separate from the 20 new yield checks.
+
+MinION original X max is 93,318 bp (339 All +338 Q points censored); PromethION
+81,890 bp (61 All +55 Q). The native full tails extend to 208,408/351,506 bp
+respectively, including their zero-yield max+1 endpoint. These are explicit
+presentation choices, not omitted observations in statistics. Per-source R
+plots use the maximum individual yield for the shared 1% crop, whereas the pooled
+plot recomputes cumulative yield/crop from pooled lengths. Both contexts are
+verified. R tied-path errors, crop counts and the display envelope error are
+different quantities; none is silently reclassified as point-for-point parity.
+
+No new compatibility flag was added: #21’s accepted bounded-display/error-disclosure
+path improves the existing native figure while retaining its full-range semantics.
+`--minionqc-compat` still controls only documented CLI behavior, and the histogram,
+temporal, fitted-trend and density switches are unchanged. An original-R cropped
+per-read rendering mode is **not implemented or claimed**. Native statistics,
+thresholds, ultralong definitions and safe defaults remain stable.
+
+The [A/B/C gallery](figures/minionqc-comparison/README.md) includes single, pooled
+and per-source figures. C shows original R tied ordinates, the exact inclusive
+upper envelope and native residuals, with the R crop marked. Only bounded samples
+are drawn in C; error maxima use every finite original coordinate and all native
+one-sided jumps. Gallery images do not establish pixel identity with ggplot.
+
+### Resources, reproduction and remaining work
+
+No additional source pass, decompression, sort, scratch or runtime dependency is
+needed. The existing numeric partitions supply the two merge traversals. More
+bounded vertices increase JSON/path size; the [before/after benchmark](benchmark.md#yield-by-length-display-21)
+records that cost rather than claiming a performance optimization. Chrome file://
+desktop and 390px inspections and canonical PNG/SVG exports were checked; wide
+charts/tables retain intentional horizontal scroll containers.
+
+```sh
+python3 tests/reference/plot_audit.py /path/to/pinned/minion_qc \
+  --rscript /path/to/pinned/Rscript --reference-bins --reference-time \
+  --output benchmark-results/yield-audit --gallery benchmark-results/yield-gallery
+Rscript tests/reference/yield_layers.R /path/to/pinned/MinIONQC.R \
+  tests/reference/yield-layers-golden.json
+```
+
+The audit emits `yield-validation.json`; the committed summary additionally
+includes the measured benchmark and exact canonical-preservation checks. The
+original 18-case fitting suite was **not rerun** for #21. Protected GAM/LOESS/KDE
+implementations, targets, tolerances and strict summary hashes are unchanged:
+**1,542 primary GAM /1,912 intermediate differences remain**. Neither #8, #12
+nor #18 is closed by this display contract. Next priority is #18’s final evidence
+review, then an explicit maintainer decision on #8’s dependency on #12; further
+#12 numerical work should remain independent.
 
 ## Strict numerical GAM limitation
 
@@ -524,10 +629,10 @@ ImageMagick, Python plotting libraries, browser or network access.
 | --- | --- |
 | [#19 automatic histogram/bin2d layers](https://github.com/PhoenixEmik/ONTRunQC/issues/19) | Verified opt-in layers under documented R settings: 75 exact groups, 14 proven count-formula exceptions; native defaults retained. |
 | [#20 hourly and cumulative paths](https://github.com/PhoenixEmik/ONTRunQC/issues/20) | Implemented and numerically verified under the explicit zero-fill/bounded-display/tie contract above; original point-for-point rendering remains different. |
-| [#21 length-yield display](https://github.com/PhoenixEmik/ONTRunQC/issues/21) | Preserve exact threshold answers while quantifying/improving interpolation and optional crop behavior. |
+| [#21 length-yield display](https://github.com/PhoenixEmik/ONTRunQC/issues/21) | Adaptive full-range inclusive envelope implemented; exact thresholds preserved. Actual-R envelope, per-read/tie and clipping comparisons reported in the [#21 section](#yield-by-length-display-21); original cropped polyline is not reproduced. |
 | [#12 original GAM](https://github.com/PhoenixEmik/ONTRunQC/issues/12) | Keep original failing targets/tolerances; no closure while the strict contract remains unmet. |
 | [#8 combined acceptance](https://github.com/PhoenixEmik/ONTRunQC/issues/8) | Preserve its fitted-curve requirement or obtain explicit approval for an acceptance separation. |
-| [#18 audit review](https://github.com/PhoenixEmik/ONTRunQC/issues/18) | Review the published source mapping, gallery and discrepancy evidence; #19 and #20 are verified within their stated contracts; #21 remains outstanding. |
+| [#18 audit review](https://github.com/PhoenixEmik/ONTRunQC/issues/18) | Review the published source mapping, gallery and discrepancy evidence; #19 and #20 are verified within their stated contracts; #21 has explicit bounded-display evidence; original R per-read/crop presentation differences remain documented. |
 
 Streaming gzip (#17) is implemented independently of these scientific parity
 gates. The engineering ledger preserves historical decisions; this comparison

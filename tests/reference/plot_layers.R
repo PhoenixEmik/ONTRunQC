@@ -9,6 +9,58 @@ audit_scale <- function(scale) list(
 # as queries; they never replace the R input, statistical result or renderer.
 temporal_candidates <- if(nzchar(Sys.getenv("PG_TEMPORAL_CANDIDATES")))
   jsonlite::fromJSON(Sys.getenv("PG_TEMPORAL_CANDIDATES"),simplifyVector=FALSE) else list()
+yield_candidates <- if(nzchar(Sys.getenv("PG_YIELD_CANDIDATES")))
+  jsonlite::fromJSON(Sys.getenv("PG_YIELD_CANDIDATES"),simplifyVector=FALSE) else list()
+
+yield_comparisons <- function(d) {
+  # Observe actual built GeomLine coordinates AFTER R's axis censoring. Preserve
+  # tied row ordering; max/min are an explicitly separate cumulative envelope.
+  d <- d[order(d$x,method="radix"),,drop=FALSE]
+  first <- d[!duplicated(d$x),,drop=FALSE]
+  last <- d[!duplicated(d$x,fromLast=TRUE),,drop=FALSE]
+  keys <- match(d$x,first$x)
+  upper <- as.numeric(tapply(round(d$y*1e9),keys,max))
+  lower <- as.numeric(tapply(round(d$y*1e9),keys,min))
+  # tapply orders numeric factor levels numerically (1..N), not X text values.
+  lapply(yield_candidates,function(candidate) {
+    p <- candidate$points
+    if(!length(p)) return(list(candidate=candidate$id,unavailable=TRUE))
+    x <- vapply(p,function(v)v$minimum_length_bp,numeric(1))
+    y <- vapply(p,function(v)v$retained_yield_bp,numeric(1))
+    head_y <- y[!duplicated(x)]; tail_y <- y[!duplicated(x,fromLast=TRUE)]
+    x <- unique(x)
+    index <- pmax(1L,pmin(length(x),findInterval(first$x,x)))
+    next_index <- pmin(length(x),index+1L)
+    same <- x[index]==first$x
+    weight <- ifelse(x[index]==x[next_index],0,(first$x-x[index])/(x[next_index]-x[index]))
+    interpolated <- tail_y[index]+weight*(head_y[next_index]-tail_y[index])
+    inclusive <- ifelse(same,head_y[index],interpolated)
+    right <- ifelse(same,tail_y[index],interpolated)
+    truth <- candidate$exact_steps
+    truth_x <- vapply(truth,function(v)v$length_bp,numeric(1))
+    truth_y <- vapply(truth,function(v)v$inclusive_yield_bp,numeric(1))
+    truth_n <- vapply(truth,function(v)v$read_count,numeric(1))
+    match_index <- match(first$x,truth_x)
+    matched <- !is.na(match_index)
+    expected <- truth_y[match_index[matched]]
+    expected_lower <- expected-(truth_n[match_index[matched]]-1)*first$x[matched]
+    sample <- unique(round(seq(1,nrow(first),length.out=min(256L,nrow(first)))))
+    list(candidate=candidate$id,reference_finite_observations=nrow(d),
+      reference_unique_lengths=nrow(first),reference_tied_observations=sum(duplicated(d$x)),
+      reference_xmin_bp=min(d$x),reference_xmax_bp=max(d$x),
+      unmatched_reference_lengths=sum(!matched),
+      maximum_reference_envelope_error_bp=if(any(matched)) max(abs(upper[matched]-expected)) else NULL,
+      maximum_reference_lower_error_bp=if(any(matched)) max(abs(lower[matched]-expected_lower)) else NULL,
+      reference_terminal_yield_bp=max(upper),native_terminal_yield_bp=head(y,1),
+      maximum_inclusive_envelope_error_bp=max(abs(inclusive-upper)),
+      maximum_original_ordinate_difference_bp=max(abs(inclusive-upper),abs(inclusive-lower)),
+      maximum_original_one_sided_difference_bp=max(abs(inclusive-round(first$y*1e9)),abs(right-round(last$y*1e9))),
+      maximum_tied_vertical_range_bp=max(upper-lower),
+      samples=data.frame(length_bp=first$x[sample],reference_upper_bp=upper[sample],reference_lower_bp=lower[sample],
+        reference_first_bp=round(first$y[sample]*1e9),reference_last_bp=round(last$y[sample]*1e9),
+        native_bp=inclusive[sample],residual_bp=inclusive[sample]-upper[sample]))
+  })
+}
 temporal_comparisons <- function(d) {
   original <- d[order(d$x,method="radix"),,drop=FALSE]
   first <- original[!duplicated(original$x),,drop=FALSE]
@@ -74,6 +126,12 @@ audit_layer <- function(layer, data, limit=20000L, family="") {
     rows=nrow(data),finite_xy=sum(finite),nonfinite_xy=sum(!finite),groups=unname(totals),
     retention=if(bounded && nrow(data)<=limit) "complete_bounded_layer" else "bounded_summary",
     data=if(bounded && nrow(data)<=limit) data[,columns,drop=FALSE] else NULL)
+  if (inherits(layer$geom,"GeomLine") && grepl("yield_by_length",family) && length(yield_candidates))
+    result$yield_comparisons <- lapply(groups,function(rows) {
+      d <- data[rows[finite[rows]],,drop=FALSE]
+      if(!nrow(d)) return(NULL)
+      list(panel=as.character(d$PANEL[1]),group=d$group[1],colour=d$colour[1],comparisons=yield_comparisons(d))
+    })
   if (!bounded || nrow(data)>limit) {
     # Deterministic evenly spaced ROW samples are display diagnostics, not
     # complete data or a conservation proof. Count grids include EVERY finite row.

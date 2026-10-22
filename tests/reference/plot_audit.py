@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tests'))
 from minionqc_differential import cases, digest
 from minionqc_reference import REVISION
-from plot_checks import checks as plot_checks, curve_measurements, input_rows, compatible_bin_checks, compatible_time_checks
+from plot_checks import checks as plot_checks, curve_measurements, input_rows, compatible_bin_checks, compatible_time_checks, compatible_yield_checks, yield_display_measurements, yield_candidates
 
 # Every source plot family has an actual renderer mapping, not a redrawn proxy.
 FIGURES = {
@@ -69,6 +69,7 @@ def write_gallery_index(gallery, evidence):
         '1,542 fit/uncertainty discrepancies. These images do not replace that evidence.', '',
         *(['**Plot mode:** `--minionqc-plot-bins`. Histogram/Bin2D geometry and counts use the original statistical layers; true channel counts intentionally correct the upstream count defect.', ''] if evidence.get('plotting_mode')=='minionqc_plot_bins' else []),
         *(['**Temporal mode:** `--minionqc-time-series`. Integer-hour counts include zero lengths and zero-filled gaps. Large cumulative curves are bounded full-data polylines; original-R tied-row ordering and simplification errors are reported separately. C temporal residuals are bounded samples; maxima evaluate every original timestamp/one-sided limit.', ''] if evidence.get('temporal_mode')=='minionqc_time_series' else []),
+        *(['**Yield-by-length display (#21):** full-range adaptive inclusive step envelopes. Actual R per-read tied ordinates and crop remain distinct. `cases[].display_differences` preserves the old query-line baseline; `adaptive_yield_display` records the new model errors. C panels distinguish tied ranges, inclusive truth and bounded residual samples; maxima check every length, not only samples.', ''] if evidence.get('yield_length_display') else []),
         '## Browse by analysis', '',
         '- [Single MinION flowcell](#single-minion-flowcell)',
         '- [Device and legacy checks](#device-and-legacy-checks)',
@@ -190,7 +191,7 @@ def diagnostic(plot, report, family, multi=False):
         description = 'R exact cumulative-at-read-start queried every 15 min; ONTRunQC bin-end values. Within-bin paths differ; terminal bp conserved.'
     elif 'yield_by_length' in family:
         distribution = source.get('yield_by_minimum_length', report['comparison']['yield_by_minimum_length'])
-        p = [[v['minimum_length_bp'], v['all_yield_bp']/1e9] for v in distribution['curve']]
+        p = [[v['minimum_length_bp'], v['retained_yield_bp']/1e9] for v in distribution['display']['all']['points']]
         description = 'R cropped per-read cumulative path; ONTRunQC exact inclusive minimum-length queries. Ties, crop and bounded display are distinct.'
     elif family in ('length_by_hour', 'q_by_hour'):
         metric = 'length_bp' if family == 'length_by_hour' else 'qscore'
@@ -274,6 +275,20 @@ def diagnostic(plot, report, family, multi=False):
         counts['full_reference_time_comparison']={k:v for k,v in c.items() if k!='samples'}
         counts['yield_error_bound_bp']=temporal['all']['cumulative']['yield_error_bound_bp']
         description='EVERY original R timestamp and actual polyline one-sided limit evaluated. C shows post-tie residual samples only; full maximum envelope error '+str(c['maximum_envelope_error_bp'])+' bp, original polyline error '+str(c['maximum_original_polyline_error_bp'])+' bp, display bound '+str(counts['yield_error_bound_bp'])+' bp. Tied internal order is a separately reported difference, not point-for-point parity.'
+    if 'yield_by_length' in family:
+        scope='combined' if plot['directory']=='combinedQC' else plot['directory']
+        matches=compatible_yield_checks(dict(plots=[plot]),{scope:report},include_samples=True)
+        counts['yield_display_checks']=[{k:v for k,v in c.items() if k!='samples'} for c in matches]
+        all_checks=[c for c in matches if c['population']=='all']
+        if all_checks:
+            c=all_checks[0]
+            r=[[v['length_bp'],v['reference_first_bp']/1e9] for v in c['samples']]
+            p=[[v['length_bp'],v['native_bp']/1e9] for v in c['samples']]
+            counts['inclusive_display_error_bp']=c['maximum_inclusive_envelope_error_bp']
+            counts['original_ordinate_difference_bp']=c['maximum_original_ordinate_difference_bp']
+            counts['reference_axis_xmax_bp']=plot['axes'][0]['limits'][1]
+            counts['yield_samples']=c['samples']
+            description='Native adaptive inclusive step envelope vs actual cropped R per-read line. C upper panel distinguishes R tied ordinates from exact inclusive yield/native approximation; lower shows inclusive residuals. Maxima evaluate EVERY finite R length, not the bounded diagnostic samples. Full native tail retained; axis crop and per-read/tie differences are intentional.'
     compatible = report.get('minionqc_plot_bins')
     comparable=False
     if compatible and ('length_histogram' in family or 'q_histogram' in family):
@@ -322,7 +337,7 @@ def diagnostic(plot, report, family, multi=False):
     if temporal and family in ('reads_per_hour','yield_over_time'):
         ylabel='Summary records per integer hour' if family=='reads_per_hour' else 'Cumulative yield (Gb)'
         counts['actual_rendered_points']=len(temporal['all']['hourly'] if family=='reads_per_hour' else temporal['all']['cumulative']['points'])
-    return dict(reference=r, native=p, residual=residual, histogram=histogram, x_label=xlabel,y_label=ylabel, description=description, measurements=counts)
+    return dict(reference=r, native=p, residual=residual, yield_length='yield_by_length' in family, histogram=histogram, x_label=xlabel,y_label=ylabel, description=description, measurements=counts)
 
 
 def rna_missing_labels(args, upstream, output):
@@ -378,7 +393,7 @@ def main():
                    lockfile=digest(ROOT/'Cargo.lock'),reference_bins=args.reference_bins, reference_time=args.reference_time)
         stampfile=case/'stamp.json'
         previous=json.loads(stampfile.read_text()) if stampfile.exists() else {}
-        same_native = all(previous.get(k)==v for k,v in stamp.items() if k not in ('capture_sha256','helper_sha256','temporal_candidates_sha256'))
+        same_native = all(previous.get(k)==v for k,v in stamp.items() if k not in ('capture_sha256','helper_sha256','temporal_candidates_sha256','yield_candidates_sha256'))
         reuse_native = args.reuse and same_native
         reuse_reference = args.reuse and all(previous.get(k)==stamp[k] for k in ('inputs','cutoff','reference_commit','source_sha256','capture_sha256','helper_sha256'))
         if not reuse_native:
@@ -402,11 +417,18 @@ def main():
         if args.reference_time:
             reuse_reference = reuse_reference and previous.get('temporal_candidates_sha256')==digest(candidate_file)
             stamp['temporal_candidates_sha256']=digest(candidate_file)
+        # Yield audit candidates include bounded display vertices plus independent
+        # exact length-frequency queries (validation only, never production JSON).
+        yield_file=case/'yield-candidates.json'
+        yield_file.write_text(json.dumps(yield_candidates(case/'native',copied,cutoff),allow_nan=False))
+        reuse_reference = reuse_reference and previous.get('yield_candidates_sha256')==digest(yield_file)
+        stamp['yield_candidates_sha256']=digest(yield_file)
         if not reuse_reference:
             rdir=case/'minionqc';rdir.mkdir(exist_ok=True)
             env=dict(os.environ,TZ='UTC',LC_ALL='C',PG_REFERENCE_SOURCE=str(upstream/'MinIONQC.R'),
                      PG_REFERENCE_CAPTURE=str(case/'capture.json'),PG_REFERENCE_RENDER='true',
                      PG_TEMPORAL_CANDIDATES=str(case/'temporal-candidates.json') if args.reference_time else '',
+                     PG_YIELD_CANDIDATES=str(yield_file),
                      PG_PLOT_AUDIT='true',PG_PLOT_AUDIT_HELPER=str(scripts/'plot_layers.R'),PG_REFERENCE_DPI='60')
             run([args.rscript,scripts/'capture.R','-i',case/'inputs' if len(paths)>1 else copied[0],
                  '-o',rdir,'-q',cutoff,'-p','1','-m','8','-f','png','-s','TRUE'],case/'R.log',env)
@@ -422,7 +444,9 @@ def main():
             all_summary_records=reports['combined']['metrics']['total_records'],
             basecalled_reads=reports['combined']['metrics']['basecalled_reads'],
             yield_bp=reports['combined']['metrics']['total_yield_bp'],
-            display_differences=curve_measurements(reports['combined'],list(input_rows(copied)))))
+            display_differences=curve_measurements(reports['combined'],list(input_rows(copied))),
+            adaptive_yield_display=yield_display_measurements(reports['combined'],list(input_rows(copied)),cutoff)))
+        numerical_checks.extend(dict(case=name,**c) for c in compatible_yield_checks(capture,reports,paths=copied,cutoff=cutoff))
         if args.reference_time:
             numerical_checks.extend(dict(case=name,**check) for check in compatible_time_checks(capture,reports))
         if args.reference_bins:
@@ -459,7 +483,7 @@ def main():
             # Keep one readable A/B/C per family, plus distinct legacy/device cases.
             selected=(name=='minion' or (name=='combined' and directory=='combined') or
                       (name in ('promethion','1d2') and family=='length_vs_q') or
-                      (args.reference_bins and name=='promethion' and family in ('length_histogram','q_histogram','channel_summary')) or
+                      (args.reference_bins and name=='promethion' and family in ('length_histogram','q_histogram','channel_summary')) or ('yield_by_length' in family) or
                       (name=='rna' and family=='q_histogram') or (name=='short' and family=='reads_per_hour') or (args.reference_time and family in ('reads_per_hour','yield_over_time')))
             card=None
             if selected:
@@ -471,6 +495,7 @@ def main():
                 elif multi and family in ('length_distributions','q_distributions','length_by_hour','q_by_hour'):
                     companions = [target.rsplit('-',1)[0]+'-true']
                 if args.reference_time and multi and family=='yield_over_time': companions=['reference-cumulative-true']
+                if multi and family=='yield_by_length': companions=['combined-yield-length-true']
                 if args.reference_bins:
                     if 'length_histogram' in family: companions=['reference-length-q-selected']
                     elif 'q_histogram' in family: companions=['reference-q-q-selected']
@@ -500,12 +525,21 @@ def main():
                 reference_versions=dict(r='4.4.1',ggplot2='3.5.1',mgcv='1.9-1'),
                 plotting_mode='minionqc_plot_bins' if args.reference_bins else 'native_fixed_bins',
                 temporal_mode='minionqc_time_series' if args.reference_time else 'native_15_minutes',
+                yield_length_display='yield_level_adaptive_inclusive_step_envelope',
                 native_probe_sha256=digest(scripts/'probe.rs'),capture_script_sha256=digest(scripts/'capture.R'),
                 audit_script_sha256=digest(Path(__file__)),lockfile_sha256=digest(ROOT/'Cargo.lock'),
                 render_note='Original R smallfigures TRUE, PNG 60 DPI for audit readability; native canonical figures 300 DPI; gallery resized and palette-reduced to 256 colours only for documentation. Original files remain unchanged.',
                 limitations='A/B have independently defined grids/populations; no pixel-equivalence claim. C first panel/group unless stated; strict fitting comparisons remain separate.',
                 cases=case_evidence,rna_missing_labels=edge,numerical_checks=numerical_checks,plots=inventory)
     (output/'audit.json').write_text(json.dumps(result,indent=2,allow_nan=False)+'\n')
+    (output/'yield-validation.json').write_text(json.dumps(dict(
+        reference_commit=REVISION,reference_source_sha256=result['reference_source_sha256'],
+        reference_versions=result['reference_versions'],audit_script_sha256=result['audit_script_sha256'],
+        helper_sha256=digest(scripts/'plot_layers.R'),
+        cases=case_evidence,
+        checks=[c for c in numerical_checks if c['status']=='verified_inclusive_envelope_with_distinct_R_polyline' or
+                ('yield_by_length' in c['metric'] and c['status']=='unexplained_difference')],
+        limitation='Verified inclusive envelopes and measured bounded display; not original per-read/tie path or cropped-axis identity. Strict GAM evidence unchanged.'),indent=2,allow_nan=False)+'\n')
     # Store bounded evidence without duplicate XY arrays/full reports in Git.
     compact={**result,'plots':[{k:v for k,v in row.items() if k!='diagnostic'} | dict(
         description=row['diagnostic']['description'],measurements=row['diagnostic']['measurements']) for row in inventory]}

@@ -145,6 +145,120 @@ def curve_measurements(report, rows):
                 maximum_15_min_bin_yield_bp=max((b['yield_bp'] for b in report['time_bins']),default=0))
 
 
+def display_at(points, x):
+    """Inclusive/above limits; duplicate X values are vertical jumps, not ramps."""
+    xs=[p['minimum_length_bp'] for p in points]
+    end=bisect.bisect_right(xs,x)
+    if not end:return (0,0)
+    left=points[end-1]
+    if left['minimum_length_bp']==x:
+        return points[bisect.bisect_left(xs,x)]['retained_yield_bp'],left['retained_yield_bp']
+    if end==len(points):return left['retained_yield_bp'],left['retained_yield_bp']
+    right=points[end]
+    fraction=(x-left['minimum_length_bp'])/(right['minimum_length_bp']-left['minimum_length_bp'])
+    y=left['retained_yield_bp']+fraction*(right['retained_yield_bp']-left['retained_yield_bp'])
+    return y,y
+
+
+def exact_length_steps(rows):
+    counts=Counter(r[0] for r in rows)
+    cumulative=sum(length*n for length,n in counts.items())
+    out=[]
+    for length,n in sorted(counts.items()):
+        out.append(dict(length_bp=length,read_count=n,inclusive_yield_bp=cumulative))
+        cumulative-=length*n
+    return out
+
+
+def yield_display_measurements(report,rows,cutoff):
+    out={}
+    for key,selected in [('all',False),('qscore_selected',True)]:
+        population=[r for r in rows if r[0]>0 and (not selected or r[1]>=cutoff)]
+        d=report['comparison']['yield_by_minimum_length']['display'][key]
+        inclusive=one_sided=0
+        # Precompute X only once; public validation must not be O(N * vertices).
+        points=d['points'];xs=[p['minimum_length_bp'] for p in points]
+        for step in exact_length_steps(population):
+            x=step['length_bp'];end=bisect.bisect_right(xs,x)
+            if xs[end-1]==x:
+                left=points[bisect.bisect_left(xs,x)]['retained_yield_bp'];right=points[end-1]['retained_yield_bp']
+            else:
+                a,b=points[end-1],points[end]
+                left=right=a['retained_yield_bp']+(x-xs[end-1])/(xs[end]-xs[end-1])*(b['retained_yield_bp']-a['retained_yield_bp'])
+            error=abs(left-step['inclusive_yield_bp'])
+            inclusive=max(inclusive,error)
+            one_sided=max(one_sided,error,abs(right-(step['inclusive_yield_bp']-x*step['read_count'])))
+        out[key]=dict(observations=len(population),rendered_vertices=len(points),
+            maximum_inclusive_error_bp=inclusive,maximum_one_sided_error_bp=one_sided,
+            declared_bound_bp=d['error_bound_bp'],
+            measured_error_difference_bp=max(abs(inclusive-d['maximum_inclusive_error_bp']),abs(one_sided-d['maximum_one_sided_error_bp'])),
+            status='verified_bound' if one_sided<=d['error_bound_bp']+1e-5 and len(points)<=8198 and len(population)==d['observations'] else 'unexplained_difference')
+    return out
+
+
+def yield_candidates(native,paths,cutoff):
+    """Independent exact numeric frequency tables only in ignored audit scratch."""
+    import json
+    candidates=[]
+    for path in sorted(native.glob('*/report.json')):
+        rows=list(input_rows(paths if path.parent.name=='combined' else [paths[int(path.parent.name.split('_')[1])-1]]))
+        report=json.loads(path.read_text())
+        for key in ['all','qscore_selected']:
+            population=[r for r in rows if key=='all' or r[1]>=cutoff]
+            candidates.append(dict(id=path.parent.name+':'+key,
+                points=report['comparison']['yield_by_minimum_length']['display'][key]['points'],
+                exact_steps=exact_length_steps(population),summary_observations=len(population)))
+    return candidates
+
+
+def compatible_yield_checks(capture,reports,include_samples=False,paths=None,cutoff=None):
+    out=[]
+    populations={}
+    if paths is not None:
+        populations={f'source_{i+1:03}':list(input_rows([p])) for i,p in enumerate(paths)}
+        populations['combined']=[r for rows in populations.values() for r in rows]
+    for plot in capture['plots']:
+        family=plot['file'].rsplit('.',1)[0]
+        if 'yield_by_length' not in family:continue
+        scope='combined' if plot['directory']=='combinedQC' else plot['directory']
+        report=reports[scope]
+        multi=scope=='combined' and family=='yield_by_length'
+        for layer in plot['layers']:
+            groups=layer.get('audit',{}).get('yield_comparisons',[])
+            if isinstance(groups,dict):groups=list(groups.values())
+            for group in groups:
+                panel=next(p for p in plot['panels'] if str(p['PANEL'])==str(group['panel']))
+                label=panel.get('Q_cutoff') or plot['colour_labels'][plot['colours'].index(group['colour'])]
+                key='all' if label=='All reads' else 'qscore_selected'
+                source=plot['colour_labels'][plot['colours'].index(group['colour'])] if multi else scope
+                model=next(r for r in report['collection']['runs'] if r['source']['source_id']==source) if multi else report['comparison']
+                display=model['yield_by_minimum_length']['display'][key]
+                c=next(c for c in group['comparisons'] if c['candidate']==source+':'+key)
+                crop={}
+                if populations:
+                    context=[v for k,v in populations.items() if k!='combined'] if multi else [populations[scope]]
+                    maximum=max(sum(r[0] for r in rows) for rows in context)
+                    expected_crop=max(s['length_bp'] for rows in context for s in exact_length_steps(rows) if s['inclusive_yield_bp']*100>maximum)
+                    eligible=[r for r in populations[source] if key=='all' or r[1]>=cutoff]
+                    clipped=sum(r[0]>expected_crop for r in eligible)
+                    crop=dict(expected_reference_axis_xmax_bp=expected_crop,
+                        reference_axis_error_bp=abs(expected_crop-plot['axes'][0]['limits'][1]),
+                        independently_expected_clipped_observations=clipped,
+                        reference_population_error=abs(len(eligible)-clipped-c['reference_finite_observations']))
+                passed=(not c.get('unavailable') and c['maximum_reference_envelope_error_bp']==0 and c['maximum_reference_lower_error_bp']==0 and c['unmatched_reference_lengths']==0 and
+                    c['maximum_inclusive_envelope_error_bp']<=display['error_bound_bp']+1e-5 and c['reference_terminal_yield_bp']==c['native_terminal_yield_bp'] and
+                    crop.get('reference_axis_error_bp',0)==0 and crop.get('reference_population_error',0)==0)
+                out.append(dict(metric=f'{scope}.{family}.{source}.{key}',population=key,
+                    **{k:v for k,v in c.items() if k!='samples' or include_samples},
+                    **crop,
+                    rendered_vertices=len(display['points']),declared_bound_bp=display['error_bound_bp'],
+                    reference_axis_xmax_bp=plot['axes'][0]['limits'][1],
+                    reference_nonfinite_or_clipped_observations=next(g['rows']-g['finite_xy'] for g in layer['audit']['groups'] if str(g['panel'])==str(group['panel']) and g['group']==group['group']),
+                    status='verified_inclusive_envelope_with_distinct_R_polyline' if passed else 'unexplained_difference',
+                    explanation='Zero-tolerance integer comparison of every finite original R tied-length min/max against independent complete raw populations. Display bound applies to inclusive steps, not R per-read/tie-order path. No tolerance change to GAM.'))
+    return out
+
+
 def compatible_bin_checks(capture, reports, paths=None, cutoff=None):
     """Original ggplot_build rows versus explicit Rust statistical layers (#19).
 

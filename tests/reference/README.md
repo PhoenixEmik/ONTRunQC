@@ -421,3 +421,30 @@ The optional resource tool generates independent fictional sources (one plain,
 one gzip), reuses child-specific CPU/RSS and sampled scratch accounting, checks
 canonical JSON and worker determinism, and records numeric-sort and rendering
 phase logs. Generation precedes measurement; run after other builds/audits stop.
+
+## Yield-by-length validation (#21)
+
+The existing plot audit now writes `yield-validation.json` alongside `audit.json`.
+It captures every finite original R tied-length minimum/maximum against an
+independent complete length-frequency table, the original crop/clipped counts,
+terminals, native envelope deviations, and separate original per-read/tie-path
+differences. Exact integer reference checks have zero tolerance; only display
+interpolation/GB conversion permits 1e-5 bp roundoff. No GAM tolerance changes.
+
+```sh
+python3 tests/reference/plot_audit.py /path/to/pinned/minion_qc \
+  --rscript /path/to/pinned/Rscript --reference-bins --reference-time \
+  --output benchmark-results/yield-audit --gallery benchmark-results/yield-gallery
+Rscript tests/reference/yield_layers.R /path/to/pinned/MinIONQC.R \
+  tests/reference/yield-layers-golden.json
+```
+
+`--reuse` requires matching source/input/capture/candidate hashes, then recomputes
+conclusions and images. Validation-only exact frequency tables stay outside Git;
+production retains only bounded display vertices. The committed
+[yield summary](yield-validation-summary.json) includes actual R evidence,
+independent full-report checks and the optional before/after benchmark.
+Use [yield_benchmark.py](yield_benchmark.py) with separately built baseline
+`876bf65`; [commands/measurements](../../docs/benchmark.md#yield-by-length-display-21)
+describe input generation, source passes, sampling and output-size trade-offs.
+This suite does not rerun or waive the strict 18-case GAM comparison.
