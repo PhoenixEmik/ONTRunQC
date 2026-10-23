@@ -10,6 +10,7 @@ Pinned reference: MinIONQC commit `54485d586038d8ee36f168dd94f31c423f52f581`, R 
 ## Contents
 
 - [Select a validation task](#select-a-validation-task)
+- [Final compatibility evidence guards](#final-compatibility-evidence-guards)
 - [Prepare the reference source](#prepare-the-reference-source)
 - [Reference environment](#reference-environment)
 - [Run the paired suite](#run-the-paired-suite)
@@ -37,6 +38,40 @@ reference work never installs R automatically and does not affect the normal CLI
 | Strict evidence repeat | [Revalidation](#input-integrity-repetition-2026-10-19) | Completed paired `comparison.json`; no fresh R run by the checker. |
 | Diagnose GAM/LOESS | [Controlled GAM](#final-gamloess-assessment), [LOESS goldens](#loess-reference-and-notice) | Pinned R and the named retained artifacts. |
 | Dense MinION / export / worker checks | `tests/minion_visualization.py`, `static_exports.py`, `parallel_runs.py` | See each script's `--help` and [measurements](../../docs/benchmark.md). |
+
+## Final compatibility evidence guards
+
+The existing [discrepancy register](../../docs/figures/minionqc-comparison/discrepancies.json)
+contains the authoritative five-dimensional matrix. Do not add another status
+store. `signoff.py` validates source symbols, tests, evidence paths, all original
+report contexts/options (when the pinned checkout is supplied), and gallery
+coverage. It does not execute R or change comparison classifications.
+
+```sh
+python3 tests/reference/signoff.py --upstream /path/to/pinned/minion_qc
+# Only after editing matrix data: refresh the marked researcher-facing table.
+python3 tests/reference/signoff.py --render-matrix
+# Optional: verify a fresh strict run and retained gallery artifacts.
+python3 tests/reference/signoff.py --upstream /path/to/pinned/minion_qc \
+  --paired benchmark-results/current-r/comparison.json \
+  --gallery-artifacts benchmark-results/yield-audit \
+  --output benchmark-results/signoff-guard.json
+```
+
+An exit-0 **regression guard** means the stored signatures/links remain intact;
+it does not mean strict parity passed. The recorded original 18-case suite exits
+**1** with 1,542 primary GAM failures. [signoff-summary.json](signoff-summary.json)
+records the 2026-10-23 fresh execution, hashes, commands and explicit unavailable
+checks. Historical independent-backend and 85-figure gallery artifacts were
+revalidated, not represented as newly generated R experiments. Four C panels
+were corrected independently; original A/B pixels and captures remain unchanged.
+
+Gallery B invokes the actual parser/metrics/rendering through the existing
+**validation-only file-scoped probe**. Normal CLI grouping follows run IDs;
+public two-MinION inputs contain eight native run groups, not R's two file
+labels. Use matching populations before comparing source-specific densities or
+fits; do not infer production file grouping from the gallery. Actual CLI public
+reference tests separately verify the pooled population.
 
 ## Prepare the reference source
 

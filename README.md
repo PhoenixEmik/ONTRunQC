@@ -209,7 +209,12 @@ identical populations, bins, curves, rendering or CLI defaults.
 | Original-R GAM | **Partial:** 1,542 fit/uncertainty discrepancies remain in the 18-case strict suite. |
 | Histogram/Bin2D layers | Exact pinned-R comparisons with `--minionqc-plot-bins`; native fixed bins remain default. |
 | Temporal layers | `--minionqc-time-series`: exact summary-hour counts, exact terminal yields and bounded read-start curves; simplification/tied-order differences explicitly quantified. |
-| Yield by minimum length display | Exact stored queries; remaining display differences tracked in #21. |
+| Yield by minimum length display | Exact queries and error-controlled bounded display; original per-read/tie/crop differences are quantified. |
+
+The [five-dimensional compatibility contract](docs/minionqc-comparison.md#five-dimensional-compatibility-contract)
+separates functionality, statistics, numerical layers, scientific presentation
+and CLI/output behavior. Original strict GAM parity still fails; matching
+compatible bins or completing the audit does not waive that limitation.
 
 Start with the [source-backed comparison](docs/minionqc-comparison.md),
 [actual A/B/C figure gallery](docs/figures/minionqc-comparison/README.md) and

@@ -9,6 +9,7 @@ Historical evidence is retained below in issue order. New documentation structur
 ## Contents
 
 - [Reading this ledger](#reading-this-ledger)
+- [Final compatibility sign-off (2026-10-23)](#final-compatibility-sign-off-2026-10-23)
 - [Functional audit against the pinned source (2026-10-19)](#functional-audit-against-the-pinned-source-2026-10-19)
 - [Inputs and metrics](#inputs-and-metrics)
 - [Plot families](#plot-families)
@@ -42,6 +43,35 @@ its dated sections are not a fresh validation of every current feature.
 They never override a documented population, binning, rendering or default
 exception. Strict original-R GAM parity remains Partial; reference targets,
 tolerances and failing classifications are preserved.
+
+## Final compatibility sign-off (2026-10-23)
+
+The authoritative [five-dimensional contract](minionqc-comparison.md#five-dimensional-compatibility-contract)
+now classifies 58 operations across all 20 original report contexts. The existing
+[discrepancy register](figures/minionqc-comparison/discrepancies.json) owns the
+matrix; the Markdown table is generated, not an independent status ledger.
+The full pinned script has 952 lines: older prose ranges ending at 956 below
+were source-anchor errors, not a different reference revision.
+
+At production baseline `3612a5542f83`, a fresh original-R 18-case run reproduced
+all historical signatures and **exited 1**: 1,542 primary GAM failures and 1,912
+separate intermediate differences remain. The evidence guard passed; strict
+numerical parity did not. The [dated execution record](../tests/reference/signoff-summary.json)
+separates fresh R/CLI execution from retained independent-backend/gallery evidence.
+
+All 44 representative gallery cards were reviewed. Finding A17 corrects density
+C panels that previously compared R `count` with native density and invisible
+singleton hourly diagnostics; actual R captures, A/B panels, KDE and QC values
+are preserved. File-scoped gallery populations are validation-only; production
+run-ID routing is independently checked and deliberately differs from R's
+parent-directory labels.
+
+The [final acceptance review](minionqc-comparison.md#final-acceptance-review)
+finds #18's scientific-audit scope satisfied. #8 and #12 retain their original
+requirements and remain open; a proposed functional/numerical separation is not
+maintainer approval. No Rust source, numerical targets, tolerance, release tag or
+acceptance contract changes in this sign-off. Earlier dated entries below remain
+historical evidence rather than the current cross-dimensional classification.
 
 ### Reference and validation keys
 
