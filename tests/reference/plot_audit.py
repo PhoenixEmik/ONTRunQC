@@ -49,6 +49,9 @@ MULTI = {
 
 def write_gallery_index(gallery, evidence):
     """Organize existing comparison cards without regenerating scientific evidence."""
+    plot_count = len(evidence['plots'])
+    card_count = sum(bool(row.get('card')) for row in evidence['plots'])
+    family_count = len({('single' if p['scope']!='combined' else 'pooled' if p['family'].startswith('combined_') else 'multi',p['family']) for p in evidence['plots']})
     lines = [
         '<a id="actual-minionqc--ontrunqc-comparison-gallery"></a>', '',
         '# MinIONQC / ONTRunQC scientific comparison gallery', '',
@@ -65,6 +68,12 @@ def write_gallery_index(gallery, evidence):
         "matches R's grouping; source labels are not instrument run IDs. Different "
         'histogram grids are not treated as commensurable residuals. Functional '
         'coverage, numerical layer agreement and visual equivalence are separate claims.', '',
+        '**B is a matched-population validation view:** `tests/reference/probe.rs` '
+        'uses the production parser, aggregator and renderer with explicit file scope, '
+        "matching R's parent-directory populations. It does not use normal CLI run routing. "
+        'The public two-MinION files produce eight run-ID groups through the normal CLI, '
+        'rather than two file populations; pooled totals still agree. No arbitrary '
+        'conflicting-run file-grouping CLI mode is claimed.', '',
         '**Strict GAM parity remains Partial:** the original-R comparison retains '
         '1,542 fit/uncertainty discrepancies. These images do not replace that evidence.', '',
         *(['**Plot mode:** `--minionqc-plot-bins`. Histogram/Bin2D geometry and counts use the original statistical layers; true channel counts intentionally correct the upstream count defect.', ''] if evidence.get('plotting_mode')=='minionqc_plot_bins' else []),
@@ -74,6 +83,7 @@ def write_gallery_index(gallery, evidence):
         '- [Single MinION flowcell](#single-minion-flowcell)',
         '- [Device and legacy checks](#device-and-legacy-checks)',
         '- [Pooled and per-source comparisons](#pooled-and-per-source-comparisons)',
+        '- [Coverage and diagnostic corrections](#coverage-and-diagnostic-corrections)',
         '- [Reproduction and provenance](#reproduction-and-provenance)', '',
     ]
     groups = [
@@ -98,6 +108,44 @@ def write_gallery_index(gallery, evidence):
                 'Axes, units and populations follow the A/B labels and C caption.', '',
                 f"![{row['case']} {row['family']}: original, native and numerical diagnostic]({row['card']})", '',
             ]
+    lines += ['## Coverage and diagnostic corrections', '',
+        f'All {plot_count} recorded original-R figures have actual native exports. The {card_count} '
+        f'published representative cards cover the recorded {family_count} source/context '
+        f'families; {plot_count-card_count} additional case/family combinations remain in the retained '
+        'audit directory rather than duplicating them in Git. There is no missing '
+        'reference-renderable public family in this inventory. Empty or nonfinite '
+        'synthetic reference layers are documented in the numerical suites, not '
+        'invented as successful renderings.', '',
+        '| Original context / family | Recorded plots | Published cards | Representative |',
+        '| --- | ---: | ---: | --- |']
+    families = {}
+    for row in evidence['plots']:
+        context = 'single' if row['scope']!='combined' else 'pooled' if row['family'].startswith('combined_') else 'multi'
+        families.setdefault((context,row['family']),[]).append(row)
+    for (context,family), rows in sorted(families.items()):
+        published = [row for row in rows if row.get('card')]
+        representative = published[0] if published else None
+        link = (f"[view](#{representative['case']}--{family}--{representative['scope']})"
+                if representative else 'Not published; see retained inventory')
+        lines.append(f'| {context} / {family} | {len(rows)} | {len(published)} | {link} |')
+    lines += ['']
+    if evidence.get('diagnostic_corrections'):
+        lines += [
+        '**2026-10-23 diagnostic correction:** two density C panels incorrectly '
+        'used StatDensity `count=density*n` as the ordinate; they now use the '
+        'actual plotted density `y`. Their All/first-source residual maxima are '
+        '2.654e-14 per log10(bp) and 2.165e-15 per Q-score unit. The prior unlike-unit '
+        'subtraction was invalid, not a production KDE error. Two singleton-hour '
+        'C panels now show markers instead of an empty one-point line. Original '
+        'A/B panels, R captures, scientific metrics and strict KDE targets are '
+        'unchanged. Old/new card and source-panel hashes are preserved in '
+        '`measurements.json: diagnostic_corrections`; only these four C panels '
+        'were refreshed.', '']
+    lines += [
+        'C panels show the specified first group or bounded diagnostic samples, '
+        'not every population/uncertainty comparison. In particular an All-read '
+        'fit residual cannot establish selected-GAM parity; the strict suite '
+        'retains its original failures.', '']
     versions = evidence['reference_versions']
     lines += [
         '## Reproduction and provenance', '',
@@ -158,8 +206,11 @@ def layer_points(plot):
         return [], None
     l = layers[0]
     rows = first_group(rows_of(l))
-    return [[r['x'], r.get('count', r['y'])] for r in rows
-            if finite(r.get('x')) and finite(r.get('count', r.get('y')))], l
+    # StatDensity exposes both y=density and count=density*n. Only count
+    # statistics use the latter; curves must retain the actual plotted Y.
+    ordinate = 'count' if l['stat'] in ('StatBin', 'StatBin2d', 'StatCount') else 'y'
+    return [[r['x'], r[ordinate]] for r in rows
+            if finite(r.get('x')) and finite(r.get(ordinate))], l
 
 
 def diagnostic(plot, report, family, multi=False):

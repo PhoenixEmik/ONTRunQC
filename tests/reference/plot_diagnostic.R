@@ -4,6 +4,7 @@ d <- jsonlite::read_json(args[1],simplifyVector=TRUE)
 png(args[2],width=720,height=500,type="cairo")
 r <- d$reference;p <- d$native;res <- d$residual
 has <- function(x) is.matrix(x)&&nrow(x)>0
+curve_type <- function(x) if(nrow(x)==1) "b" else "l"
 if(isTRUE(d$yield_length) && length(d$measurements$yield_samples)) {
   s <- d$measurements$yield_samples
   par(mar=c(4,5,3,1),mfrow=c(2,1))
@@ -25,14 +26,14 @@ if(separate) {
   plot(r,type="h",col="#475569",xlim=xr,xlab=d$x_label,ylab=d$y_label,main="Original R bin counts (own Y scale)")
   plot(p,type="h",col="#4f46e5",xlim=xr,xlab=d$x_label,ylab=d$y_label,main="Native bin counts (own Y scale); different boundaries")
 } else if(has(r)&&has(p)) {
-  plot(r,type="l",col="#475569",xlim=range(c(r[,1],p[,1])),ylim=range(c(r[,2],p[,2])),
+  plot(r,type=curve_type(r),col="#475569",xlim=range(c(r[,1],p[,1])),ylim=range(c(r[,2],p[,2])),
        xlab=d$x_label,ylab=d$y_label,main="Actual values; see population/units in caption")
-  lines(p,col="#4f46e5");legend("topright",c("Original R","ONTRunQC"),col=c("#475569","#4f46e5"),lty=1,bty="n",cex=.8)
+  lines(p,type=curve_type(p),col="#4f46e5");legend("topright",c("Original R","ONTRunQC"),col=c("#475569","#4f46e5"),lty=1,bty="n",cex=.8)
 } else if(has(p)) {
   plot(p,type="h",col="#4f46e5",xlab=d$x_label,ylab=d$y_label,main="Conserved native population (no false residual)")
 } else {plot.new();text(.5,.5,"No commensurable finite curve",cex=1.2)}
 if(has(res)) {
-  plot(res,type="l",col="#c2410c",xlab=d$x_label,ylab=paste("Native - R:",d$y_label),main="Numerical difference, matched X only")
+  plot(res,type=curve_type(res),col="#c2410c",xlab=d$x_label,ylab=paste("Native - R:",d$y_label),main="Numerical difference, matched X only")
   abline(h=0,col="#94a3b8",lty=2)
 } else {
   plot.new()

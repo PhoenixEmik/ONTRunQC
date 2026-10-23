@@ -14,6 +14,8 @@
 
 Each card uses identical source bytes and Q cutoff. File-scoped validation matches R's grouping; source labels are not instrument run IDs. Different histogram grids are not treated as commensurable residuals. Functional coverage, numerical layer agreement and visual equivalence are separate claims.
 
+**B is a matched-population validation view:** `tests/reference/probe.rs` uses the production parser, aggregator and renderer with explicit file scope, matching R's parent-directory populations. It does not use normal CLI run routing. The public two-MinION files produce eight run-ID groups through the normal CLI, rather than two file populations; pooled totals still agree. No arbitrary conflicting-run file-grouping CLI mode is claimed.
+
 **Strict GAM parity remains Partial:** the original-R comparison retains 1,542 fit/uncertainty discrepancies. These images do not replace that evidence.
 
 **Plot mode:** `--minionqc-plot-bins`. Histogram/Bin2D geometry and counts use the original statistical layers; true channel counts intentionally correct the upstream count defect.
@@ -27,6 +29,7 @@ Each card uses identical source bytes and Q cutoff. File-scoped validation match
 - [Single MinION flowcell](#single-minion-flowcell)
 - [Device and legacy checks](#device-and-legacy-checks)
 - [Pooled and per-source comparisons](#pooled-and-per-source-comparisons)
+- [Coverage and diagnostic corrections](#coverage-and-diagnostic-corrections)
 - [Reproduction and provenance](#reproduction-and-provenance)
 
 ## Single MinION flowcell
@@ -241,7 +244,7 @@ Q cutoff: 8; input SHA-256 prefixes: 60a070e325b0c2e3. Axes, units and populatio
 
 ### reads_per_hour · short · source_001
 
-Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.
+Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked. Singleton-hour C values are drawn as points; an empty line segment is not missing data.
 
 Q cutoff: 8; input SHA-256 prefixes: 60a070e325b0c2e3. Axes, units and populations follow the A/B labels and C caption.
 
@@ -321,7 +324,7 @@ Q cutoff: 7; input SHA-256 prefixes: 1d1860dabc15ed69. Axes, units and populatio
 
 ### reads_per_hour · rna · source_001
 
-Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.
+Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked. Singleton-hour C values are drawn as points; an empty line segment is not missing data.
 
 Q cutoff: 7; input SHA-256 prefixes: 1d1860dabc15ed69. Axes, units and populations follow the A/B labels and C caption.
 
@@ -425,7 +428,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, u
 
 ### length_distributions · combined · combined
 
-Actual ggplot StatDensity vs opt-in R-grid Rust estimator; log-length KDE is computed AFTER log10 transform.
+Actual ggplot StatDensity vs opt-in R-grid Rust estimator; log-length KDE is computed AFTER log10 transform. Diagnostic uses actual plotted density Y; count=density*n is not a density ordinate. First source/All group only; all density curves are independently checked by the strict suite.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
 
@@ -435,7 +438,7 @@ Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, u
 
 ### q_distributions · combined · combined
 
-Actual ggplot StatDensity vs opt-in R-grid Rust estimator; log-length KDE is computed AFTER log10 transform.
+Actual ggplot StatDensity vs opt-in R-grid Rust estimator; log-length KDE is computed AFTER log10 transform. Diagnostic uses actual plotted density Y; count=density*n is not a density ordinate. First source/All group only; all density curves are independently checked by the strict suite.
 
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
 
@@ -480,6 +483,37 @@ Actual original-R fitted layer vs native Rust curve; original strict GAM failure
 Q cutoff: 7; input SHA-256 prefixes: 6b9a356c4aa99b65, 1c77d6b888e49641. Axes, units and populations follow the A/B labels and C caption.
 
 ![combined q_by_hour: original, native and numerical diagnostic](combined-combined-q_by_hour.png)
+
+## Coverage and diagnostic corrections
+
+All 85 recorded original-R figures have actual native exports. The 44 published representative cards cover the recorded 20 source/context families; 41 additional case/family combinations remain in the retained audit directory rather than duplicating them in Git. There is no missing reference-renderable public family in this inventory. Empty or nonfinite synthetic reference layers are documented in the numerical suites, not invented as successful renderings.
+
+| Original context / family | Recorded plots | Published cards | Representative |
+| --- | ---: | ---: | --- |
+| multi / length_by_hour | 1 | 1 | [view](#combined--length_by_hour--combined) |
+| multi / length_distributions | 1 | 1 | [view](#combined--length_distributions--combined) |
+| multi / q_by_hour | 1 | 1 | [view](#combined--q_by_hour--combined) |
+| multi / q_distributions | 1 | 1 | [view](#combined--q_distributions--combined) |
+| multi / yield_by_length | 1 | 1 | [view](#combined--yield_by_length--combined) |
+| multi / yield_over_time | 1 | 1 | [view](#combined--yield_over_time--combined) |
+| pooled / combined_length_histogram | 1 | 1 | [view](#combined--combined_length_histogram--combined) |
+| pooled / combined_q_histogram | 1 | 1 | [view](#combined--combined_q_histogram--combined) |
+| pooled / combined_yield_by_length | 1 | 1 | [view](#combined--combined_yield_by_length--combined) |
+| single / channel_summary | 7 | 2 | [view](#minion--channel_summary--source_001) |
+| single / flowcell_overview | 6 | 1 | [view](#minion--flowcell_overview--source_001) |
+| single / gb_per_channel_overview | 7 | 1 | [view](#minion--gb_per_channel_overview--source_001) |
+| single / length_by_hour | 7 | 1 | [view](#minion--length_by_hour--source_001) |
+| single / length_histogram | 7 | 2 | [view](#minion--length_histogram--source_001) |
+| single / length_vs_q | 7 | 3 | [view](#minion--length_vs_q--source_001) |
+| single / q_by_hour | 7 | 1 | [view](#minion--q_by_hour--source_001) |
+| single / q_histogram | 7 | 3 | [view](#minion--q_histogram--source_001) |
+| single / reads_per_hour | 7 | 7 | [view](#minion--reads_per_hour--source_001) |
+| single / yield_by_length | 7 | 7 | [view](#minion--yield_by_length--source_001) |
+| single / yield_over_time | 7 | 7 | [view](#minion--yield_over_time--source_001) |
+
+**2026-10-23 diagnostic correction:** two density C panels incorrectly used StatDensity `count=density*n` as the ordinate; they now use the actual plotted density `y`. Their All/first-source residual maxima are 2.654e-14 per log10(bp) and 2.165e-15 per Q-score unit. The prior unlike-unit subtraction was invalid, not a production KDE error. Two singleton-hour C panels now show markers instead of an empty one-point line. Original A/B panels, R captures, scientific metrics and strict KDE targets are unchanged. Old/new card and source-panel hashes are preserved in `measurements.json: diagnostic_corrections`; only these four C panels were refreshed.
+
+C panels show the specified first group or bounded diagnostic samples, not every population/uncertainty comparison. In particular an All-read fit residual cannot establish selected-GAM parity; the strict suite retains its original failures.
 
 ## Reproduction and provenance
 

@@ -23655,7 +23655,7 @@
         "60a070e325b0c2e3e102b9e7d27c10e1abbe6c5f4e3a18fadba304dabb1cc571"
       ],
       "qscore_cutoff": 8,
-      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.",
+      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked. Singleton-hour C values are drawn as points; an empty line segment is not missing data.",
       "measurements": {
         "reference_layer_rows": 2,
         "reference_finite_xy": 2,
@@ -35780,7 +35780,7 @@
         "1d1860dabc15ed6931028e03d4af3a45cb18a23677c8ee233ae6d6766ed24000"
       ],
       "qscore_cutoff": 7,
-      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked.",
+      "description": "Explicit reference time mode: exact All summary counts per integer hour, including zero lengths and zero-filled gaps. Q-selected separately checked. Singleton-hour C values are drawn as points; an empty line segment is not missing data.",
       "measurements": {
         "reference_layer_rows": 2,
         "reference_finite_xy": 2,
@@ -51578,7 +51578,7 @@
         "1c77d6b888e496414f88db321c783cf3579f84c551ed25a6e56670afdcca274f"
       ],
       "qscore_cutoff": 7,
-      "description": "Actual ggplot StatDensity vs opt-in R-grid Rust estimator; log-length KDE is computed AFTER log10 transform.",
+      "description": "Actual ggplot StatDensity vs opt-in R-grid Rust estimator; log-length KDE is computed AFTER log10 transform. Diagnostic uses actual plotted density Y; count=density*n is not a density ordinate. First source/All group only; all density curves are independently checked by the strict suite.",
       "measurements": {
         "reference_layer_rows": 2048,
         "reference_finite_xy": 2048,
@@ -51614,7 +51614,7 @@
           }
         ],
         "matched_curve_coordinates": 512,
-        "maximum_absolute_curve_difference": 173840.5896503825,
+        "maximum_absolute_curve_difference": 2.653433028854124e-14,
         "native_display_points": 512,
         "reference_diagnostic_points": 512,
         "native_total_records": 608208,
@@ -51633,7 +51633,7 @@
         "1c77d6b888e496414f88db321c783cf3579f84c551ed25a6e56670afdcca274f"
       ],
       "qscore_cutoff": 7,
-      "description": "Actual ggplot StatDensity vs opt-in R-grid Rust estimator; log-length KDE is computed AFTER log10 transform.",
+      "description": "Actual ggplot StatDensity vs opt-in R-grid Rust estimator; log-length KDE is computed AFTER log10 transform. Diagnostic uses actual plotted density Y; count=density*n is not a density ordinate. First source/All group only; all density curves are independently checked by the strict suite.",
       "measurements": {
         "reference_layer_rows": 2048,
         "reference_finite_xy": 2048,
@@ -51669,7 +51669,7 @@
           }
         ],
         "matched_curve_coordinates": 512,
-        "maximum_absolute_curve_difference": 72164.12903866086,
+        "maximum_absolute_curve_difference": 2.1649348980190553e-15,
         "native_display_points": 512,
         "reference_diagnostic_points": 512,
         "native_total_records": 608208,
@@ -54322,6 +54322,64 @@
         "native_total_records": 608208,
         "native_basecalled_reads": 606143
       }
+    }
+  ],
+  "diagnostic_corrections": [
+    {
+      "date": "2026-10-23",
+      "baseline_commit": "3612a5542f83769db05c3730fd13ea0725f879fb",
+      "cause": "C-panel helper preferred StatDensity count=density*n over plotted y=density; A/B, original captures and strict KDE targets unchanged.",
+      "driver_sha256": "f846235af8f9bc2c0dd1d28cfa55344f0753896776f7b1c0dd9d4cdd0ec43af0",
+      "changes": [
+        {
+          "card": "combined-combined-length_distributions.png",
+          "old_card_sha256": "b95b8c35287aabe86992cb191ca8aee6e042b6464e00270d8e440d3b04603bfb",
+          "new_card_sha256": "30f8d7cc78e136556f9c322e10d9a3fd7bc4417d2b7d79a1f8367085d624163d",
+          "original_R_panel_sha256": "50255f4512740473ccb19854f949f9b390a62d85d0ba4f412f54c2a4267ba586",
+          "unchanged_native_panel_sha256": "cba88aa0bb298261133d579b895c4528a3913516743c41d632540243b2fe24d7",
+          "reference_capture_sha256": "b01d4681471244103d7de4df9bba7cc9bd6162e0d0ff592f48997ba3d063cf37",
+          "old_maximum_curve_difference": 173840.5896503825,
+          "new_maximum_curve_difference": 2.653433028854124e-14
+        },
+        {
+          "card": "combined-combined-q_distributions.png",
+          "old_card_sha256": "45b4e6cf3b076827bb7dafee15a0308a2e101f1853c4f2b4bf7e0119951f7096",
+          "new_card_sha256": "b1dd4da938b35df13203bfe42dadf41ad0e918d8a55fb536aca5bfa15a2909b7",
+          "original_R_panel_sha256": "716b59d67023a2f5c0fdaa24f7d6be63a7a3c390e5b67c13bed070ce85d0f68f",
+          "unchanged_native_panel_sha256": "4359d2bd14e6897b8495655c686a78cafeadf6128c30f00dd38f93b4c43ae928",
+          "reference_capture_sha256": "b01d4681471244103d7de4df9bba7cc9bd6162e0d0ff592f48997ba3d063cf37",
+          "old_maximum_curve_difference": 72164.12903866086,
+          "new_maximum_curve_difference": 2.1649348980190553e-15
+        }
+      ]
+    },
+    {
+      "date": "2026-10-23",
+      "baseline_commit": "3612a5542f83769db05c3730fd13ea0725f879fb",
+      "cause": "A one-point line has no segment; show a marker for singleton reference/native/residual curves. Numeric data unchanged.",
+      "helper_sha256": "f7e44a7e6da71c656a34c7931a8f74850d58681640286141475f6422f83b290c",
+      "changes": [
+        {
+          "card": "rna-source_001-reads_per_hour.png",
+          "old_card_sha256": "290dd2a45a61295ecc9e1a3bc0e5b364a421e4db1ea7819fbd9403374cfdb3b7",
+          "new_card_sha256": "a8956bf3586d1a0311d6a8e33e3765a3c70981500e52dea684da0684ea2c6f1b",
+          "original_R_panel_sha256": "7dabcaa18ed9dd6b6943c12cf7fb5a52a65a95e5b1c7c8263ac3c65f0c1c73a5",
+          "unchanged_native_panel_sha256": "9100ff867b83eced8333324bf68ad3c072207900892c5cd565c45174750c1121",
+          "reference_capture_sha256": "7588be494aff446ee124269ff00d1db81720d06d321d3ce71aa2b8299af79600",
+          "numeric_values_changed": false,
+          "maximum_curve_difference": 0
+        },
+        {
+          "card": "short-source_001-reads_per_hour.png",
+          "old_card_sha256": "3b0d0d013e04f31ecbb20122e12da699569ca11d504e990612e2a2c9064ecdc2",
+          "new_card_sha256": "5d25a72fc34ba7f72d8508a8797e8e40432e03499867bf0357ab0b8c12786e05",
+          "original_R_panel_sha256": "55cc510784d3d6416e0897184554e38ccafbfa150526881293b93c0acfdb44a7",
+          "unchanged_native_panel_sha256": "8a3c0d2de89e98a5ae2789ffab1e1391f7bec5e00f450632792af6d5aa963743",
+          "reference_capture_sha256": "2d21073033768a35c18cd65bf69b6f878b79230761cba4db2e8dab9f727243d1",
+          "numeric_values_changed": false,
+          "maximum_curve_difference": 0
+        }
+      ]
     }
   ]
 }

@@ -4,11 +4,19 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from plot_audit import FIGURES, MULTI, first_group, histogram_points, write_gallery_index
+from plot_audit import FIGURES, MULTI, first_group, histogram_points, layer_points, write_gallery_index
 from plot_checks import checks, result, compatible_bin_checks, compatible_time_checks, display_at, yield_display_measurements
 
 
 class PlotAuditTests(unittest.TestCase):
+    def test_density_diagnostics_use_plotted_density_not_density_times_population(self):
+        row = dict(x=2.0,y=.25,count=25000,PANEL='1',group=1)
+        plot = dict(layers=[dict(stat='StatDensity',data=[row])])
+        self.assertEqual(layer_points(plot)[0],[[2.0,.25]])
+        for statistic in ('StatBin','StatBin2d','StatCount'):
+            plot['layers'][0]['stat']=statistic
+            self.assertEqual(layer_points(plot)[0],[[2.0,25000]])
+
     def test_retained_yield_duplicate_coordinates_are_one_sided_steps(self):
         points=[dict(minimum_length_bp=x,retained_yield_bp=y) for x,y in [(0,50),(10,50),(10,40),(20,40),(20,0),(21,0)]]
         self.assertEqual(display_at(points,10),(50,40))
