@@ -18,6 +18,7 @@ Pinned reference: MinIONQC commit `54485d586038d8ee36f168dd94f31c423f52f581`, R 
 - [Tolerances and numerical capture](#tolerances-and-numerical-capture)
 - [Golden fixtures and provenance](#golden-fixtures-and-provenance)
 - [Final GAM/LOESS assessment](#final-gamloess-assessment)
+- [Independent-backend stability assessment](#independent-backend-stability-assessment)
 - [LOESS reference and notice](#loess-reference-and-notice)
 - [Input-integrity repetition (2026-10-19)](#input-integrity-repetition-2026-10-19)
 
@@ -296,6 +297,123 @@ perturbation. The canonical Rust convention is deterministic; mismatches with th
 original R result remain failures. No sensitivity result is used to widen target
 tolerances or declare issue #12 complete. The committed validation summary retains
 these measurements and the original-reference discrepancy counts.
+
+## Independent-backend stability assessment
+
+The 2026-10-23 [assessment](gam-final-assessment.json) preserves the original
+18-case OpenBLAS baseline and adds a genuinely separate Netlib backend. Both
+strict suites returned 1; no original target was replaced. Large diagnostic
+matrices remain ignored. The native solver has no R/BLAS runtime dependency.
+
+Use a **new** ignored directory. `--snapshot` refuses to overwrite its manifest,
+checks the clean pinned upstream commit/source hash, and copies protected files.
+The final assessor verifies original check-array signatures against committed
+`revalidation-summary.json`; a retained full baseline is optional.
+
+```sh
+gam_run="$PWD/benchmark-results/gam-stability-repeat"
+python3 tests/reference/assess_stability.py --snapshot "$gam_run" /tmp/minionqc-reference
+export R_HOME=/path/to/pinned/lib/R
+export PG_R_BINARY="$R_HOME/bin/exec/R"
+python3 tests/minionqc_differential.py /tmp/minionqc-reference target/release/ontrunqc \
+  --execute-r --capture-only --rscript tests/reference/r_backend.py \
+  --output "$gam_run/paired-verified"
+python3 tests/reference/check_revalidation.py "$gam_run/paired-verified/comparison.json"
+```
+
+The strict command is expected to **fail parity with exit 1**, not pass. Check
+that all 18 R cases actually completed; dependency/execution errors are not
+evidence. The separate revalidation checker passes only on identical original
+numerical records, tolerances and classifications. `--capture-only` executes
+original plot calculations and captures uncensored layers, but skips PDFs.
+
+For the measured macOS arm64 second backend, obtain these exact conda-forge
+packages without installing them over the R environment:
+
+| Package | SHA-256 |
+| --- | --- |
+| [libblas 3.12.0 `2_h41cbde3_netlib`](https://api.anaconda.org/download/conda-forge/libblas/3.12.0/osx-arm64/libblas-3.12.0-2_h41cbde3_netlib.conda) | `dfdaa14b0f58fd367c6e5fb2e06d2ed33470fca00ca5fcbf91b5cba8debb6148` |
+| [liblapack 3.12.0 `2_h41cbde3_netlib`](https://api.anaconda.org/download/conda-forge/liblapack/3.12.0/osx-arm64/liblapack-3.12.0-2_h41cbde3_netlib.conda) | `32cc603fa689b8657e4ed4beda5674eb49a04f8a0cefd2cdbf250d6c137703da` |
+
+After downloading to `$gam_run/blas.conda` and `$gam_run/lapack.conda`, verify
+those checksums **before** extracting. A `.conda` file is a ZIP containing
+`pkg-*.tar.zst` and `info-*.tar.zst`; use `unzip`, `zstd` and `tar`:
+
+```sh
+mkdir -p "$gam_run/netlib/blas-info" "$gam_run/netlib/lapack-info"
+unzip -p "$gam_run/blas.conda" 'pkg-*.tar.zst' | zstd -dc | tar -x -C "$gam_run/netlib"
+unzip -p "$gam_run/lapack.conda" 'pkg-*.tar.zst' | zstd -dc | tar -x -C "$gam_run/netlib"
+unzip -p "$gam_run/blas.conda" 'info-*.tar.zst' | zstd -dc | tar -x -C "$gam_run/netlib/blas-info"
+unzip -p "$gam_run/lapack.conda" 'info-*.tar.zst' | zstd -dc | tar -x -C "$gam_run/netlib/lapack-info"
+clang -dynamiclib -O2 tests/reference/backend_probe.c -o "$gam_run/backend_probe.dylib"
+export PG_BACKEND_PROBE="$gam_run/backend_probe.dylib"
+```
+
+These binaries need compatible libgfortran 5/quadmath already provided by the
+measured pinned installation. The recipe records clang 17/gfortran 13, SDK 11.0,
+shared CMake and `-fno-optimize-sibling-calls`; full expanded build flags are
+unavailable. The probe was compiled with Apple clang 21, `-O2` (no fast-math).
+Do not call another platform/build equivalent without verifying it. Linux can
+compile the probe with `cc -shared -fPIC -O2 ... -ldl -lm`; Linux backend
+switching/cross-platform native stability were **not** executed in this assessment.
+
+Run the original backend **first** to freeze its actual penalty bytes. Subsequent
+backends read that file without overwriting it. Both sets use the identical
+original observations, original-reference knots and native comparator:
+
+```sh
+tests/reference/r_backend.py tests/reference/gam_stability.R \
+  "$gam_run/paired-verified" "$gam_run/stability-openblas-final.json" "$gam_run/frozen.rds"
+tests/reference/r_backend.py tests/reference/gam_stability.R \
+  "$gam_run/paired-verified" "$gam_run/stability-openblas-repeat.json" "$gam_run/frozen.rds"
+tests/reference/r_backend.py tests/reference/gam_assessment.R \
+  "$gam_run/paired-verified" "$gam_run/controlled-openblas.json"
+tests/reference/r_backend.py tests/reference/cs_sensitivity.R \
+  "$gam_run/paired-verified/minion/inputs/source_001/sequencing_summary.txt" \
+  7 "$gam_run/cs-sensitivity-openblas.json"
+
+export PG_BLAS_DIRECTORY="$gam_run/netlib/lib"
+export PG_DYLD_PRINT_LIBRARIES=1
+python3 tests/minionqc_differential.py /tmp/minionqc-reference target/release/ontrunqc \
+  --execute-r --capture-only --rscript tests/reference/r_backend.py \
+  --output "$gam_run/netlib-paired"
+tests/reference/r_backend.py tests/reference/gam_stability.R \
+  "$gam_run/paired-verified" "$gam_run/stability-netlib.json" "$gam_run/frozen.rds"
+tests/reference/r_backend.py tests/reference/gam_stability.R \
+  "$gam_run/paired-verified" "$gam_run/stability-netlib-repeat.json" "$gam_run/frozen.rds"
+tests/reference/r_backend.py tests/reference/gam_assessment.R \
+  "$gam_run/paired-verified" "$gam_run/controlled-netlib.json"
+unset PG_BLAS_DIRECTORY PG_DYLD_PRINT_LIBRARIES
+python3 tests/reference/assess_stability.py "$gam_run" "$gam_run/assessment.json"
+```
+
+The second strict command also returns 1. The summary's successful execution
+means **evidence was checked**, not strict parity passed. It fails closed on
+modified protected files, altered original comparisons, nonfinite coordinates,
+different-sized arrays, changed primary failure sets, non-repeating model
+payloads or BLAS aliases. Independent numerical outputs may legitimately change
+exact/tolerant and intermediate counts; these remain separate from original R.
+
+`r_backend.py` launches R's actual executable without its shell wrapper. On macOS,
+protected shells strip DYLD variables, so exporting them before ordinary Rscript
+did not switch the backend in our initial check. The launcher sets the dependency
+path immediately before exec; no R installation symlink is changed. Verify actual
+loaded-image inventories **and** BLAS/LAPACK symbol-provider paths/hashes from
+`*.loaded.tsv`, never just a requested backend name. Whole-session inventories,
+runtime environment, full matrix diagnostics, parameter values and original
+suite logs remain in the experimental directory. Only bounded summaries belong
+in Git. CPU model inspection was sandbox-denied on the measured host.
+
+`gam_stability.R` reuses the unchanged `gam_audit` and `model_values` definitions.
+Original/canonical/shared variants are explicitly diagnostic models. The assessor
+uses the **actual model's effective penalty**, transformed to common nodal
+coordinates; `gam_audit$shrink_penalty` reconstructs original cs and must not be
+mistaken for a controlled model's penalty. Nine models, 192 knot fits and 36
+matrix-only perturbations per backend test null rank/projectors, weighted
+penalties, REML, coefficients, posterior covariance and uncensored 80-point
+predictions. Independent processes repeat the full numerical payload. Same-penalty
+controls isolate optimizer/covariance roundoff from changed regularization.
+This investigation does not replace original-R targets or waive #12 acceptance.
 
 ## LOESS reference and notice
 

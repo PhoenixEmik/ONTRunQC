@@ -514,7 +514,80 @@ Original-R comparison targets are still **absolute 1e-6 plus relative 1e-6** for
 
 The R reference consistently reproduces its original output in repeated runs on the pinned local installation. Tiny perturbations to knots can change sorting of two near-null eigen-directions in mgcv's cubic shrinkage spline; unequal 0.1 and 0.01 shrinkage weights then act on different directions. ONTRunQC uses a deterministic convention. Controlled R models with matching directions reproduce Rust predictions within the existing tolerance, but **the original reference penalty is genuinely different for the affected case**.
 
-Do not call these original-R comparisons passing, globally relax tolerances, or relabel a controlled R fit as an unmodified MinIONQC reference run. Run and source hashes are in the [reference harness documentation](../tests/reference/README.md) and the [machine-readable evidence](../tests/reference/validation-summary.json). Cross-BLAS portability remains not verified.
+Do not call these original-R comparisons passing, globally relax tolerances, or relabel a controlled R fit as an unmodified MinIONQC reference run. Original run/source hashes remain in the [reference harness documentation](../tests/reference/README.md) and [unchanged baseline](../tests/reference/validation-summary.json). The independent-backend investigation below adds evidence without replacing that baseline.
+
+### Final numerical assessment — 2026-10-23
+
+**Strict parity failed; #12 remains Partial/open. No production solver correction
+is justified by the completed experiments.** Starting at `49fcc45906f3`, the
+OpenBLAS 18-case rerun reproduces every primary, GAM-intermediate and LOESS
+comparison signature. Counts remain **65,118 exact, 75,241 within tolerance,
+36 intentional differences, 8,954 upstream-defect checks, 1,542 primary GAM
+failures and zero unverified checks**. The failed fields remain 390 predictions,
+381 SEs, 381 lower and 390 upper bounds; 1,912 intermediate failures are separate.
+Both actual differential runs returned **exit 1**, not a parity pass.
+
+The [bounded machine-readable assessment](../tests/reference/gam-final-assessment.json)
+records source/capture/binary hashes, sessions, strict per-case maxima, controlled
+models and perturbations. Full matrices and original artifacts remain separately
+under ignored `benchmark-results/gam-final-20261023/`.
+
+| Mathematical stage | Evidence / first divergence |
+| --- | --- |
+| Knots / natural-cubic design | Unique-time type-7 knots and second-derivative construction retained. `trend_knots.rs` and production `trends.rs` are unchanged. Comparisons use identical observations and explicit knots. |
+| Raw penalty / eigenspace | Nine OpenBLAS/Netlib models have bit-identical raw penalties and numerical null rank 2. Compare the two-dimensional **projector**, not eigenvector signs. In the repeated-time example, projector difference is 2.182e-14. |
+| Shrinkage penalty | mgcv's `cr` constructor with `shrink=.1` assigns the last two numerically ordered directions .1/.01 times the smallest positive eigenvalue. Unequal weights are not invariant to a null-space rotation or swap. This is the first substantive divergence. |
+| Centering / normalization | Compare effective penalties as `T⁻ᵀ S T⁻¹` in common nodal coordinates, accounting for mgcv `S.scale` and the largest raw eigenvalue. Canonical R/native differences are at most 1.055e-15 across the six public selected models. Arbitrary centered matrix cells are not comparison targets. |
+| REML / coefficients | Twenty controlled models per backend use original, swapped, canonical, identical-native-penalty and fixed-lambda variants. Aligning penalties makes all curve, nodal-coefficient and nodal-covariance checks pass the original tolerance; fixing lambda reveals no additional over-tolerance discrepancy. |
+| Prediction / uncertainty | Compare uncensored predictions and Bayesian conditional covariance before plot censoring. SE and pointwise normal 95% bounds agree after alignment. This does not assert identical regularization or uncertainty for the unmodified R model. |
+
+The one-ULP public MinION experiment reproduces a **1.7763568394e-15 h** knot
+change, **1.5543122345e-15** raw-penalty change and **1.7154258345 bp** endpoint
+change. The null subspace is stable; assigning different nonzero weights within
+it changes the model. The 1,542 failures are two selected MinION curves repeated
+in three contexts, rather than 1,542 independent defects. Swapping only the
+affected controlled R null weights explains their fit/SE/bound discrepancies;
+globally swapping Rust directions would damage already agreeing cases.
+
+#### Independent numerical backends
+
+R 4.4.1, ggplot2 3.5.1 and mgcv 1.9-1 were unchanged on macOS 27.0.1 arm64.
+Actual loaded images **and** `dgemm_`/`dsyevr_` symbol providers verify:
+
+| Backend | Verified binary / result |
+| --- | --- |
+| OpenBLAS 0.3.34, VORTEX/OpenMP; LAPACK 3.12.0 | Library SHA-256 begins `7a89772da7fb`; original 18-case baseline reproduced exactly. ARMV8/VORTEX aliases are not separate backends. |
+| Netlib BLAS/LAPACK 3.12.0, conda-forge `2_h41cbde3_netlib` | Separate BLAS/LAPACK hashes begin `9ec863adc1c9` / `2aa386c1e320`. All 18 cases executed; same 1,542 primary failure locations, 64,894 exact and 75,465 tolerant checks. Its 1,642 intermediate failures are experimental results, never replacements for the original 1,912. |
+
+With **identical raw matrices, knots and observations**, the repeated-timestamp
+synthetic model switches geometric null weights from (.01,.1) to (.1,.01).
+Original R cross-backend maximum differences are **0.308657025 bp fitted**,
+**0.017085655 bp SE**, and **0.275438176 / 0.341875873 bp lower/upper bounds**.
+Normalized shrinkage penalties differ by 3.7574e-5. Supplying identical original
+penalty bytes reduces fitted differences to **5.0023e-12 bp**; explicit canonical
+directions reduce them to **6.8213e-12 bp**. The public selected models do not show
+this large cross-backend change (maximum fitted difference 1.427e-9 bp).
+Thus backend dependence is measured on an independent input, not assumed for
+every public dataset.
+
+Each backend repeats nine models and 228 perturbations identically in fresh
+processes. The sweep covers ±1/4/1,024 ULP knot steps, irregular/repeated times,
+matrix rescaling and symmetric roundoff perturbations. Rust regression tests
+cover null projectors, canonical adjacent-knot continuity, reversed accumulation,
+and REML derivatives/descent. Central finite differences (step 1e-4) have maximum
+errors divided by `1+|analytic|` of **1.766e-8 gradient / 1.667e-9 Hessian**.
+These derivative checks do not change the strict reference tolerance.
+
+**Compatibility contract:** retain exact QC semantics and the original strict
+targets; label native GAMs by their deterministic geometric null convention.
+They are reproducible scientific displays, not the same weighted penalty as
+every original mgcv execution. A single portable convention cannot exactly
+reproduce the two measured original penalties simultaneously. This does not
+prove all future discrepancies explained, or Rust bitwise identity across
+architectures: only one host/architecture was executed; CPU model inspection
+was denied by the sandbox, and complete expanded backend compiler flags were
+unavailable. Package recipes, compiler versions and full sessions are retained.
+#8/#18 acceptance remains separate; no issue contract is weakened or issue closed.
 
 <a id="12-verification-performed-for-this-audit"></a>
 

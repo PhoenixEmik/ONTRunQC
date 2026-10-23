@@ -1441,6 +1441,179 @@ fn local_svd(design: &mut [[f64; 3]]) -> [[f64; 3]; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nearly_null_eigenspaces_remain_stable_without_requiring_vector_order_or_signs() {
+        let knots = [0.0, 0.7, 1.9, 3.2, 5.0, 8.3, 12.0, 18.0, 27.0, 40.0];
+        let basis = Basis::new(&Population {
+            knots: Some(knots),
+            ..Population::default()
+        })
+        .unwrap();
+        let raw: Matrix = serde_json::from_value(basis.audit["raw_penalty"].clone()).unwrap();
+        let reference: Matrix =
+            serde_json::from_value(basis.audit["shrink_eigenvectors"].clone()).unwrap();
+        for scale in [1e-12, 1.0, 1e12] {
+            for perturb in [-1.0, 0.0, 1.0] {
+                let mut matrix = raw.map(|r| r.map(|v| v * scale));
+                let norm = matrix.iter().flatten().fold(0.0_f64, |m, v| m.max(v.abs()));
+                matrix[3][4] += perturb * norm * f64::EPSILON;
+                matrix[4][3] = matrix[3][4];
+                let (values, vectors) = symmetric_eigen(matrix);
+                assert!(values[2] > norm * 1e-12);
+                assert!(values[0].abs().max(values[1].abs()) < norm * 1e-12);
+                // Compare the 2D projector, never individual nearly-null vectors.
+                let condition = values[9] / values[2];
+                let projector_bound = 200.0 * f64::EPSILON * condition;
+                for i in 0..K {
+                    for j in 0..K {
+                        let actual = vectors[i][0] * vectors[j][0] + vectors[i][1] * vectors[j][1];
+                        let expected =
+                            reference[i][0] * reference[j][0] + reference[i][1] * reference[j][1];
+                        assert!((actual - expected).abs() < projector_bound);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn canonical_penalty_is_continuous_and_reversed_accumulation_preserves_predictions() {
+        let mut p = population(1500);
+        let baseline = Basis::new(&p).unwrap();
+        let original = p.knots.unwrap();
+        for j in 1..K - 1 {
+            for direction in [-1_i64, 1] {
+                let mut changed = original;
+                // All synthetic knots are positive: adjacent positive bit patterns.
+                changed[j] = f64::from_bits((changed[j].to_bits() as i64 + direction) as u64);
+                p.knots = Some(changed);
+                let perturbed = Basis::new(&p).unwrap();
+                for i in 0..K {
+                    for k in 0..K {
+                        assert!((baseline.penalty[i][k] - perturbed.penalty[i][k]).abs() < 1e-12);
+                    }
+                }
+            }
+        }
+        // Reverse input order through the actual accumulator, without a second
+        // fit engine or fixed fitted-value corrections.
+        let data: Vec<_> = (0..1500)
+            .map(|i| {
+                let x = i as f64 / 1499.0;
+                Observation {
+                    x,
+                    length: 1000.0 + 50.0 * x + 10.0 * (x * 17.0).sin(),
+                    q: 9.0 + x,
+                }
+            })
+            .collect();
+        let fit = |reverse: bool| {
+            let records: Vec<_> = data
+                .iter()
+                .map(|row| Record {
+                    line: 1,
+                    is_control: false,
+                    num_events_template: None,
+                    flow_cell_id: None,
+                    run_id: None,
+                    channel: 1,
+                    mux: None,
+                    start_time: row.x * 3600.0,
+                    template_duration: None,
+                    passed: None,
+                    length: row.length.round() as u64,
+                    qscore: row.q,
+                    end_reason: None,
+                })
+                .collect();
+            let mut tracker = Tracker::default();
+            for record in &records {
+                tracker.add(record, 7.0).unwrap();
+            }
+            let mut plan = tracker.prepare(true).unwrap();
+            if reverse {
+                for record in records.iter().rev() {
+                    plan.add(record, 7.0);
+                }
+            } else {
+                for record in &records {
+                    plan.add(record, 7.0);
+                }
+            }
+            plan.finish().single.remove(0)
+        };
+        let a = fit(false);
+        let b = fit(true);
+        assert_eq!(a.points.len(), 80);
+        for (a, b) in a.points.iter().zip(b.points) {
+            assert!((a.value - b.value).abs() <= 1e-6 + 1e-6 * a.value.abs());
+        }
+    }
+
+    #[test]
+    fn reml_derivatives_and_descent_directions_cover_scaled_and_nearly_singular_cases() {
+        let (mut gradient_error, mut hessian_error) = (0.0_f64, 0.0_f64);
+        for scale in [0.001, 1.0, 1000.0] {
+            let reml = GaussianReml {
+                xx: std::array::from_fn(|i| {
+                    std::array::from_fn(|j| if i == j { 100.0 + i as f64 } else { 5.0 })
+                }),
+                penalty: std::array::from_fn(|i| {
+                    std::array::from_fn(|j| scale * if i == j { 1.0 + i as f64 } else { 0.05 })
+                }),
+                rhs: std::array::from_fn(|i| 3.0 + i as f64),
+                yy: 500.0,
+                n: 1500.0,
+                scale: 100.0,
+            };
+            for parameters in [[-3.0, -2.0], [0.0, 1.0], [3.0, 2.0]] {
+                let p = reml.evaluate(parameters).unwrap();
+                for i in 0..2 {
+                    let mut left = parameters;
+                    let mut right = parameters;
+                    left[i] -= 1e-4;
+                    right[i] += 1e-4;
+                    let a = reml.evaluate(left).unwrap();
+                    let b = reml.evaluate(right).unwrap();
+                    gradient_error = gradient_error.max(
+                        ((b.score - a.score) / 2e-4 - p.gradient[i]).abs()
+                            / (1.0 + p.gradient[i].abs()),
+                    );
+                    assert!(
+                        ((b.score - a.score) / 2e-4 - p.gradient[i]).abs()
+                            < 1e-5 * (1.0 + p.gradient[i].abs())
+                    );
+                    for j in 0..2 {
+                        hessian_error = hessian_error.max(
+                            ((b.gradient[j] - a.gradient[j]) / 2e-4 - p.hessian[j][i]).abs()
+                                / (1.0 + p.hessian[j][i].abs()),
+                        );
+                        assert!(
+                            ((b.gradient[j] - a.gradient[j]) / 2e-4 - p.hessian[j][i]).abs()
+                                < 1e-5 * (1.0 + p.hessian[j][i].abs())
+                        );
+                    }
+                }
+            }
+            let (_, optimum, iterations) = reml.optimize().unwrap();
+            assert!(iterations <= 200);
+            assert!(optimum.score <= reml.evaluate([0.0, 0.0]).unwrap().score);
+        }
+        for h in [
+            [[2.0, 0.3], [0.3, 3.0]],
+            [[-1.0, 0.5], [0.5, 2.0]],
+            [[1e-15, 0.0], [0.0, 1.0]],
+        ] {
+            let g = [5.0, -2.0];
+            let (step, _) = newton_step(g, h, [true; 2]);
+            assert!(step.iter().all(|x| x.is_finite()));
+            assert!(g[0] * step[0] + g[1] * step[1] < 0.0);
+        }
+        eprintln!(
+            "REML finite-difference maximum errors / (1+|analytic|): gradient={gradient_error:e}, Hessian={hessian_error:e}"
+        );
+    }
     #[test]
     fn actual_r_loess_uncertainty_including_sparse_and_degenerate_cases() {
         let golden: serde_json::Value =

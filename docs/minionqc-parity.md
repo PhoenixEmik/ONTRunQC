@@ -390,7 +390,9 @@ reference is reproducible; knot-perturbation sensitivity does not establish
 run-to-run instability. The installed OpenBLAS 0.3.34 reports VORTEX; its ARMV8/
 VORTEX library aliases resolve to the same binary, and requesting ARMV8 still
 reports VORTEX. No independent second BLAS was available or measured; cross-BLAS
-variation remains unverified. Library/source/capture hashes accompany the results.
+variation was unverified at that assessment. The 2026-10-23 independent-backend
+follow-up below supersedes that availability limit, without changing these
+historical measurements. Library/source/capture hashes accompany the results.
 Bitwise identity is a useful same-binary regression check, not a portable
 scientific requirement. The original pinned-environment numerical target remains
 strict and still fails; the instability evidence does not waive it.
@@ -402,7 +404,7 @@ strict and still fails; the instability evidence does not waive it.
 | Exact scientific metrics | Established read/yield/filter/N50 semantics and intentional upstream differences remain unchanged; all 92,299 non-fit checks preserved. |
 | Pinned-environment numerical parity | Original R points/SE/bounds retain absolute 1e-6 + relative 1e-6 targets. LOESS and public PromethION/1D2 curves pass; MinION selected contexts still fail. |
 | Implementation-dependent fits | Optional GAM display explicitly names the deterministic null-space convention. Same model family does **not** mean the unequal penalties are mathematically identical. Controlled evidence explains the difference but never changes strict status. |
-| Unsupported/unverified | Independent-BLAS parity and general degenerate GAM fallback equivalence are unverified. Nonfinite LOESS bands remain unavailable, not zero. |
+| Unsupported/unverified | General degenerate GAM fallback equivalence and cross-platform native bitwise stability remain unverified. Independent-BLAS differences are now measured in the follow-up below. Nonfinite LOESS bands remain unavailable, not zero. |
 
 **Policy proposal:** retain the named native convention for reproducible display,
 keep original-reference failures visible alongside the controlled explanation,
@@ -687,3 +689,47 @@ GAM/LOESS, KDE, histogram/Bin2D, temporal and MinION implementations and strict
 reference hashes remain unchanged. The original 18-case GAM suite was not rerun;
 1,542 primary/1,912 intermediate discrepancies remain. #8/#12/#18 stay open;
 no release is published.
+
+## Independent-backend final GAM assessment (#12, 2026-10-23)
+
+At baseline `49fcc45906f3`, sealed original targets and source hashes were
+preserved before experiments. The actual OpenBLAS 18-case differential suite
+again returns **exit 1: strict parity failed**. Every comparison signature
+matches the committed revalidation baseline: 65,118 exact, 75,241 tolerant,
+36 intentional, 8,954 upstream defects, 1,542 primary GAM failures and zero
+unverified. The 1,912 intermediate differences are unchanged.
+
+For the first time a genuinely independent backend was executed: conda-forge
+Netlib BLAS/LAPACK 3.12.0, isolated in the R child without modifying the original
+OpenBLAS installation. Loaded-image inventories, symbol providers and binary
+hashes establish independence; runtime aliases do not. Its complete 18-case run
+also fails at the same 1,542 primary locations. Exact/tolerant and intermediate
+counts differ and are retained separately, never substituted for historical R.
+
+Nine original models and 228 knot/matrix perturbations per backend were repeated
+in independent processes with identical numerical payloads. A repeated-time
+synthetic case has identical knots/raw penalties but a cross-backend swap of
+.01/.1 geometric null weights. Projectors differ by only 2.182e-14 while original
+fitted values differ by 0.308657025 bp; a shared penalty reduces the latter to
+5.0023e-12 bp. Twenty controlled public/synthetic models on each backend pass
+curve, coefficient and covariance tolerances after penalty alignment. No
+additional over-tolerance REML or covariance defect was identified. Original
+MinION endpoint sensitivity (1.715425835 bp for a 1.776e-15-hour knot change)
+was independently reproduced.
+
+Only cfg(test) additions changed `trends.rs`: production solver bytes, knots,
+goldens, capture, tolerance and strict-summary files are unchanged. Three new
+Rust numerical tests and three Python evidence-handling tests guard projectors,
+canonical continuity, ordered reductions, REML derivatives/descent, common-nodal
+transforms, nonfinite comparisons and false backend aliases. Default tests:
+79 unit +116 integration pass (3 optional ignored); minimal: 73 +114 pass
+(2 ignored). Formatting, locked Clippy, both release builds, 32 Python tests and
+documentation checks pass.
+
+The conclusion is to retain the named native convention and strict failures,
+not introduce an input-specific or backend-specific solver branch. **#12 stays
+Partial/open; #8 and #18 stay open.** Independent-BLAS sensitivity is now verified
+on this arm64 host; native cross-platform bitwise equivalence and arbitrary
+degenerate-fit parity are not. See the authoritative [mathematical assessment](minionqc-comparison.md#final-numerical-assessment--2026-10-23),
+[machine evidence](../tests/reference/gam-final-assessment.json) and
+[reproduction commands](../tests/reference/README.md#independent-backend-stability-assessment).

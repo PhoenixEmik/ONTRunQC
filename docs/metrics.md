@@ -800,6 +800,16 @@ explain these differences; they do not replace strict reference targets. See
 the parity matrix for numerical evidence and the compatibility policy. Optional
 fitting remains Partial; core QC statistics and KDE are unchanged.
 
+The [final independent-backend assessment](minionqc-comparison.md#final-numerical-assessment--2026-10-23)
+verifies that even identical raw penalties can receive different .1/.01 null
+weights under OpenBLAS versus Netlib LAPACK. This changes the regularization,
+not merely eigenvector signs. The native convention is a mathematical definition
+for reproducible display; it is not claimed identical to every original mgcv
+penalty. Same-penalty controls validate coefficients and covariance separately.
+The original 1,542 strict GAM failures remain recorded at absolute 1e-6 plus
+relative 1e-6. No production solver, core statistics or reference target changed
+during that assessment. Cross-platform Rust bitwise stability remains unverified.
+
 ## Optional R-grid density estimates (#13)
 
 `--minionqc-density` adds `minionqc_density`, leaving the original `distributions`
